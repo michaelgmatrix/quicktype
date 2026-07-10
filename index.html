@@ -1,1 +1,1262 @@
-# quicktype
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QuickType Configurator</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --panel-soft: #eef3f7;
+      --ink: #15202b;
+      --muted: #647184;
+      --line: #d9e1ea;
+      --line-strong: #bcc8d4;
+      --accent: #096b72;
+      --accent-strong: #064e55;
+      --accent-soft: #d8f3f1;
+      --warn: #a05a00;
+      --danger: #b73333;
+      --ok: #207044;
+      --shadow: 0 18px 50px rgba(31, 43, 54, 0.12);
+      --radius: 8px;
+      --radius-small: 6px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+    }
+
+    body {
+      margin: 0;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.86), rgba(244,246,248,0.94)),
+        radial-gradient(circle at top left, rgba(9,107,114,0.14), transparent 34%),
+        #f4f6f8;
+      color: var(--ink);
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 272px minmax(0, 1fr);
+    }
+
+    .sidebar {
+      background: #101820;
+      color: #edf4f6;
+      padding: 24px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      border-right: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 4px 4px;
+    }
+
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, #27c2bd, #f6b044);
+      color: #101820;
+      font-weight: 900;
+      letter-spacing: 0;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.24);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .brand p {
+      margin: 3px 0 0;
+      color: #a9b7c2;
+      font-size: 0.82rem;
+    }
+
+    .device-card {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: var(--radius);
+      padding: 14px;
+    }
+
+    .status-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #c8d4dc;
+      font-size: 0.88rem;
+      margin-bottom: 12px;
+    }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #c47d21;
+      box-shadow: 0 0 0 4px rgba(196,125,33,0.16);
+    }
+
+    .status-dot.connected {
+      background: #36d17f;
+      box-shadow: 0 0 0 4px rgba(54,209,127,0.16);
+    }
+
+    .primary-button,
+    .secondary-button,
+    .ghost-button,
+    .danger-button,
+    .icon-button {
+      min-height: 38px;
+      border-radius: var(--radius-small);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-weight: 700;
+      transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+    }
+
+    .primary-button {
+      width: 100%;
+      color: #ffffff;
+      background: var(--accent);
+      box-shadow: 0 10px 24px rgba(9,107,114,0.22);
+    }
+
+    .primary-button:hover,
+    .secondary-button:hover,
+    .ghost-button:hover,
+    .danger-button:hover,
+    .icon-button:hover {
+      transform: translateY(-1px);
+    }
+
+    .secondary-button {
+      color: var(--accent-strong);
+      background: var(--accent-soft);
+      border: 1px solid rgba(9,107,114,0.18);
+      padding: 0 13px;
+    }
+
+    .ghost-button {
+      color: #e7eef2;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      padding: 0 13px;
+    }
+
+    .danger-button {
+      color: #fff;
+      background: var(--danger);
+      padding: 0 13px;
+    }
+
+    .icon-button {
+      width: 38px;
+      color: var(--ink);
+      background: #eef3f7;
+      border: 1px solid var(--line);
+      font-weight: 800;
+    }
+
+    .sidebar-section h2 {
+      color: #7ed3d2;
+      font-size: 0.74rem;
+      margin: 0 0 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .sidebar-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 7px;
+    }
+
+    .sidebar-list button {
+      width: 100%;
+      justify-content: flex-start;
+      background: transparent;
+      color: #d9e4ea;
+      padding: 10px 11px;
+      border-radius: var(--radius-small);
+      text-align: left;
+    }
+
+    .sidebar-list button.active,
+    .sidebar-list button:hover {
+      background: rgba(255,255,255,0.09);
+      color: #ffffff;
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      color: #8f9ca7;
+      font-size: 0.78rem;
+      line-height: 1.5;
+      padding: 0 4px;
+    }
+
+    .main {
+      min-width: 0;
+      padding: 28px;
+      display: grid;
+      gap: 22px;
+      align-content: start;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .title-block h2 {
+      margin: 0;
+      font-size: clamp(1.4rem, 3vw, 2rem);
+      letter-spacing: 0;
+    }
+
+    .title-block p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      max-width: 760px;
+      line-height: 1.45;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(360px, 1fr) minmax(320px, 420px);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .panel {
+      background: rgba(255,255,255,0.92);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .panel-header {
+      padding: 18px 18px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .panel-header h3 {
+      margin: 0;
+      font-size: 1rem;
+      letter-spacing: 0;
+    }
+
+    .panel-header p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .panel-body {
+      padding: 18px;
+    }
+
+    .layer-tabs {
+      display: inline-grid;
+      grid-template-columns: repeat(3, minmax(74px, 1fr));
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+      overflow: hidden;
+      background: var(--panel-soft);
+    }
+
+    .layer-tabs button {
+      min-height: 34px;
+      color: var(--muted);
+      background: transparent;
+      padding: 0 12px;
+      font-weight: 800;
+      border-right: 1px solid var(--line);
+    }
+
+    .layer-tabs button:last-child {
+      border-right: 0;
+    }
+
+    .layer-tabs button.active {
+      color: #ffffff;
+      background: var(--accent);
+    }
+
+    .key-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(70px, 1fr));
+      gap: 10px;
+    }
+
+    .key-button {
+      min-height: 72px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, #ffffff, #eef3f7);
+      color: var(--ink);
+      padding: 10px;
+      display: grid;
+      align-content: space-between;
+      justify-items: start;
+      box-shadow: 0 8px 18px rgba(31,43,54,0.08);
+    }
+
+    .key-button:hover,
+    .key-button.active {
+      border-color: var(--accent);
+      box-shadow: 0 12px 24px rgba(9,107,114,0.16);
+      transform: translateY(-1px);
+    }
+
+    .key-number {
+      font-weight: 900;
+      font-size: 0.9rem;
+    }
+
+    .key-action {
+      color: var(--muted);
+      font-size: 0.75rem;
+      width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: left;
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+    }
+
+    .field label {
+      font-size: 0.82rem;
+      font-weight: 800;
+      color: #334252;
+    }
+
+    .field input,
+    .field select,
+    .field textarea {
+      width: 100%;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-small);
+      padding: 10px 11px;
+      color: var(--ink);
+      background: #ffffff;
+      outline: none;
+      transition: border 150ms ease, box-shadow 150ms ease;
+    }
+
+    .field textarea {
+      min-height: 96px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(9,107,114,0.14);
+    }
+
+    .two-column {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .macro-steps {
+      display: grid;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .macro-step {
+      display: grid;
+      grid-template-columns: 1fr 80px 38px;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .macro-step input {
+      min-width: 0;
+    }
+
+    .editor-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding-top: 4px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .metric {
+      background: var(--panel-soft);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 12px;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 6px;
+      font-size: 1.1rem;
+    }
+
+    .mapping-list {
+      display: grid;
+      gap: 8px;
+      max-height: 284px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .mapping-row {
+      display: grid;
+      grid-template-columns: 54px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+    }
+
+    .mapping-row code {
+      color: var(--accent-strong);
+      font-weight: 900;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .mapping-row span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .log {
+      min-height: 148px;
+      max-height: 220px;
+      overflow: auto;
+      background: #0f1720;
+      color: #bfe7df;
+      border-radius: var(--radius-small);
+      padding: 12px;
+      font: 0.82rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .notice {
+      border-left: 4px solid var(--warn);
+      background: #fff7e8;
+      color: #624008;
+      padding: 11px 12px;
+      border-radius: 0 var(--radius-small) var(--radius-small) 0;
+      font-size: 0.88rem;
+      line-height: 1.4;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @media (max-width: 1040px) {
+      .app-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+      }
+
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .main {
+        padding: 18px;
+      }
+
+      .topbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .actions {
+        justify-content: stretch;
+      }
+
+      .actions button,
+      .actions label {
+        flex: 1 1 150px;
+      }
+
+      .key-grid {
+        grid-template-columns: repeat(3, minmax(68px, 1fr));
+      }
+
+      .two-column,
+      .summary-grid,
+      .macro-step {
+        grid-template-columns: 1fr;
+      }
+
+      .macro-step .icon-button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="QuickType navigation">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">QT</div>
+        <div>
+          <h1>QuickType</h1>
+          <p>Xiao RP2040 macro device</p>
+        </div>
+      </div>
+
+      <section class="device-card" aria-label="Device connection">
+        <div class="status-line">
+          <span id="statusDot" class="status-dot" aria-hidden="true"></span>
+          <span id="connectionStatus">No device connected</span>
+        </div>
+        <button id="connectButton" class="primary-button" type="button" title="Connect a WebHID device">Connect Device</button>
+      </section>
+
+      <nav class="sidebar-section" aria-label="Configurator sections">
+        <h2>Workspace</h2>
+        <ul class="sidebar-list">
+          <li><button class="active" type="button" data-jump-target="keysPanel">Keymap</button></li>
+          <li><button type="button" data-jump-target="editorPanel">Macro Editor</button></li>
+          <li><button type="button" data-jump-target="activityPanel">HID Activity</button></li>
+        </ul>
+      </nav>
+
+      <section class="sidebar-section">
+        <h2>Device</h2>
+        <ul class="sidebar-list">
+          <li><button id="readButton" type="button">Read Configuration</button></li>
+          <li><button id="writeButton" type="button">Write Configuration</button></li>
+          <li><button id="disconnectButton" type="button">Disconnect</button></li>
+        </ul>
+      </section>
+
+      <p class="sidebar-footer">WebHID is available in Chromium-based browsers from secure origins such as HTTPS or localhost.</p>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="title-block">
+          <h2>Macro Device Configurator</h2>
+          <p>Configure layers, key actions, delays, and macro text for your Seeed Xiao RP2040 based QuickType device.</p>
+        </div>
+        <div class="actions">
+          <button id="exportButton" class="secondary-button" type="button">Export</button>
+          <label class="secondary-button" for="importFile">Import</label>
+          <input id="importFile" class="hidden" type="file" accept="application/json,.json">
+          <button id="factoryResetButton" class="danger-button" type="button">Factory Reset</button>
+        </div>
+      </header>
+
+      <section id="webHidNotice" class="notice hidden">
+        This browser does not expose WebHID. You can still design a configuration, but device read/write will stay disabled.
+      </section>
+
+      <section class="workspace">
+        <div class="panel" id="keysPanel">
+          <div class="panel-header">
+            <div>
+              <h3>Keymap</h3>
+              <p>Select a layer and key to edit its action.</p>
+            </div>
+            <div class="layer-tabs" role="tablist" aria-label="Layers">
+              <button class="active" type="button" data-layer="0">Base</button>
+              <button type="button" data-layer="1">Fn</button>
+              <button type="button" data-layer="2">Media</button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div id="keyGrid" class="key-grid" aria-label="Programmable keys"></div>
+          </div>
+        </div>
+
+        <div class="panel" id="editorPanel">
+          <div class="panel-header">
+            <div>
+              <h3 id="editorTitle">Key K01</h3>
+              <p id="editorSubtitle">Layer Base</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <form id="mappingForm" class="form-grid">
+              <div class="two-column">
+                <div class="field">
+                  <label for="actionType">Action Type</label>
+                  <select id="actionType" name="actionType">
+                    <option value="text">Text Expansion</option>
+                    <option value="shortcut">Keyboard Shortcut</option>
+                    <option value="media">Media Control</option>
+                    <option value="layer">Layer Switch</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="triggerMode">Trigger Mode</label>
+                  <select id="triggerMode" name="triggerMode">
+                    <option value="tap">Tap</option>
+                    <option value="hold">Hold</option>
+                    <option value="toggle">Toggle</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="macroName">Label</label>
+                <input id="macroName" name="macroName" type="text" maxlength="32" value="Email signature">
+              </div>
+
+              <div class="field">
+                <label for="macroText">Expansion Text</label>
+                <textarea id="macroText" name="macroText" spellcheck="false">Best,
+Michael</textarea>
+              </div>
+
+              <div class="two-column">
+                <div class="field">
+                  <label for="preDelay">Pre Delay (ms)</label>
+                  <input id="preDelay" name="preDelay" type="number" min="0" max="5000" step="10" value="0">
+                </div>
+                <div class="field">
+                  <label for="keyDelay">Key Delay (ms)</label>
+                  <input id="keyDelay" name="keyDelay" type="number" min="0" max="1000" step="5" value="15">
+                </div>
+              </div>
+
+              <div class="field">
+                <label>Macro Steps</label>
+                <div id="macroSteps" class="macro-steps"></div>
+              </div>
+
+              <div class="editor-actions">
+                <button id="addStepButton" class="secondary-button" type="button">Add Step</button>
+                <button class="primary-button" type="submit">Save Mapping</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3>Configuration Summary</h3>
+              <p>Current working copy before writing to the device.</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="summary-grid" aria-label="Configuration metrics">
+              <div class="metric">
+                <span>Layers</span>
+                <strong id="layerCount">3</strong>
+              </div>
+              <div class="metric">
+                <span>Mapped Keys</span>
+                <strong id="mappedCount">0</strong>
+              </div>
+              <div class="metric">
+                <span>Profile</span>
+                <strong id="profileVersion">Draft</strong>
+              </div>
+            </div>
+            <div id="mappingList" class="mapping-list" style="margin-top: 16px;"></div>
+          </div>
+        </div>
+
+        <div class="panel" id="activityPanel">
+          <div class="panel-header">
+            <div>
+              <h3>HID Activity</h3>
+              <p>Connection and report activity will appear here.</p>
+            </div>
+            <button id="clearLogButton" class="icon-button" type="button" title="Clear activity log">C</button>
+          </div>
+          <div class="panel-body">
+            <div id="activityLog" class="log" role="log" aria-live="polite"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const QUICKTYPE_VENDOR_ID = null;
+    const QUICKTYPE_PRODUCT_ID = null;
+    const LAYERS = ["Base", "Fn", "Media"];
+    const KEY_COUNT = 12;
+
+    const appState = {
+      activeLayer: 0,
+      selectedKey: "K01",
+      device: null,
+      isConnected: false,
+      config: createDefaultConfig()
+    };
+
+    const elements = {};
+
+    document.addEventListener("DOMContentLoaded", initApp);
+
+    function initApp() {
+      cacheElements();
+      bindEvents();
+      validateWebHidSupport();
+      renderKeyGrid();
+      renderMacroSteps();
+      renderMappingList();
+      updateEditor();
+      updateDeviceControls();
+      logActivity("QuickType configurator ready.");
+    }
+
+    function cacheElements() {
+      elements.statusDot = document.getElementById("statusDot");
+      elements.connectionStatus = document.getElementById("connectionStatus");
+      elements.connectButton = document.getElementById("connectButton");
+      elements.disconnectButton = document.getElementById("disconnectButton");
+      elements.readButton = document.getElementById("readButton");
+      elements.writeButton = document.getElementById("writeButton");
+      elements.exportButton = document.getElementById("exportButton");
+      elements.importFile = document.getElementById("importFile");
+      elements.factoryResetButton = document.getElementById("factoryResetButton");
+      elements.clearLogButton = document.getElementById("clearLogButton");
+      elements.webHidNotice = document.getElementById("webHidNotice");
+      elements.keyGrid = document.getElementById("keyGrid");
+      elements.mappingForm = document.getElementById("mappingForm");
+      elements.editorTitle = document.getElementById("editorTitle");
+      elements.editorSubtitle = document.getElementById("editorSubtitle");
+      elements.actionType = document.getElementById("actionType");
+      elements.triggerMode = document.getElementById("triggerMode");
+      elements.macroName = document.getElementById("macroName");
+      elements.macroText = document.getElementById("macroText");
+      elements.preDelay = document.getElementById("preDelay");
+      elements.keyDelay = document.getElementById("keyDelay");
+      elements.macroSteps = document.getElementById("macroSteps");
+      elements.addStepButton = document.getElementById("addStepButton");
+      elements.layerCount = document.getElementById("layerCount");
+      elements.mappedCount = document.getElementById("mappedCount");
+      elements.profileVersion = document.getElementById("profileVersion");
+      elements.mappingList = document.getElementById("mappingList");
+      elements.activityLog = document.getElementById("activityLog");
+    }
+
+    function bindEvents() {
+      elements.connectButton.addEventListener("click", requestDeviceConnection);
+      elements.disconnectButton.addEventListener("click", disconnectDevice);
+      elements.readButton.addEventListener("click", readDeviceConfiguration);
+      elements.writeButton.addEventListener("click", writeDeviceConfiguration);
+      elements.exportButton.addEventListener("click", exportConfiguration);
+      elements.importFile.addEventListener("change", importConfiguration);
+      elements.factoryResetButton.addEventListener("click", restoreFactoryDefaults);
+      elements.clearLogButton.addEventListener("click", clearActivityLog);
+      elements.addStepButton.addEventListener("click", addMacroStep);
+      elements.mappingForm.addEventListener("submit", saveCurrentMapping);
+
+      document.querySelectorAll("[data-layer]").forEach((button) => {
+        button.addEventListener("click", () => setActiveLayer(Number(button.dataset.layer)));
+      });
+
+      document.querySelectorAll("[data-jump-target]").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.querySelectorAll("[data-jump-target]").forEach((item) => item.classList.remove("active"));
+          button.classList.add("active");
+          document.getElementById(button.dataset.jumpTarget).scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      });
+    }
+
+    function validateWebHidSupport() {
+      const isSupported = "hid" in navigator;
+      elements.webHidNotice.classList.toggle("hidden", isSupported);
+      if (!isSupported) {
+        logActivity("WebHID unavailable in this browser.");
+      }
+    }
+
+    async function requestDeviceConnection() {
+      if (!("hid" in navigator)) {
+        logActivity("Cannot connect: WebHID is not supported.");
+        return;
+      }
+
+      try {
+        logActivity("Requesting QuickType device access...");
+        const filters = buildDeviceFilters();
+        const devices = await navigator.hid.requestDevice({ filters });
+        const device = devices[0];
+
+        if (!device) {
+          logActivity("No device selected.");
+          return;
+        }
+
+        await connectDevice(device);
+      } catch (error) {
+        logActivity(`Connection request failed: ${error.message}`);
+      }
+    }
+
+    function buildDeviceFilters() {
+      if (QUICKTYPE_VENDOR_ID && QUICKTYPE_PRODUCT_ID) {
+        return [{ vendorId: QUICKTYPE_VENDOR_ID, productId: QUICKTYPE_PRODUCT_ID }];
+      }
+
+      return [];
+    }
+
+    async function connectDevice(device) {
+      appState.device = device;
+
+      if (!device.opened) {
+        await device.open();
+      }
+
+      device.addEventListener("inputreport", handleInputReport);
+      appState.isConnected = true;
+      updateDeviceControls();
+      logActivity(`Connected to ${device.productName || "QuickType device"}.`);
+    }
+
+    async function disconnectDevice() {
+      if (!appState.device) {
+        logActivity("No device to disconnect.");
+        return;
+      }
+
+      try {
+        appState.device.removeEventListener("inputreport", handleInputReport);
+        if (appState.device.opened) {
+          await appState.device.close();
+        }
+        logActivity("Device disconnected.");
+      } catch (error) {
+        logActivity(`Disconnect failed: ${error.message}`);
+      } finally {
+        appState.device = null;
+        appState.isConnected = false;
+        updateDeviceControls();
+      }
+    }
+
+    async function readDeviceConfiguration() {
+      if (!ensureConnected("read configuration")) {
+        return;
+      }
+
+      logActivity("Reading configuration from device...");
+      await sendHidReport("READ_CONFIG", new Uint8Array([0x01]));
+      logActivity("Read request sent. Parser stub is waiting for firmware report format.");
+    }
+
+    async function writeDeviceConfiguration() {
+      if (!ensureConnected("write configuration")) {
+        return;
+      }
+
+      const payload = serializeConfiguration(appState.config);
+      logActivity(`Writing ${payload.byteLength} bytes to device...`);
+      await sendHidReport("WRITE_CONFIG", payload);
+      logActivity("Write request sent. Firmware acknowledgement handling is stubbed.");
+    }
+
+    async function sendHidReport(reportName, payload) {
+      if (!appState.device) {
+        throw new Error("No connected HID device");
+      }
+
+      console.info("[QuickType HID stub]", reportName, payload);
+      await Promise.resolve();
+    }
+
+    function handleInputReport(event) {
+      const parsed = parseInputReport(event.reportId, event.data);
+      logActivity(`Input report ${event.reportId}: ${parsed.summary}`);
+    }
+
+    function parseInputReport(reportId, dataView) {
+      console.info("[QuickType parser stub]", reportId, dataView);
+      return {
+        reportId,
+        summary: "unparsed firmware response"
+      };
+    }
+
+    function ensureConnected(actionName) {
+      if (appState.isConnected && appState.device) {
+        return true;
+      }
+
+      logActivity(`Cannot ${actionName}: no device connected.`);
+      return false;
+    }
+
+    function updateDeviceControls() {
+      elements.statusDot.classList.toggle("connected", appState.isConnected);
+      elements.connectionStatus.textContent = appState.isConnected ? "Device connected" : "No device connected";
+      elements.connectButton.disabled = appState.isConnected || !("hid" in navigator);
+      elements.disconnectButton.disabled = !appState.isConnected;
+      elements.readButton.disabled = !appState.isConnected;
+      elements.writeButton.disabled = !appState.isConnected;
+    }
+
+    function setActiveLayer(layerIndex) {
+      appState.activeLayer = layerIndex;
+      document.querySelectorAll("[data-layer]").forEach((button) => {
+        button.classList.toggle("active", Number(button.dataset.layer) === layerIndex);
+      });
+      renderKeyGrid();
+      updateEditor();
+    }
+
+    function selectKey(keyId) {
+      appState.selectedKey = keyId;
+      renderKeyGrid();
+      renderMacroSteps();
+      updateEditor();
+    }
+
+    function renderKeyGrid() {
+      elements.keyGrid.innerHTML = "";
+
+      for (let index = 1; index <= KEY_COUNT; index += 1) {
+        const keyId = `K${String(index).padStart(2, "0")}`;
+        const mapping = getMapping(appState.activeLayer, keyId);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "key-button";
+        button.classList.toggle("active", keyId === appState.selectedKey);
+        button.innerHTML = `
+          <span class="key-number">${keyId}</span>
+          <span class="key-action">${escapeHtml(mapping.label || "Unassigned")}</span>
+        `;
+        button.addEventListener("click", () => selectKey(keyId));
+        elements.keyGrid.appendChild(button);
+      }
+    }
+
+    function renderMacroSteps() {
+      const mapping = getMapping(appState.activeLayer, appState.selectedKey);
+      elements.macroSteps.innerHTML = "";
+
+      mapping.steps.forEach((step, index) => {
+        const row = document.createElement("div");
+        row.className = "macro-step";
+        row.innerHTML = `
+          <input type="text" value="${escapeAttribute(step.value)}" aria-label="Macro step ${index + 1} value" data-step-value="${index}">
+          <input type="number" min="0" max="5000" step="10" value="${step.delay}" aria-label="Macro step ${index + 1} delay" data-step-delay="${index}">
+          <button class="icon-button" type="button" title="Remove step" data-remove-step="${index}">X</button>
+        `;
+        elements.macroSteps.appendChild(row);
+      });
+
+      elements.macroSteps.querySelectorAll("[data-remove-step]").forEach((button) => {
+        button.addEventListener("click", () => removeMacroStep(Number(button.dataset.removeStep)));
+      });
+    }
+
+    function updateEditor() {
+      const mapping = getMapping(appState.activeLayer, appState.selectedKey);
+      elements.editorTitle.textContent = `Key ${appState.selectedKey}`;
+      elements.editorSubtitle.textContent = `Layer ${LAYERS[appState.activeLayer]}`;
+      elements.actionType.value = mapping.type;
+      elements.triggerMode.value = mapping.trigger;
+      elements.macroName.value = mapping.label;
+      elements.macroText.value = mapping.text;
+      elements.preDelay.value = mapping.preDelay;
+      elements.keyDelay.value = mapping.keyDelay;
+    }
+
+    function saveCurrentMapping(event) {
+      event.preventDefault();
+      const mapping = getMapping(appState.activeLayer, appState.selectedKey);
+      mapping.type = elements.actionType.value;
+      mapping.trigger = elements.triggerMode.value;
+      mapping.label = elements.macroName.value.trim() || "Unassigned";
+      mapping.text = elements.macroText.value;
+      mapping.preDelay = normalizeNumber(elements.preDelay.value, 0);
+      mapping.keyDelay = normalizeNumber(elements.keyDelay.value, 15);
+      mapping.steps = collectMacroSteps();
+      renderKeyGrid();
+      renderMappingList();
+      logActivity(`Saved ${appState.selectedKey} on ${LAYERS[appState.activeLayer]} layer.`);
+    }
+
+    function addMacroStep() {
+      const mapping = getMapping(appState.activeLayer, appState.selectedKey);
+      mapping.steps = collectMacroSteps();
+      mapping.steps.push({ value: "", delay: 15 });
+      renderMacroSteps();
+    }
+
+    function removeMacroStep(stepIndex) {
+      const mapping = getMapping(appState.activeLayer, appState.selectedKey);
+      mapping.steps = collectMacroSteps().filter((_, index) => index !== stepIndex);
+      renderMacroSteps();
+    }
+
+    function collectMacroSteps() {
+      const values = [...elements.macroSteps.querySelectorAll("[data-step-value]")];
+      return values.map((input) => {
+        const index = Number(input.dataset.stepValue);
+        const delayInput = elements.macroSteps.querySelector(`[data-step-delay="${index}"]`);
+        return {
+          value: input.value,
+          delay: normalizeNumber(delayInput.value, 15)
+        };
+      });
+    }
+
+    function renderMappingList() {
+      const rows = [];
+      let mappedCount = 0;
+
+      appState.config.layers.forEach((layer, layerIndex) => {
+        Object.entries(layer.keys).forEach(([keyId, mapping]) => {
+          if (mapping.label && mapping.label !== "Unassigned") {
+            mappedCount += 1;
+            rows.push({ layer: LAYERS[layerIndex], keyId, mapping });
+          }
+        });
+      });
+
+      elements.mappedCount.textContent = String(mappedCount);
+      elements.mappingList.innerHTML = rows.length
+        ? rows.map((row) => `
+            <div class="mapping-row">
+              <code>${row.keyId}</code>
+              <span>${escapeHtml(row.layer)} / ${escapeHtml(row.mapping.label)}</span>
+              <small>${escapeHtml(row.mapping.type)}</small>
+            </div>
+          `).join("")
+        : '<div class="notice">No mapped keys yet. Select a key and save a mapping to begin.</div>';
+    }
+
+    function exportConfiguration() {
+      const blob = new Blob([JSON.stringify(appState.config, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "quicktype-config.json";
+      link.click();
+      URL.revokeObjectURL(url);
+      logActivity("Configuration exported.");
+    }
+
+    async function importConfiguration(event) {
+      const file = event.target.files[0];
+      if (!file) {
+        return;
+      }
+
+      try {
+        const text = await file.text();
+        const importedConfig = JSON.parse(text);
+        appState.config = normalizeImportedConfiguration(importedConfig);
+        renderKeyGrid();
+        renderMacroSteps();
+        renderMappingList();
+        updateEditor();
+        logActivity(`Imported ${file.name}.`);
+      } catch (error) {
+        logActivity(`Import failed: ${error.message}`);
+      } finally {
+        event.target.value = "";
+      }
+    }
+
+    function restoreFactoryDefaults() {
+      appState.config = createDefaultConfig();
+      appState.activeLayer = 0;
+      appState.selectedKey = "K01";
+      setActiveLayer(0);
+      renderMacroSteps();
+      renderMappingList();
+      updateEditor();
+      logActivity("Restored draft factory defaults.");
+    }
+
+    function createDefaultConfig() {
+      return {
+        profileName: "QuickType Draft",
+        version: 1,
+        layers: LAYERS.map((name) => ({
+          name,
+          keys: createDefaultKeyMap()
+        }))
+      };
+    }
+
+    function createDefaultKeyMap() {
+      const keys = {};
+      for (let index = 1; index <= KEY_COUNT; index += 1) {
+        const keyId = `K${String(index).padStart(2, "0")}`;
+        keys[keyId] = {
+          type: "text",
+          trigger: "tap",
+          label: index === 1 ? "Email signature" : "Unassigned",
+          text: index === 1 ? "Best,\nMichael" : "",
+          preDelay: 0,
+          keyDelay: 15,
+          steps: index === 1 ? [{ value: "type text", delay: 15 }] : []
+        };
+      }
+      return keys;
+    }
+
+    function normalizeImportedConfiguration(config) {
+      const fallback = createDefaultConfig();
+      if (!config || !Array.isArray(config.layers)) {
+        throw new Error("Invalid QuickType configuration file");
+      }
+
+      fallback.profileName = config.profileName || fallback.profileName;
+      fallback.version = config.version || fallback.version;
+      config.layers.slice(0, LAYERS.length).forEach((layer, layerIndex) => {
+        if (!layer || !layer.keys) {
+          return;
+        }
+        Object.keys(fallback.layers[layerIndex].keys).forEach((keyId) => {
+          fallback.layers[layerIndex].keys[keyId] = {
+            ...fallback.layers[layerIndex].keys[keyId],
+            ...layer.keys[keyId]
+          };
+        });
+      });
+      return fallback;
+    }
+
+    function serializeConfiguration(config) {
+      const json = JSON.stringify(config);
+      return new TextEncoder().encode(json);
+    }
+
+    function getMapping(layerIndex, keyId) {
+      return appState.config.layers[layerIndex].keys[keyId];
+    }
+
+    function normalizeNumber(value, fallback) {
+      const numberValue = Number(value);
+      return Number.isFinite(numberValue) ? numberValue : fallback;
+    }
+
+    function clearActivityLog() {
+      elements.activityLog.innerHTML = "";
+      logActivity("Activity log cleared.");
+    }
+
+    function logActivity(message) {
+      const line = document.createElement("div");
+      const timestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      line.textContent = `[${timestamp}] ${message}`;
+      elements.activityLog.appendChild(line);
+      elements.activityLog.scrollTop = elements.activityLog.scrollHeight;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function escapeAttribute(value) {
+      return escapeHtml(value).replaceAll("`", "&#096;");
+    }
+  </script>
+</body>
+</html>
