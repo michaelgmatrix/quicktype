@@ -117,6 +117,41 @@
       padding: 14px;
     }
 
+    .mode-control {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .mode-control span {
+      color: #a9b7c2;
+      font-size: 0.74rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .mode-toggle {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: var(--radius-small);
+      background: rgba(255,255,255,0.06);
+    }
+
+    .mode-toggle button {
+      min-height: 36px;
+      color: #c8d4dc;
+      background: transparent;
+      font-weight: 800;
+    }
+
+    .mode-toggle button.active {
+      color: #101820;
+      background: #7ed3d2;
+    }
+
     .status-line {
       display: flex;
       align-items: center;
@@ -279,6 +314,10 @@
       align-items: start;
     }
 
+    .workspace.single {
+      grid-template-columns: 1fr;
+    }
+
     .panel {
       background: rgba(255,255,255,0.92);
       border: 1px solid var(--line);
@@ -424,6 +463,93 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
+    }
+
+    .token-groups {
+      display: grid;
+      gap: 12px;
+    }
+
+    .token-group {
+      display: grid;
+      gap: 8px;
+    }
+
+    .token-group-title {
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .token-toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .token-button {
+      min-height: 32px;
+      border-radius: 999px;
+      background: #ffffff;
+      color: var(--accent-strong);
+      border: 1px solid var(--line);
+      padding: 0 11px;
+      font-size: 0.78rem;
+      font-weight: 900;
+    }
+
+    .token-button:hover {
+      border-color: var(--accent);
+      box-shadow: 0 8px 18px rgba(9,107,114,0.12);
+      transform: translateY(-1px);
+    }
+
+    .preview-box {
+      min-height: 96px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+      background: #f8fbfc;
+      color: #263645;
+      padding: 12px;
+      white-space: pre-wrap;
+      line-height: 1.45;
+    }
+
+    .helper-text {
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    .function-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .function-row {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 10px;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+    }
+
+    .function-row code {
+      color: var(--accent-strong);
+      font-weight: 900;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .function-row span {
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.35;
     }
 
     .macro-steps {
@@ -604,13 +730,21 @@
           <span id="connectionStatus">No device connected</span>
         </div>
         <button id="connectButton" class="primary-button" type="button" title="Connect a WebHID device">Connect Device</button>
+        <div class="mode-control" aria-label="Inline keyboard path">
+          <span>USB Path</span>
+          <div class="mode-toggle">
+            <button class="active" type="button">Inline</button>
+            <button type="button" disabled>Pass-through</button>
+          </div>
+        </div>
       </section>
 
       <nav class="sidebar-section" aria-label="Configurator sections">
         <h2>Workspace</h2>
         <ul class="sidebar-list">
-          <li><button class="active" type="button" data-jump-target="keysPanel">Keymap</button></li>
-          <li><button type="button" data-jump-target="editorPanel">Macro Editor</button></li>
+          <li><button class="active" type="button" data-jump-target="keysPanel">Trigger Rules</button></li>
+          <li><button type="button" data-jump-target="editorPanel">Replacement Editor</button></li>
+          <li><button type="button" data-jump-target="rtcPanel">RTC Functions</button></li>
           <li><button type="button" data-jump-target="activityPanel">HID Activity</button></li>
         </ul>
       </nav>
@@ -630,8 +764,8 @@
     <main class="main">
       <header class="topbar">
         <div class="title-block">
-          <h2>Macro Device Configurator</h2>
-          <p>Configure layers, key actions, delays, and macro text for your Seeed Xiao RP2040 based QuickType device.</p>
+          <h2>Expansion Configurator</h2>
+          <p>Configure inline keyboard interception rules that detect typed triggers and replace them with expansion text, placeholders, or RTC output.</p>
         </div>
         <div class="actions">
           <button id="exportButton" class="secondary-button" type="button">Export</button>
@@ -649,25 +783,20 @@
         <div class="panel" id="keysPanel">
           <div class="panel-header">
             <div>
-              <h3>Keymap</h3>
-              <p>Select a layer and key to edit its action.</p>
-            </div>
-            <div class="layer-tabs" role="tablist" aria-label="Layers">
-              <button class="active" type="button" data-layer="0">Base</button>
-              <button type="button" data-layer="1">Fn</button>
-              <button type="button" data-layer="2">Media</button>
+              <h3>Trigger Rules</h3>
+              <p>QuickType watches the keyboard stream and expands matching trigger sequences.</p>
             </div>
           </div>
           <div class="panel-body">
-            <div id="keyGrid" class="key-grid" aria-label="Programmable keys"></div>
+            <div id="keyGrid" class="key-grid" aria-label="Expansion trigger rules"></div>
           </div>
         </div>
 
         <div class="panel" id="editorPanel">
           <div class="panel-header">
             <div>
-              <h3 id="editorTitle">Key K01</h3>
-              <p id="editorSubtitle">Layer Base</p>
+              <h3 id="editorTitle">Rule R01</h3>
+              <p id="editorSubtitle">Inline trigger replacement</p>
             </div>
           </div>
           <div class="panel-body">
@@ -676,32 +805,53 @@
                 <div class="field">
                   <label for="actionType">Action Type</label>
                   <select id="actionType" name="actionType">
-                    <option value="text">Text Expansion</option>
+                    <option value="expansion">Text Expansion</option>
+                    <option value="placeholder">Placeholder Prompt</option>
+                    <option value="rtc">RTC Insert</option>
                     <option value="shortcut">Keyboard Shortcut</option>
-                    <option value="media">Media Control</option>
-                    <option value="layer">Layer Switch</option>
                     <option value="disabled">Disabled</option>
                   </select>
                 </div>
                 <div class="field">
-                  <label for="triggerMode">Trigger Mode</label>
+                  <label for="triggerMode">Match Mode</label>
                   <select id="triggerMode" name="triggerMode">
-                    <option value="tap">Tap</option>
-                    <option value="hold">Hold</option>
-                    <option value="toggle">Toggle</option>
+                    <option value="suffix">After typed trigger</option>
+                    <option value="delimiter">After delimiter</option>
+                    <option value="instant">Immediately</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="two-column">
+                <div class="field">
+                  <label for="triggerPattern">Typed Trigger</label>
+                  <input id="triggerPattern" name="triggerPattern" type="text" maxlength="48" placeholder=";;sig or 00#">
+                </div>
+                <div class="field">
+                  <label for="triggerScope">Keyboard Source</label>
+                  <select id="triggerScope" name="triggerScope">
+                    <option value="any">Regular or numpad</option>
+                    <option value="keyboard">Regular keyboard only</option>
+                    <option value="numpad">Numeric keypad only</option>
                   </select>
                 </div>
               </div>
 
               <div class="field">
-                <label for="macroName">Label</label>
+                <label for="macroName">Expansion Name</label>
                 <input id="macroName" name="macroName" type="text" maxlength="32" value="Email signature">
               </div>
 
               <div class="field">
-                <label for="macroText">Expansion Text</label>
+                <label for="macroText">Expansion Template</label>
                 <textarea id="macroText" name="macroText" spellcheck="false">Best,
 Michael</textarea>
+                <p class="helper-text">Use tokens for dynamic text. For example: {date}, {time}, {clipboard}, {cursor}, or {prompt:client}.</p>
+              </div>
+
+              <div class="field">
+                <label>Insert Token</label>
+                <div id="tokenGroups" class="token-groups"></div>
               </div>
 
               <div class="two-column">
@@ -716,13 +866,18 @@ Michael</textarea>
               </div>
 
               <div class="field">
-                <label>Macro Steps</label>
+                <label>Template Preview</label>
+                <div id="templatePreview" class="preview-box" aria-live="polite"></div>
+              </div>
+
+              <div class="field">
+                <label>Output Steps</label>
                 <div id="macroSteps" class="macro-steps"></div>
               </div>
 
               <div class="editor-actions">
                 <button id="addStepButton" class="secondary-button" type="button">Add Step</button>
-                <button class="primary-button" type="submit">Save Mapping</button>
+                <button class="primary-button" type="submit">Save Expansion</button>
               </div>
             </form>
           </div>
@@ -740,22 +895,36 @@ Michael</textarea>
           <div class="panel-body">
             <div class="summary-grid" aria-label="Configuration metrics">
               <div class="metric">
-                <span>Layers</span>
-                <strong id="layerCount">3</strong>
+                <span>Rules</span>
+                <strong id="layerCount">12</strong>
               </div>
               <div class="metric">
-                <span>Mapped Keys</span>
+                <span>Active</span>
                 <strong id="mappedCount">0</strong>
               </div>
               <div class="metric">
-                <span>Profile</span>
-                <strong id="profileVersion">Draft</strong>
+                <span>Mode</span>
+                <strong id="profileVersion">Inline</strong>
               </div>
             </div>
             <div id="mappingList" class="mapping-list" style="margin-top: 16px;"></div>
           </div>
         </div>
 
+        <div class="panel" id="rtcPanel">
+          <div class="panel-header">
+            <div>
+              <h3>RTC Functions</h3>
+              <p>Reserved token names for firmware date and time expansion.</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div id="rtcFunctionList" class="function-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace single">
         <div class="panel" id="activityPanel">
           <div class="panel-header">
             <div>
@@ -775,12 +944,20 @@ Michael</textarea>
   <script>
     const QUICKTYPE_VENDOR_ID = null;
     const QUICKTYPE_PRODUCT_ID = null;
-    const LAYERS = ["Base", "Fn", "Media"];
-    const KEY_COUNT = 12;
+    const RULE_COUNT = 12;
+    const PLACEHOLDER_TOKENS = [
+      { group: "RTC", label: "Date", value: "{date}", description: "Current RTC date" },
+      { group: "RTC", label: "Time", value: "{time}", description: "Current RTC time" },
+      { group: "RTC", label: "Timestamp", value: "{datetime}", description: "Current RTC date and time" },
+      { group: "Placeholders", label: "Cursor", value: "{cursor}", description: "Move caret here after typing" },
+      { group: "Placeholders", label: "Clipboard", value: "{clipboard}", description: "Paste captured clipboard text" },
+      { group: "Placeholders", label: "Prompt", value: "{prompt:name}", description: "Ask for a value before expanding" },
+      { group: "Formatting", label: "Tab", value: "{tab}", description: "Insert a tab key" },
+      { group: "Formatting", label: "Enter", value: "{enter}", description: "Insert an enter key" }
+    ];
 
     const appState = {
-      activeLayer: 0,
-      selectedKey: "K01",
+      selectedRule: "R01",
       device: null,
       isConnected: false,
       config: createDefaultConfig()
@@ -795,6 +972,8 @@ Michael</textarea>
       bindEvents();
       validateWebHidSupport();
       renderKeyGrid();
+      renderTokenGroups();
+      renderRtcFunctions();
       renderMacroSteps();
       renderMappingList();
       updateEditor();
@@ -820,16 +999,21 @@ Michael</textarea>
       elements.editorSubtitle = document.getElementById("editorSubtitle");
       elements.actionType = document.getElementById("actionType");
       elements.triggerMode = document.getElementById("triggerMode");
+      elements.triggerPattern = document.getElementById("triggerPattern");
+      elements.triggerScope = document.getElementById("triggerScope");
       elements.macroName = document.getElementById("macroName");
       elements.macroText = document.getElementById("macroText");
       elements.preDelay = document.getElementById("preDelay");
       elements.keyDelay = document.getElementById("keyDelay");
+      elements.tokenGroups = document.getElementById("tokenGroups");
+      elements.templatePreview = document.getElementById("templatePreview");
       elements.macroSteps = document.getElementById("macroSteps");
       elements.addStepButton = document.getElementById("addStepButton");
       elements.layerCount = document.getElementById("layerCount");
       elements.mappedCount = document.getElementById("mappedCount");
       elements.profileVersion = document.getElementById("profileVersion");
       elements.mappingList = document.getElementById("mappingList");
+      elements.rtcFunctionList = document.getElementById("rtcFunctionList");
       elements.activityLog = document.getElementById("activityLog");
     }
 
@@ -844,10 +1028,7 @@ Michael</textarea>
       elements.clearLogButton.addEventListener("click", clearActivityLog);
       elements.addStepButton.addEventListener("click", addMacroStep);
       elements.mappingForm.addEventListener("submit", saveCurrentMapping);
-
-      document.querySelectorAll("[data-layer]").forEach((button) => {
-        button.addEventListener("click", () => setActiveLayer(Number(button.dataset.layer)));
-      });
+      elements.macroText.addEventListener("input", renderTemplatePreview);
 
       document.querySelectorAll("[data-jump-target]").forEach((button) => {
         button.addEventListener("click", () => {
@@ -992,17 +1173,8 @@ Michael</textarea>
       elements.writeButton.disabled = !appState.isConnected;
     }
 
-    function setActiveLayer(layerIndex) {
-      appState.activeLayer = layerIndex;
-      document.querySelectorAll("[data-layer]").forEach((button) => {
-        button.classList.toggle("active", Number(button.dataset.layer) === layerIndex);
-      });
-      renderKeyGrid();
-      updateEditor();
-    }
-
-    function selectKey(keyId) {
-      appState.selectedKey = keyId;
+    function selectKey(ruleId) {
+      appState.selectedRule = ruleId;
       renderKeyGrid();
       renderMacroSteps();
       updateEditor();
@@ -1011,24 +1183,70 @@ Michael</textarea>
     function renderKeyGrid() {
       elements.keyGrid.innerHTML = "";
 
-      for (let index = 1; index <= KEY_COUNT; index += 1) {
-        const keyId = `K${String(index).padStart(2, "0")}`;
-        const mapping = getMapping(appState.activeLayer, keyId);
+      for (let index = 1; index <= RULE_COUNT; index += 1) {
+        const ruleId = `R${String(index).padStart(2, "0")}`;
+        const mapping = getMapping(ruleId);
         const button = document.createElement("button");
         button.type = "button";
         button.className = "key-button";
-        button.classList.toggle("active", keyId === appState.selectedKey);
+        button.classList.toggle("active", ruleId === appState.selectedRule);
         button.innerHTML = `
-          <span class="key-number">${keyId}</span>
+          <span class="key-number">${escapeHtml(mapping.triggerPattern || ruleId)}</span>
           <span class="key-action">${escapeHtml(mapping.label || "Unassigned")}</span>
         `;
-        button.addEventListener("click", () => selectKey(keyId));
+        button.addEventListener("click", () => selectKey(ruleId));
         elements.keyGrid.appendChild(button);
       }
     }
 
+    function renderTokenGroups() {
+      const groups = PLACEHOLDER_TOKENS.reduce((result, token) => {
+        result[token.group] = result[token.group] || [];
+        result[token.group].push(token);
+        return result;
+      }, {});
+
+      elements.tokenGroups.innerHTML = Object.entries(groups).map(([groupName, tokens]) => `
+        <div class="token-group">
+          <div class="token-group-title">${escapeHtml(groupName)}</div>
+          <div class="token-toolbar">
+            ${tokens.map((token) => `
+              <button class="token-button" type="button" title="${escapeAttribute(token.description)}" data-token="${escapeAttribute(token.value)}">${escapeHtml(token.label)}</button>
+            `).join("")}
+          </div>
+        </div>
+      `).join("");
+
+      elements.tokenGroups.querySelectorAll("[data-token]").forEach((button) => {
+        button.addEventListener("click", () => insertToken(button.dataset.token));
+      });
+    }
+
+    function renderRtcFunctions() {
+      const rtcTokens = PLACEHOLDER_TOKENS.filter((token) => token.group === "RTC");
+      elements.rtcFunctionList.innerHTML = rtcTokens.map((token) => `
+        <div class="function-row">
+          <code>${escapeHtml(token.value)}</code>
+          <span>${escapeHtml(token.description)}. Firmware can resolve this from the onboard RTC before typing.</span>
+        </div>
+      `).join("");
+    }
+
+    function insertToken(token) {
+      const textarea = elements.macroText;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const before = textarea.value.slice(0, start);
+      const after = textarea.value.slice(end);
+      textarea.value = `${before}${token}${after}`;
+      textarea.focus();
+      textarea.selectionStart = start + token.length;
+      textarea.selectionEnd = textarea.selectionStart;
+      renderTemplatePreview();
+    }
+
     function renderMacroSteps() {
-      const mapping = getMapping(appState.activeLayer, appState.selectedKey);
+      const mapping = getMapping(appState.selectedRule);
       elements.macroSteps.innerHTML = "";
 
       mapping.steps.forEach((step, index) => {
@@ -1048,22 +1266,27 @@ Michael</textarea>
     }
 
     function updateEditor() {
-      const mapping = getMapping(appState.activeLayer, appState.selectedKey);
-      elements.editorTitle.textContent = `Key ${appState.selectedKey}`;
-      elements.editorSubtitle.textContent = `Layer ${LAYERS[appState.activeLayer]}`;
+      const mapping = getMapping(appState.selectedRule);
+      elements.editorTitle.textContent = `Rule ${appState.selectedRule}`;
+      elements.editorSubtitle.textContent = "Inline trigger replacement";
       elements.actionType.value = mapping.type;
       elements.triggerMode.value = mapping.trigger;
+      elements.triggerPattern.value = mapping.triggerPattern;
+      elements.triggerScope.value = mapping.triggerScope;
       elements.macroName.value = mapping.label;
       elements.macroText.value = mapping.text;
       elements.preDelay.value = mapping.preDelay;
       elements.keyDelay.value = mapping.keyDelay;
+      renderTemplatePreview();
     }
 
     function saveCurrentMapping(event) {
       event.preventDefault();
-      const mapping = getMapping(appState.activeLayer, appState.selectedKey);
+      const mapping = getMapping(appState.selectedRule);
       mapping.type = elements.actionType.value;
       mapping.trigger = elements.triggerMode.value;
+      mapping.triggerPattern = elements.triggerPattern.value.trim();
+      mapping.triggerScope = elements.triggerScope.value;
       mapping.label = elements.macroName.value.trim() || "Unassigned";
       mapping.text = elements.macroText.value;
       mapping.preDelay = normalizeNumber(elements.preDelay.value, 0);
@@ -1071,18 +1294,38 @@ Michael</textarea>
       mapping.steps = collectMacroSteps();
       renderKeyGrid();
       renderMappingList();
-      logActivity(`Saved ${appState.selectedKey} on ${LAYERS[appState.activeLayer]} layer.`);
+      logActivity(`Saved ${appState.selectedRule} trigger rule.`);
+    }
+
+    function renderTemplatePreview() {
+      const now = new Date();
+      const tokenSamples = {
+        "{date}": now.toLocaleDateString(),
+        "{time}": now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        "{datetime}": `${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+        "{clipboard}": "[clipboard]",
+        "{cursor}": "|",
+        "{tab}": "\t",
+        "{enter}": "\n"
+      };
+
+      let preview = elements.macroText.value || "";
+      Object.entries(tokenSamples).forEach(([token, sample]) => {
+        preview = preview.replaceAll(token, sample);
+      });
+      preview = preview.replaceAll(/\{prompt:([^}]+)\}/g, "[$1]");
+      elements.templatePreview.textContent = preview || "Expansion preview will appear here.";
     }
 
     function addMacroStep() {
-      const mapping = getMapping(appState.activeLayer, appState.selectedKey);
+      const mapping = getMapping(appState.selectedRule);
       mapping.steps = collectMacroSteps();
       mapping.steps.push({ value: "", delay: 15 });
       renderMacroSteps();
     }
 
     function removeMacroStep(stepIndex) {
-      const mapping = getMapping(appState.activeLayer, appState.selectedKey);
+      const mapping = getMapping(appState.selectedRule);
       mapping.steps = collectMacroSteps().filter((_, index) => index !== stepIndex);
       renderMacroSteps();
     }
@@ -1103,25 +1346,23 @@ Michael</textarea>
       const rows = [];
       let mappedCount = 0;
 
-      appState.config.layers.forEach((layer, layerIndex) => {
-        Object.entries(layer.keys).forEach(([keyId, mapping]) => {
-          if (mapping.label && mapping.label !== "Unassigned") {
-            mappedCount += 1;
-            rows.push({ layer: LAYERS[layerIndex], keyId, mapping });
-          }
-        });
+      Object.entries(appState.config.rules).forEach(([ruleId, mapping]) => {
+        if (mapping.label && mapping.label !== "Unassigned") {
+          mappedCount += 1;
+          rows.push({ ruleId, mapping });
+        }
       });
 
       elements.mappedCount.textContent = String(mappedCount);
       elements.mappingList.innerHTML = rows.length
         ? rows.map((row) => `
             <div class="mapping-row">
-              <code>${row.keyId}</code>
-              <span>${escapeHtml(row.layer)} / ${escapeHtml(row.mapping.label)}</span>
-              <small>${escapeHtml(row.mapping.type)}</small>
+              <code>${escapeHtml(row.mapping.triggerPattern || row.ruleId)}</code>
+              <span>${escapeHtml(row.mapping.label)}</span>
+              <small>${escapeHtml(row.mapping.triggerScope)}</small>
             </div>
           `).join("")
-        : '<div class="notice">No mapped keys yet. Select a key and save a mapping to begin.</div>';
+        : '<div class="notice">No trigger rules yet. Select a rule, enter a typed trigger, and save the replacement.</div>';
     }
 
     function exportConfiguration() {
@@ -1159,9 +1400,8 @@ Michael</textarea>
 
     function restoreFactoryDefaults() {
       appState.config = createDefaultConfig();
-      appState.activeLayer = 0;
-      appState.selectedKey = "K01";
-      setActiveLayer(0);
+      appState.selectedRule = "R01";
+      renderKeyGrid();
       renderMacroSteps();
       renderMappingList();
       updateEditor();
@@ -1172,50 +1412,88 @@ Michael</textarea>
       return {
         profileName: "QuickType Draft",
         version: 1,
-        layers: LAYERS.map((name) => ({
-          name,
-          keys: createDefaultKeyMap()
-        }))
+        mode: "inline-keyboard-intercept",
+        rules: createDefaultRules()
       };
     }
 
-    function createDefaultKeyMap() {
-      const keys = {};
-      for (let index = 1; index <= KEY_COUNT; index += 1) {
-        const keyId = `K${String(index).padStart(2, "0")}`;
-        keys[keyId] = {
-          type: "text",
-          trigger: "tap",
+    function createDefaultRules() {
+      const rules = {};
+      for (let index = 1; index <= RULE_COUNT; index += 1) {
+        const ruleId = `R${String(index).padStart(2, "0")}`;
+        rules[ruleId] = {
+          type: "expansion",
+          trigger: "suffix",
+          triggerPattern: index === 1 ? ";;sig" : "",
+          triggerScope: "any",
           label: index === 1 ? "Email signature" : "Unassigned",
-          text: index === 1 ? "Best,\nMichael" : "",
+          text: index === 1 ? "Best,\nMichael\n{date}" : "",
           preDelay: 0,
           keyDelay: 15,
-          steps: index === 1 ? [{ value: "type text", delay: 15 }] : []
+          steps: index === 1 ? [{ value: "resolve placeholders", delay: 0 }, { value: "type expansion", delay: 15 }] : [],
+          replacementStrategy: "erase-trigger-then-type"
         };
       }
-      return keys;
+      return rules;
     }
 
     function normalizeImportedConfiguration(config) {
       const fallback = createDefaultConfig();
-      if (!config || !Array.isArray(config.layers)) {
+      if (!config || (!config.rules && !Array.isArray(config.layers))) {
         throw new Error("Invalid QuickType configuration file");
       }
 
       fallback.profileName = config.profileName || fallback.profileName;
       fallback.version = config.version || fallback.version;
-      config.layers.slice(0, LAYERS.length).forEach((layer, layerIndex) => {
+
+      if (config.rules) {
+        Object.keys(fallback.rules).forEach((ruleId) => {
+          fallback.rules[ruleId] = {
+            ...fallback.rules[ruleId],
+            ...normalizeImportedMapping(config.rules[ruleId])
+          };
+        });
+        return fallback;
+      }
+
+      importLegacyKeymap(config, fallback);
+      return fallback;
+    }
+
+    function importLegacyKeymap(config, fallback) {
+      const legacyRules = [];
+      config.layers.forEach((layer) => {
         if (!layer || !layer.keys) {
           return;
         }
-        Object.keys(fallback.layers[layerIndex].keys).forEach((keyId) => {
-          fallback.layers[layerIndex].keys[keyId] = {
-            ...fallback.layers[layerIndex].keys[keyId],
-            ...layer.keys[keyId]
-          };
+        Object.values(layer.keys).forEach((mapping) => {
+          if (mapping && mapping.label && mapping.label !== "Unassigned") {
+            legacyRules.push(normalizeImportedMapping(mapping));
+          }
         });
       });
-      return fallback;
+
+      legacyRules.slice(0, RULE_COUNT).forEach((mapping, index) => {
+        const ruleId = `R${String(index + 1).padStart(2, "0")}`;
+        fallback.rules[ruleId] = {
+          ...fallback.rules[ruleId],
+          ...mapping,
+          triggerPattern: mapping.triggerPattern || mapping.keyboardSource || mapping.keypadSource || ""
+        };
+      });
+    }
+
+    function normalizeImportedMapping(mapping) {
+      if (!mapping) {
+        return {};
+      }
+
+      return {
+        ...mapping,
+        type: mapping.type === "text" ? "expansion" : mapping.type,
+        trigger: mapping.trigger === "tap" ? "suffix" : mapping.trigger,
+        triggerScope: mapping.triggerScope || "any"
+      };
     }
 
     function serializeConfiguration(config) {
@@ -1223,8 +1501,8 @@ Michael</textarea>
       return new TextEncoder().encode(json);
     }
 
-    function getMapping(layerIndex, keyId) {
-      return appState.config.layers[layerIndex].keys[keyId];
+    function getMapping(ruleId) {
+      return appState.config.rules[ruleId];
     }
 
     function normalizeNumber(value, fallback) {
