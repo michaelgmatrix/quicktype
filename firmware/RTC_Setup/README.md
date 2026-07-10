@@ -37,7 +37,7 @@ The site and firmware exchange one minified JSON object per line at 115200 baud.
 {"qt":1,"id":1,"command":"ping"}
 ```
 
-Supported commands are `ping`, `get-config`, `set-config`, `set-clock`, and `factory-reset`. Responses repeat `qt` and `id`, set `ok`, and contain either `data` or an `error` object. The maximum request/configuration size is 32 KB.
+Supported commands are `ping`, `get-config`, `set-config`, `get-clock`, `set-clock`, and `factory-reset`. Responses repeat `qt` and `id`, set `ok`, and contain either `data` or an `error` object. The maximum request/configuration size is 32 KB.
 
 ## Rule behavior
 

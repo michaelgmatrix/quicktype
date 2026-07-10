@@ -164,6 +164,7 @@ void sendProtocolError(uint32_t id, const char* code, const String& message);
 void sendProtocolSuccess(uint32_t id, const char* type);
 void sendProtocolInfo(uint32_t id);
 void sendStoredConfiguration(uint32_t id);
+void sendProtocolClock(uint32_t id);
 
 // ============================================================
 // Native USB HID keyboard device setup
@@ -1407,6 +1408,35 @@ void sendStoredConfiguration(uint32_t id) {
   Serial.println("}");
 }
 
+void sendProtocolClock(uint32_t id) {
+  if (!rtcPresent()) {
+    sendProtocolError(id, "RTC_UNAVAILABLE", "The DS3231 RTC is unavailable.");
+    return;
+  }
+
+  RtcDateTime now = rtcGetDateTime();
+  if (!validateDateTime(now)) {
+    sendProtocolError(id, "INVALID_RTC", "The RTC returned an invalid date/time.");
+    return;
+  }
+
+  JsonDocument response;
+  response["qt"] = CONFIG_SCHEMA_VERSION;
+  response["id"] = id;
+  response["ok"] = true;
+  response["type"] = "clock";
+  response["data"]["clock"]["year"] = now.year;
+  response["data"]["clock"]["month"] = now.month;
+  response["data"]["clock"]["day"] = now.day;
+  response["data"]["clock"]["dow"] = now.dow;
+  response["data"]["clock"]["hour"] = now.hour;
+  response["data"]["clock"]["minute"] = now.minute;
+  response["data"]["clock"]["second"] = now.second;
+  response["data"]["oscillatorStop"] = rtcOscillatorStopFlagSet();
+  serializeJson(response, Serial);
+  Serial.println();
+}
+
 void handleProtocolLine(const String& line) {
   JsonDocument request;
   DeserializationError jsonError = deserializeJson(request, line);
@@ -1430,6 +1460,11 @@ void handleProtocolLine(const String& line) {
 
   if (strcmp(command, "get-config") == 0) {
     sendStoredConfiguration(id);
+    return;
+  }
+
+  if (strcmp(command, "get-clock") == 0) {
+    sendProtocolClock(id);
     return;
   }
 

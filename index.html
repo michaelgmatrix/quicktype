@@ -32,7 +32,8 @@
 
     html,
     body {
-      min-height: 100%;
+      height: 100%;
+      overflow: hidden;
     }
 
     body {
@@ -62,7 +63,7 @@
     }
 
     .app-shell {
-      min-height: 100vh;
+      height: 100vh;
       display: grid;
       grid-template-columns: 272px minmax(0, 1fr);
     }
@@ -272,12 +273,22 @@
       padding: 0 4px;
     }
 
+    .build-stamp {
+      display: block;
+      margin-top: 10px;
+      color: #7ed3d2;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.72rem;
+    }
+
     .main {
       min-width: 0;
-      padding: 28px;
+      height: 100vh;
+      overflow: hidden;
+      padding: 18px 20px;
       display: grid;
-      gap: 22px;
-      align-content: start;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 12px;
     }
 
     .topbar {
@@ -289,7 +300,7 @@
 
     .title-block h2 {
       margin: 0;
-      font-size: clamp(1.4rem, 3vw, 2rem);
+      font-size: 1.55rem;
       letter-spacing: 0;
     }
 
@@ -302,16 +313,42 @@
 
     .actions {
       display: flex;
-      gap: 10px;
+      gap: 7px;
       flex-wrap: wrap;
       justify-content: flex-end;
+    }
+
+    .command-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px;
+      background: rgba(255,255,255,0.9);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: 0 10px 28px rgba(31,43,54,0.08);
+    }
+
+    .command-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
     }
 
     .workspace {
       display: grid;
       grid-template-columns: minmax(360px, 1fr) minmax(320px, 420px);
-      gap: 22px;
-      align-items: start;
+      gap: 12px;
+      align-items: stretch;
+      min-height: 0;
+    }
+
+    .workspace.primary {
+      grid-template-columns: minmax(500px, 44%) minmax(0, 1fr);
+      height: 100%;
     }
 
     .workspace.single {
@@ -323,10 +360,14 @@
       border: 1px solid var(--line);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
 
     .panel-header {
-      padding: 18px 18px 0;
+      padding: 12px 14px 0;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -346,7 +387,9 @@
     }
 
     .panel-body {
-      padding: 18px;
+      padding: 12px 14px 14px;
+      min-height: 0;
+      overflow: auto;
     }
 
     .layer-tabs {
@@ -376,40 +419,66 @@
       background: var(--accent);
     }
 
-    .key-grid {
+    .expansion-list {
       display: grid;
-      grid-template-columns: repeat(4, minmax(70px, 1fr));
-      gap: 10px;
+      gap: 0;
+      max-height: none;
+      height: 100%;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+      background: #fff;
+    }
+
+    .expansion-header,
+    .key-button {
+      display: grid;
+      grid-template-columns: 48px minmax(100px, 0.8fr) minmax(160px, 1.4fr) minmax(120px, 1fr);
+      align-items: center;
+      gap: 8px;
     }
 
     .key-button {
-      min-height: 72px;
-      border-radius: var(--radius);
-      border: 1px solid var(--line);
-      background: linear-gradient(180deg, #ffffff, #eef3f7);
+      min-height: 36px;
+      border-radius: 0;
+      border: 0;
+      border-top: 1px solid var(--line);
+      background: #ffffff;
       color: var(--ink);
-      padding: 10px;
-      display: grid;
-      align-content: space-between;
-      justify-items: start;
-      box-shadow: 0 8px 18px rgba(31,43,54,0.08);
+      padding: 0 10px;
+      box-shadow: none;
+      text-align: left;
+    }
+
+    .expansion-header {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      min-height: 36px;
+      padding: 0 10px;
+      background: #eef3f7;
+      color: #334252;
+      font-size: 0.78rem;
+      font-weight: 900;
+      border-bottom: 1px solid var(--line);
     }
 
     .key-button:hover,
     .key-button.active {
-      border-color: var(--accent);
-      box-shadow: 0 12px 24px rgba(9,107,114,0.16);
-      transform: translateY(-1px);
+      background: var(--accent-soft);
+      box-shadow: none;
+      transform: none;
     }
 
     .key-number {
       font-weight: 900;
-      font-size: 0.9rem;
+      font-size: 0.86rem;
+      overflow-wrap: anywhere;
     }
 
     .key-action {
       color: var(--muted);
-      font-size: 0.75rem;
+      font-size: 0.82rem;
       width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -417,9 +486,34 @@
       text-align: left;
     }
 
+    .key-meta {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 500;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
+    .empty-state {
+      display: grid;
+      gap: 12px;
+      justify-items: start;
+      padding: 18px;
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--radius);
+      background: #f8fbfc;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
     .form-grid {
       display: grid;
-      gap: 14px;
+      gap: 9px;
     }
 
     .field {
@@ -447,7 +541,7 @@
     }
 
     .field textarea {
-      min-height: 96px;
+      min-height: 230px;
       resize: vertical;
       line-height: 1.45;
     }
@@ -467,7 +561,55 @@
 
     .token-groups {
       display: grid;
-      gap: 12px;
+      gap: 8px;
+      max-height: 110px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+      padding: 8px;
+    }
+
+    .placeholder-manager {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      background: #f8fbfc;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+    }
+
+    .placeholder-row {
+      display: grid;
+      grid-template-columns: minmax(90px, 0.8fr) minmax(120px, 1.4fr) 38px;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .placeholder-row input {
+      min-width: 0;
+    }
+
+    .placeholder-row code {
+      color: var(--accent-strong);
+      font-weight: 900;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .advanced-panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #f8fbfc;
+      padding: 12px;
+    }
+
+    .advanced-panel summary {
+      cursor: pointer;
+      color: #334252;
+      font-weight: 900;
+    }
+
+    .advanced-panel .form-grid {
+      margin-top: 14px;
     }
 
     .token-group {
@@ -507,7 +649,7 @@
     }
 
     .preview-box {
-      min-height: 96px;
+      min-height: 52px;
       border: 1px solid var(--line);
       border-radius: var(--radius-small);
       background: #f8fbfc;
@@ -664,6 +806,58 @@
       display: none !important;
     }
 
+    .tab-panel {
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .tab-panel.hidden {
+      display: none;
+    }
+
+    .toast-stack {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      display: grid;
+      gap: 8px;
+      z-index: 50;
+    }
+
+    .toast {
+      max-width: 420px;
+      padding: 11px 13px;
+      border-radius: var(--radius-small);
+      color: #fff;
+      background: #263645;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.22);
+      font-weight: 700;
+    }
+
+    .toast.error {
+      background: var(--danger);
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: rgba(16,24,32,0.45);
+      z-index: 60;
+    }
+
+    .modal {
+      width: min(520px, 92vw);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+    }
+
     @media (max-width: 1040px) {
       .app-shell {
         grid-template-columns: 1fr;
@@ -697,13 +891,14 @@
         flex: 1 1 150px;
       }
 
-      .key-grid {
-        grid-template-columns: repeat(3, minmax(68px, 1fr));
+      .expansion-list {
+        max-height: none;
       }
 
       .two-column,
       .summary-grid,
-      .macro-step {
+      .macro-step,
+      .placeholder-row {
         grid-template-columns: 1fr;
       }
 
@@ -729,7 +924,6 @@
           <span id="statusDot" class="status-dot" aria-hidden="true"></span>
           <span id="connectionStatus">No device connected</span>
         </div>
-        <button id="connectButton" class="primary-button" type="button" title="Connect the QuickType USB serial port">Connect Device</button>
         <div class="mode-control" aria-label="Inline keyboard path">
           <span>USB Path</span>
           <div class="mode-toggle">
@@ -742,23 +936,17 @@
       <nav class="sidebar-section" aria-label="Configurator sections">
         <h2>Workspace</h2>
         <ul class="sidebar-list">
-          <li><button class="active" type="button" data-jump-target="keysPanel">Trigger Rules</button></li>
-          <li><button type="button" data-jump-target="editorPanel">Replacement Editor</button></li>
-          <li><button type="button" data-jump-target="rtcPanel">RTC Functions</button></li>
-          <li><button type="button" data-jump-target="activityPanel">Device Activity</button></li>
+          <li><button class="active" type="button" data-tab="expansionsTab">Expansions</button></li>
+          <li><button type="button" data-tab="placeholdersTab">Placeholders</button></li>
+          <li><button type="button" data-tab="rtcTab">RTC Functions</button></li>
+          <li><button type="button" data-tab="activityTab">Device Activity</button></li>
         </ul>
       </nav>
 
-      <section class="sidebar-section">
-        <h2>Device</h2>
-        <ul class="sidebar-list">
-          <li><button id="readButton" type="button">Read Configuration</button></li>
-          <li><button id="writeButton" type="button">Write Configuration</button></li>
-          <li><button id="disconnectButton" type="button">Disconnect</button></li>
-        </ul>
-      </section>
-
-      <p class="sidebar-footer">Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.</p>
+      <p class="sidebar-footer">
+        Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.
+        <span class="build-stamp">Build 2026-07-10 15:52:56 PDT</span>
+      </p>
     </aside>
 
     <main class="main">
@@ -768,6 +956,12 @@
           <p>Configure inline keyboard interception rules that detect typed triggers and replace them with expansion text, placeholders, or RTC output.</p>
         </div>
         <div class="actions">
+          <button id="connectButton" class="secondary-button" type="button">Connect</button>
+          <button id="readButton" class="secondary-button" type="button">Read</button>
+          <button id="writeButton" class="secondary-button" type="button">Write</button>
+          <button id="readClockButton" class="secondary-button" type="button">Read RTC</button>
+          <button id="syncClockButton" class="secondary-button" type="button">Sync Clock</button>
+          <button id="disconnectButton" class="secondary-button" type="button">Disconnect</button>
           <button id="exportButton" class="secondary-button" type="button">Export</button>
           <label class="secondary-button" for="importFile">Import</label>
           <input id="importFile" class="hidden" type="file" accept="application/json,.json">
@@ -779,16 +973,17 @@
         This browser does not expose Web Serial. You can still design and export a configuration, but device read/write requires Chrome or Edge on HTTPS or localhost.
       </section>
 
-      <section class="workspace">
+      <section id="expansionsTab" class="workspace primary tab-panel">
         <div class="panel" id="keysPanel">
           <div class="panel-header">
             <div>
-              <h3>Trigger Rules</h3>
-              <p>QuickType watches the keyboard stream and expands matching trigger sequences.</p>
+              <h3>Expansions</h3>
+              <p>A scrollable list of typed triggers and replacement text.</p>
             </div>
+            <button id="addExpansionButton" class="secondary-button" type="button">Add Expansion</button>
           </div>
           <div class="panel-body">
-            <div id="keyGrid" class="key-grid" aria-label="Expansion trigger rules"></div>
+            <div id="keyGrid" class="expansion-list" aria-label="Expansion list"></div>
           </div>
         </div>
 
@@ -801,49 +996,17 @@
           </div>
           <div class="panel-body">
             <form id="mappingForm" class="form-grid">
-              <div class="two-column">
-                <div class="field">
-                  <label for="actionType">Action Type</label>
-                  <select id="actionType" name="actionType">
-                    <option value="expansion">Text Expansion</option>
-                    <option value="placeholder">Placeholder Prompt</option>
-                    <option value="rtc">RTC Insert</option>
-                    <option value="shortcut">Keyboard Shortcut</option>
-                    <option value="disabled">Disabled</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="triggerMode">Match Mode</label>
-                  <select id="triggerMode" name="triggerMode">
-                    <option value="key">Physical key press</option>
-                    <option value="suffix">After typed trigger</option>
-                    <option value="delimiter">After delimiter</option>
-                    <option value="instant">Immediately</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="two-column">
-                <div class="field">
-                  <label id="triggerPatternLabel" for="triggerPattern">Trigger</label>
-                  <input id="triggerPattern" name="triggerPattern" type="text" maxlength="48" list="physicalKeyOptions" placeholder="KP_0 or ;;sig">
-                  <datalist id="physicalKeyOptions">
-                    <option value="KP_NUMLOCK"><option value="KP_SLASH"><option value="KP_ASTERISK">
-                    <option value="KP_MINUS"><option value="KP_PLUS"><option value="KP_ENTER">
-                    <option value="KP_0"><option value="KP_00"><option value="KP_1"><option value="KP_2">
-                    <option value="KP_3"><option value="KP_4"><option value="KP_5"><option value="KP_6">
-                    <option value="KP_7"><option value="KP_8"><option value="KP_9"><option value="KP_PERIOD">
-                    <option value="ENTER"><option value="BACKSPACE"><option value="TAB"><option value="DELETE">
-                  </datalist>
-                </div>
-                <div class="field">
-                  <label for="triggerScope">Keyboard Source</label>
-                  <select id="triggerScope" name="triggerScope">
-                    <option value="any">Regular or numpad</option>
-                    <option value="keyboard">Regular keyboard only</option>
-                    <option value="numpad">Numeric keypad only</option>
-                  </select>
-                </div>
+              <div class="field">
+                <label id="triggerPatternLabel" for="triggerPattern">Trigger String</label>
+                <input id="triggerPattern" name="triggerPattern" type="text" maxlength="48" list="physicalKeyOptions" placeholder=";;sig">
+                <datalist id="physicalKeyOptions">
+                  <option value="KP_NUMLOCK"><option value="KP_SLASH"><option value="KP_ASTERISK">
+                  <option value="KP_MINUS"><option value="KP_PLUS"><option value="KP_ENTER">
+                  <option value="KP_0"><option value="KP_00"><option value="KP_1"><option value="KP_2">
+                  <option value="KP_3"><option value="KP_4"><option value="KP_5"><option value="KP_6">
+                  <option value="KP_7"><option value="KP_8"><option value="KP_9"><option value="KP_PERIOD">
+                  <option value="ENTER"><option value="BACKSPACE"><option value="TAB"><option value="DELETE">
+                </datalist>
               </div>
 
               <div class="field">
@@ -855,7 +1018,19 @@
                 <label for="macroText">Expansion Template</label>
                 <textarea id="macroText" name="macroText" maxlength="1024" spellcheck="false">Best,
 Michael</textarea>
-                <p id="templateHelp" class="helper-text">Use tokens for dynamic text. Clipboard sends Ctrl+V; prompt tokens type an editable bracketed placeholder.</p>
+                <p id="templateHelp" class="helper-text">Use date tokens or reusable placeholders like {initials}. Placeholders are resolved before writing to the device.</p>
+              </div>
+
+              <div id="placeholdersPanel" class="field">
+                <label>Reusable Placeholders</label>
+                <div class="placeholder-manager">
+                  <div class="placeholder-row">
+                    <input id="placeholderName" type="text" maxlength="24" placeholder="initials" aria-label="Placeholder name">
+                    <input id="placeholderValue" type="text" maxlength="80" placeholder="MM" aria-label="Placeholder value">
+                    <button id="addPlaceholderButton" class="icon-button" type="button" title="Add placeholder">+</button>
+                  </div>
+                  <div id="placeholderList" class="token-toolbar" aria-label="Reusable placeholders"></div>
+                </div>
               </div>
 
               <div class="field">
@@ -863,28 +1038,66 @@ Michael</textarea>
                 <div id="tokenGroups" class="token-groups"></div>
               </div>
 
-              <div class="two-column">
-                <div class="field">
-                  <label for="preDelay">Pre Delay (ms)</label>
-                  <input id="preDelay" name="preDelay" type="number" min="0" max="5000" step="10" value="0">
-                </div>
-                <div class="field">
-                  <label for="keyDelay">Key Delay (ms)</label>
-                  <input id="keyDelay" name="keyDelay" type="number" min="0" max="1000" step="5" value="15">
-                </div>
-              </div>
-
               <div class="field">
                 <label>Template Preview</label>
                 <div id="templatePreview" class="preview-box" aria-live="polite"></div>
               </div>
 
-              <div class="field">
-                <label>Output Steps</label>
-                <div id="macroSteps" class="macro-steps"></div>
-              </div>
+              <details class="advanced-panel">
+                <summary>Advanced trigger and keybinding options</summary>
+                <div class="form-grid">
+                  <div class="two-column">
+                    <div class="field">
+                      <label for="actionType">Action Type</label>
+                      <select id="actionType" name="actionType">
+                        <option value="expansion">Text Expansion</option>
+                        <option value="placeholder">Placeholder Prompt</option>
+                        <option value="rtc">RTC Insert</option>
+                        <option value="shortcut">Keyboard Shortcut</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="triggerMode">Match Mode</label>
+                      <select id="triggerMode" name="triggerMode">
+                        <option value="suffix">After typed trigger</option>
+                        <option value="delimiter">After delimiter</option>
+                        <option value="instant">Immediately</option>
+                        <option value="key">Physical key press</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="field">
+                    <label for="triggerScope">Keyboard Source</label>
+                    <select id="triggerScope" name="triggerScope">
+                      <option value="any">Regular or numpad</option>
+                      <option value="keyboard">Regular keyboard only</option>
+                      <option value="numpad">Numeric keypad only</option>
+                    </select>
+                  </div>
+
+                  <div class="two-column">
+                    <div class="field">
+                      <label for="preDelay">Pre Delay (ms)</label>
+                      <input id="preDelay" name="preDelay" type="number" min="0" max="5000" step="10" value="0">
+                    </div>
+                    <div class="field">
+                      <label for="keyDelay">Key Delay (ms)</label>
+                      <input id="keyDelay" name="keyDelay" type="number" min="0" max="1000" step="5" value="15">
+                    </div>
+                  </div>
+
+                  <div class="field">
+                    <label>Output Steps</label>
+                    <div id="macroSteps" class="macro-steps"></div>
+                  </div>
+                </div>
+              </details>
 
               <div class="editor-actions">
+                <button id="duplicateExpansionButton" class="secondary-button" type="button">Duplicate</button>
+                <button id="deleteExpansionButton" class="danger-button" type="button">Delete</button>
                 <button id="addStepButton" class="secondary-button" type="button">Add Step</button>
                 <button class="primary-button" type="submit">Save Expansion</button>
               </div>
@@ -893,7 +1106,7 @@ Michael</textarea>
         </div>
       </section>
 
-      <section class="workspace">
+      <section id="rtcTab" class="workspace tab-panel hidden">
         <div class="panel">
           <div class="panel-header">
             <div>
@@ -929,12 +1142,32 @@ Michael</textarea>
           </div>
           <div class="panel-body">
             <div id="rtcFunctionList" class="function-list"></div>
-            <button id="syncClockButton" class="secondary-button" type="button" style="margin-top: 14px;">Sync Clock to This Computer</button>
           </div>
         </div>
       </section>
 
-      <section class="workspace single">
+      <section id="placeholdersTab" class="workspace single tab-panel hidden">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3>Reusable Placeholders</h3>
+              <p>Define repeated text such as initials, department names, or common account values.</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="placeholder-manager">
+              <div class="placeholder-row">
+                <input id="placeholderNameTab" type="text" maxlength="24" placeholder="initials" aria-label="Placeholder name">
+                <input id="placeholderValueTab" type="text" maxlength="80" placeholder="MM" aria-label="Placeholder value">
+                <button id="addPlaceholderButtonTab" class="secondary-button" type="button">Add Placeholder</button>
+              </div>
+              <div id="placeholderListTab" class="token-toolbar" aria-label="Reusable placeholders"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="activityTab" class="workspace single tab-panel hidden">
         <div class="panel" id="activityPanel">
           <div class="panel-header">
             <div>
@@ -949,6 +1182,15 @@ Michael</textarea>
         </div>
       </section>
     </main>
+  </div>
+
+  <div id="toastStack" class="toast-stack" aria-live="polite"></div>
+  <div id="modalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3 id="modalTitle" style="margin:0;">QuickType</h3>
+      <div id="modalBody"></div>
+      <button id="modalCloseButton" class="secondary-button" type="button">Close</button>
+    </div>
   </div>
 
   <script>
@@ -999,7 +1241,9 @@ Michael</textarea>
       cacheElements();
       bindEvents();
       validateWebSerialSupport();
+      selectDefaultRuleForEditor();
       renderKeyGrid();
+      renderPlaceholderList();
       renderTokenGroups();
       renderRtcFunctions();
       renderMacroSteps();
@@ -1016,12 +1260,24 @@ Michael</textarea>
       elements.disconnectButton = document.getElementById("disconnectButton");
       elements.readButton = document.getElementById("readButton");
       elements.writeButton = document.getElementById("writeButton");
+      elements.readClockButton = document.getElementById("readClockButton");
       elements.exportButton = document.getElementById("exportButton");
       elements.importFile = document.getElementById("importFile");
       elements.factoryResetButton = document.getElementById("factoryResetButton");
       elements.clearLogButton = document.getElementById("clearLogButton");
       elements.webSerialNotice = document.getElementById("webSerialNotice");
       elements.syncClockButton = document.getElementById("syncClockButton");
+      elements.addExpansionButton = document.getElementById("addExpansionButton");
+      elements.duplicateExpansionButton = document.getElementById("duplicateExpansionButton");
+      elements.deleteExpansionButton = document.getElementById("deleteExpansionButton");
+      elements.placeholderName = document.getElementById("placeholderName");
+      elements.placeholderValue = document.getElementById("placeholderValue");
+      elements.addPlaceholderButton = document.getElementById("addPlaceholderButton");
+      elements.placeholderList = document.getElementById("placeholderList");
+      elements.placeholderNameTab = document.getElementById("placeholderNameTab");
+      elements.placeholderValueTab = document.getElementById("placeholderValueTab");
+      elements.addPlaceholderButtonTab = document.getElementById("addPlaceholderButtonTab");
+      elements.placeholderListTab = document.getElementById("placeholderListTab");
       elements.keyGrid = document.getElementById("keyGrid");
       elements.mappingForm = document.getElementById("mappingForm");
       elements.editorTitle = document.getElementById("editorTitle");
@@ -1046,6 +1302,11 @@ Michael</textarea>
       elements.mappingList = document.getElementById("mappingList");
       elements.rtcFunctionList = document.getElementById("rtcFunctionList");
       elements.activityLog = document.getElementById("activityLog");
+      elements.toastStack = document.getElementById("toastStack");
+      elements.modalBackdrop = document.getElementById("modalBackdrop");
+      elements.modalTitle = document.getElementById("modalTitle");
+      elements.modalBody = document.getElementById("modalBody");
+      elements.modalCloseButton = document.getElementById("modalCloseButton");
     }
 
     function bindEvents() {
@@ -1053,22 +1314,27 @@ Michael</textarea>
       elements.disconnectButton.addEventListener("click", disconnectDevice);
       elements.readButton.addEventListener("click", readDeviceConfiguration);
       elements.writeButton.addEventListener("click", writeDeviceConfiguration);
+      elements.readClockButton.addEventListener("click", readDeviceClock);
       elements.exportButton.addEventListener("click", exportConfiguration);
       elements.importFile.addEventListener("change", importConfiguration);
       elements.factoryResetButton.addEventListener("click", restoreFactoryDefaults);
       elements.clearLogButton.addEventListener("click", clearActivityLog);
+      elements.addExpansionButton.addEventListener("click", addExpansionRule);
+      elements.duplicateExpansionButton.addEventListener("click", duplicateExpansionRule);
+      elements.deleteExpansionButton.addEventListener("click", deleteExpansionRule);
+      elements.addPlaceholderButton.addEventListener("click", addPlaceholder);
+      elements.addPlaceholderButtonTab.addEventListener("click", addPlaceholderFromTab);
       elements.addStepButton.addEventListener("click", addMacroStep);
       elements.syncClockButton.addEventListener("click", syncDeviceClock);
+      elements.modalCloseButton.addEventListener("click", hideModal);
       elements.mappingForm.addEventListener("submit", saveCurrentMapping);
       elements.macroText.addEventListener("input", renderTemplatePreview);
       elements.actionType.addEventListener("change", updateEditorHints);
       elements.triggerMode.addEventListener("change", updateEditorHints);
 
-      document.querySelectorAll("[data-jump-target]").forEach((button) => {
+      document.querySelectorAll("[data-tab]").forEach((button) => {
         button.addEventListener("click", () => {
-          document.querySelectorAll("[data-jump-target]").forEach((item) => item.classList.remove("active"));
-          button.classList.add("active");
-          document.getElementById(button.dataset.jumpTarget).scrollIntoView({ behavior: "smooth", block: "start" });
+          showTab(button.dataset.tab);
         });
       });
     }
@@ -1081,6 +1347,34 @@ Michael</textarea>
       }
     }
 
+    function showTab(tabId) {
+      document.querySelectorAll("[data-tab]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.tab === tabId);
+      });
+      document.querySelectorAll(".tab-panel").forEach((panel) => {
+        panel.classList.toggle("hidden", panel.id !== tabId);
+      });
+      showToast(`Showing ${document.querySelector(`[data-tab="${tabId}"]`)?.textContent || "tab"}.`);
+    }
+
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type === "error" ? "error" : ""}`;
+      toast.textContent = message;
+      elements.toastStack.appendChild(toast);
+      window.setTimeout(() => toast.remove(), 3600);
+    }
+
+    function showModal(title, html) {
+      elements.modalTitle.textContent = title;
+      elements.modalBody.innerHTML = html;
+      elements.modalBackdrop.classList.remove("hidden");
+    }
+
+    function hideModal() {
+      elements.modalBackdrop.classList.add("hidden");
+    }
+
     async function requestDeviceConnection() {
       if (!("serial" in navigator)) {
         logActivity("Cannot connect: Web Serial is not supported.");
@@ -1088,11 +1382,13 @@ Michael</textarea>
       }
 
       try {
+        showToast("Opening serial port chooser...");
         logActivity("Choose the QuickType serial port in the browser prompt.");
         const port = await navigator.serial.requestPort();
         await connectDevice(port);
       } catch (error) {
         logActivity(`Connection failed: ${error.message}`);
+        showToast(`Connection failed: ${error.message}`, "error");
         if (appState.port) {
           await disconnectDevice();
         }
@@ -1120,6 +1416,7 @@ Michael</textarea>
       appState.deviceInfo = response.data || {};
       updateDeviceControls();
       logActivity(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
+      showToast(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
     }
 
     async function disconnectDevice() {
@@ -1141,8 +1438,10 @@ Michael</textarea>
         }
         await appState.port.close();
         logActivity("Device disconnected.");
+        showToast("Device disconnected.");
       } catch (error) {
         logActivity(`Disconnect failed: ${error.message}`);
+        showToast(`Disconnect failed: ${error.message}`, "error");
       } finally {
         appState.port = null;
         appState.deviceInfo = null;
@@ -1160,14 +1459,17 @@ Michael</textarea>
         logActivity("Reading configuration from device...");
         const response = await sendDeviceCommand("get-config");
         appState.config = normalizeImportedConfiguration(response.data);
-        appState.selectedRule = "R01";
+        selectDefaultRuleForEditor();
         renderAllConfigurationViews();
         logActivity("Device configuration loaded.");
+        showToast("Device configuration loaded.");
       } catch (error) {
         if (error.code === "NO_CONFIG") {
           logActivity("The device has no saved configuration. The factory draft remains open; use Write Configuration to install it.");
+          showToast("No saved device configuration found.");
         } else {
           logActivity(`Read failed: ${error.message}`);
+          showToast(`Read failed: ${error.message}`, "error");
         }
       }
     }
@@ -1178,17 +1480,48 @@ Michael</textarea>
       }
 
       try {
-        updateCurrentMappingFromForm(false);
-        const payload = serializeConfiguration(appState.config);
+        if (!updateCurrentMappingFromForm(false)) return;
+        const conflictMessage = validateNoTriggerConflicts();
+        if (conflictMessage) {
+          showModal("Trigger Conflict", `<p>${escapeHtml(conflictMessage)}</p>`);
+          showToast("Write blocked by trigger conflict.", "error");
+          return;
+        }
+        const deviceConfig = buildDeviceConfiguration();
+        const payload = serializeConfiguration(deviceConfig);
         if (payload.byteLength > MAX_CONFIG_PAYLOAD_BYTES) {
           logActivity(`Write failed: configuration is ${payload.byteLength} bytes; the safe limit is ${MAX_CONFIG_PAYLOAD_BYTES}.`);
+          showToast("Write failed: configuration is too large.", "error");
           return;
         }
         logActivity(`Writing ${payload.byteLength} bytes to device...`);
-        const response = await sendDeviceCommand("set-config", { config: appState.config }, 15000);
+        showToast("Writing configuration...");
+        const response = await sendDeviceCommand("set-config", { config: deviceConfig }, 15000);
         logActivity(`Configuration saved (${response.data?.ruleCount ?? 0} active rules).`);
+        showToast(`Configuration saved (${response.data?.ruleCount ?? 0} active rules).`);
       } catch (error) {
         logActivity(`Write failed: ${error.message}`);
+        showToast(`Write failed: ${error.message}`, "error");
+      }
+    }
+
+    async function readDeviceClock() {
+      if (!ensureConnected("read the RTC")) {
+        showToast("Connect QuickType before reading the RTC.", "error");
+        return;
+      }
+
+      try {
+        showToast("Reading RTC...");
+        const response = await sendDeviceCommand("get-clock");
+        const clock = response.data?.clock;
+        if (!clock) throw new Error("Device did not return a clock value.");
+        const text = `${clock.year}-${String(clock.month).padStart(2, "0")}-${String(clock.day).padStart(2, "0")} ${String(clock.hour).padStart(2, "0")}:${String(clock.minute).padStart(2, "0")}:${String(clock.second).padStart(2, "0")}`;
+        showModal("QuickType RTC", `<p>Device clock reads:</p><p><strong>${escapeHtml(text)}</strong></p>`);
+        logActivity(`RTC read: ${text}`);
+      } catch (error) {
+        showToast(`RTC read failed: ${error.message}`, "error");
+        logActivity(`RTC read failed: ${error.message}`);
       }
     }
 
@@ -1209,10 +1542,13 @@ Michael</textarea>
       };
 
       try {
+        showToast("Syncing RTC...");
         await sendDeviceCommand("set-clock", { clock });
         logActivity(`RTC synchronized to ${now.toLocaleString()}.`);
+        showToast(`RTC synchronized to ${now.toLocaleString()}.`);
       } catch (error) {
         logActivity(`Clock sync failed: ${error.message}`);
+        showToast(`Clock sync failed: ${error.message}`, "error");
       }
     }
 
@@ -1339,11 +1675,22 @@ Michael</textarea>
       elements.disconnectButton.disabled = !appState.isConnected;
       elements.readButton.disabled = !appState.isConnected;
       elements.writeButton.disabled = !appState.isConnected;
+      elements.readClockButton.disabled = !appState.isConnected;
       elements.syncClockButton.disabled = !appState.isConnected;
     }
 
     function delay(milliseconds) {
       return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+    }
+
+    function selectDefaultRuleForEditor() {
+      const primaryRule = getExpansionRows()[0];
+      if (primaryRule) {
+        appState.selectedRule = primaryRule.ruleId;
+        return;
+      }
+
+      appState.selectedRule = findFirstAvailableRuleId();
     }
 
     function selectKey(ruleId) {
@@ -1355,25 +1702,212 @@ Michael</textarea>
 
     function renderKeyGrid() {
       elements.keyGrid.innerHTML = "";
+      const expansionRows = getExpansionRows();
 
-      for (let index = 1; index <= RULE_COUNT; index += 1) {
-        const ruleId = `R${String(index).padStart(2, "0")}`;
-        const mapping = getMapping(ruleId);
+      if (!expansionRows.length) {
+        elements.keyGrid.innerHTML = `
+          <div class="empty-state">
+            <strong>No expansions yet</strong>
+            <span>Add an expansion, give it a trigger string, then write the configuration to QuickType.</span>
+            <button class="secondary-button" type="button" data-empty-add>Add Expansion</button>
+          </div>
+        `;
+        elements.keyGrid.querySelector("[data-empty-add]").addEventListener("click", addExpansionRule);
+        return;
+      }
+
+      elements.keyGrid.innerHTML = `
+        <div class="expansion-header">
+          <span>App</span>
+          <span>Trigger</span>
+          <span>Expansion</span>
+          <span>Label</span>
+        </div>
+      `;
+      expansionRows.forEach(({ ruleId, mapping }) => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "key-button";
         button.classList.toggle("active", ruleId === appState.selectedRule);
         button.innerHTML = `
+          <span class="key-meta">QT</span>
           <span class="key-number">${escapeHtml(mapping.triggerPattern || ruleId)}</span>
-          <span class="key-action">${escapeHtml(mapping.label || "Unassigned")}</span>
+          <span class="key-action">${escapeHtml(compactSnippet(mapping.text || mapping.steps?.map((step) => step.value).join(" ") || ""))}</span>
+          <span class="key-meta">${escapeHtml(mapping.label || "Unassigned")}</span>
         `;
         button.addEventListener("click", () => selectKey(ruleId));
         elements.keyGrid.appendChild(button);
+      });
+    }
+
+    function getExpansionRows() {
+      return Object.entries(appState.config.rules)
+        .filter(([, mapping]) => isPrimaryExpansion(mapping))
+        .map(([ruleId, mapping]) => ({ ruleId, mapping }));
+    }
+
+    function isPrimaryExpansion(mapping) {
+      if (!mapping || !mapping.triggerPattern) return false;
+      if (mapping.type === "disabled") return false;
+      return true;
+    }
+
+    function compactSnippet(value) {
+      return String(value || "").replaceAll(/\s+/g, " ").trim() || "(no contents)";
+    }
+
+    function addExpansionRule() {
+      const ruleId = findFirstAvailableRuleId();
+      const mapping = getMapping(ruleId);
+      mapping.type = "expansion";
+      mapping.trigger = "suffix";
+      mapping.triggerPattern = "";
+      mapping.triggerScope = "any";
+      mapping.label = "New expansion";
+      mapping.text = "";
+      mapping.preDelay = 0;
+      mapping.keyDelay = 15;
+      mapping.steps = [];
+      mapping.enabled = true;
+      appState.selectedRule = ruleId;
+      renderAllConfigurationViews();
+      elements.triggerPattern.focus();
+      logActivity(`Added ${ruleId}.`);
+      showToast("Expansion added.");
+    }
+
+    function duplicateExpansionRule() {
+      const source = structuredClone(getMapping(appState.selectedRule));
+      const ruleId = findFirstAvailableRuleId();
+      appState.config.rules[ruleId] = {
+        ...source,
+        triggerPattern: "",
+        label: `${source.label || "Expansion"} copy`
+      };
+      appState.selectedRule = ruleId;
+      renderAllConfigurationViews();
+      elements.triggerPattern.focus();
+      showToast("Expansion duplicated. Add a new trigger string before saving.");
+    }
+
+    function deleteExpansionRule() {
+      const mapping = getMapping(appState.selectedRule);
+      if (!window.confirm(`Delete "${mapping.label || appState.selectedRule}"?`)) {
+        showToast("Delete cancelled.");
+        return;
       }
+      appState.config.rules[appState.selectedRule] = createBlankRule();
+      selectDefaultRuleForEditor();
+      renderAllConfigurationViews();
+      showToast("Expansion deleted.");
+      logActivity("Expansion deleted.");
+    }
+
+    function findFirstAvailableRuleId() {
+      for (let index = 1; index <= RULE_COUNT; index += 1) {
+        const ruleId = `R${String(index).padStart(2, "0")}`;
+        const mapping = getMapping(ruleId);
+        if (!mapping.triggerPattern || mapping.label === "Unassigned" || mapping.type === "disabled") {
+          return ruleId;
+        }
+      }
+      return `R${String(RULE_COUNT).padStart(2, "0")}`;
+    }
+
+    function createBlankRule() {
+      return {
+        type: "disabled",
+        trigger: "suffix",
+        triggerPattern: "",
+        triggerScope: "any",
+        label: "Unassigned",
+        text: "",
+        preDelay: 0,
+        keyDelay: 15,
+        steps: [],
+        replacementStrategy: "erase-trigger-then-type"
+      };
+    }
+
+    function renderPlaceholderList() {
+      const placeholders = appState.config.placeholders || {};
+      const entries = Object.entries(placeholders);
+
+      const html = entries.length
+        ? entries.map(([name, value]) => `
+            <button class="token-button" type="button" title="${escapeAttribute(value)}" data-placeholder-token="${escapeAttribute(name)}">{${escapeHtml(name)}}</button>
+            <button class="icon-button" type="button" title="Remove ${escapeAttribute(name)}" data-remove-placeholder="${escapeAttribute(name)}">X</button>
+          `).join("")
+        : '<span class="helper-text">No reusable placeholders yet.</span>';
+      elements.placeholderList.innerHTML = html;
+      elements.placeholderListTab.innerHTML = html;
+
+      [elements.placeholderList, elements.placeholderListTab].forEach((list) => {
+        list.querySelectorAll("[data-placeholder-token]").forEach((button) => {
+        button.addEventListener("click", () => insertToken(`{${button.dataset.placeholderToken}}`));
+      });
+        list.querySelectorAll("[data-remove-placeholder]").forEach((button) => {
+        button.addEventListener("click", () => removePlaceholder(button.dataset.removePlaceholder));
+      });
+      });
+    }
+
+    function addPlaceholder() {
+      addPlaceholderFromInputs(elements.placeholderName, elements.placeholderValue);
+    }
+
+    function addPlaceholderFromTab() {
+      addPlaceholderFromInputs(elements.placeholderNameTab, elements.placeholderValueTab);
+    }
+
+    function addPlaceholderFromInputs(nameInput, valueInput) {
+      const name = sanitizePlaceholderName(nameInput.value);
+      const value = valueInput.value.trim();
+      if (!name || !value) {
+        showToast("Placeholder needs both a name and a value.", "error");
+        return;
+      }
+
+      appState.config.placeholders = appState.config.placeholders || {};
+      appState.config.placeholders[name] = value;
+      nameInput.value = "";
+      valueInput.value = "";
+      renderPlaceholderList();
+      renderTokenGroups();
+      renderTemplatePreview();
+      logActivity(`Placeholder {${name}} saved.`);
+      showToast(`Placeholder {${name}} saved.`);
+    }
+
+    function removePlaceholder(name) {
+      if (!appState.config.placeholders) {
+        return;
+      }
+      delete appState.config.placeholders[name];
+      renderPlaceholderList();
+      renderTokenGroups();
+      renderTemplatePreview();
+      logActivity(`Placeholder {${name}} removed.`);
+      showToast(`Placeholder {${name}} removed.`);
+    }
+
+    function sanitizePlaceholderName(value) {
+      return String(value)
+        .trim()
+        .toLowerCase()
+        .replaceAll(/[^a-z0-9_]/g, "_")
+        .replaceAll(/_+/g, "_")
+        .replaceAll(/^_|_$/g, "");
     }
 
     function renderTokenGroups() {
-      const groups = PLACEHOLDER_TOKENS.reduce((result, token) => {
+      const customTokens = Object.keys(appState.config.placeholders || {}).map((name) => ({
+        group: "Reusable",
+        label: `{${name}}`,
+        value: `{${name}}`,
+        description: appState.config.placeholders[name]
+      }));
+      const groups = [...PLACEHOLDER_TOKENS, ...customTokens].reduce((result, token) => {
         result[token.group] = result[token.group] || [];
         result[token.group].push(token);
         return result;
@@ -1462,7 +1996,7 @@ Michael</textarea>
       if (elements.actionType.value === "shortcut") {
         elements.templateHelp.textContent = "Enter a shortcut such as CTRL+B, CTRL+SHIFT+S, ALT+TAB, HOME, or ENTER.";
       } else {
-        elements.templateHelp.textContent = "Use tokens for dynamic text. Clipboard sends Ctrl+V; prompt tokens type an editable bracketed placeholder.";
+        elements.templateHelp.textContent = "Use date tokens or reusable placeholders like {initials}. Placeholders are resolved before writing to the device.";
       }
     }
 
@@ -1482,11 +2016,47 @@ Michael</textarea>
       mapping.preDelay = normalizeNumber(elements.preDelay.value, 0);
       mapping.keyDelay = normalizeNumber(elements.keyDelay.value, 15);
       mapping.steps = collectMacroSteps();
+      const conflictMessage = validateNoTriggerConflicts();
+      if (conflictMessage) {
+        showModal("Trigger Conflict", `<p>${escapeHtml(conflictMessage)}</p>`);
+        showToast("Save blocked by trigger conflict.", "error");
+        return false;
+      }
       renderKeyGrid();
       renderMappingList();
       if (announceSave) {
         logActivity(`Saved ${appState.selectedRule} trigger rule.`);
+        showToast("Expansion saved.");
       }
+      return true;
+    }
+
+    function validateNoTriggerConflicts() {
+      const seen = [];
+      for (const [ruleId, rule] of Object.entries(appState.config.rules)) {
+        if (!rule || rule.type === "disabled" || !rule.triggerPattern) continue;
+        const current = {
+          ruleId,
+          trigger: String(rule.trigger || "suffix").toLowerCase(),
+          pattern: String(rule.triggerPattern).trim().toLowerCase(),
+          scope: String(rule.triggerScope || "any").toLowerCase()
+        };
+        for (const prior of seen) {
+          if (
+            prior.trigger === current.trigger &&
+            prior.pattern === current.pattern &&
+            scopesOverlap(prior.scope, current.scope)
+          ) {
+            return `${prior.ruleId} and ${current.ruleId} both use "${rule.triggerPattern}" for overlapping keyboard sources. Clear or change one trigger.`;
+          }
+        }
+        seen.push(current);
+      }
+      return "";
+    }
+
+    function scopesOverlap(first, second) {
+      return first === second || first === "any" || second === "any";
     }
 
     function renderTemplatePreview() {
@@ -1514,8 +2084,17 @@ Michael</textarea>
       Object.entries(tokenSamples).forEach(([token, sample]) => {
         preview = preview.replaceAll(token, sample);
       });
+      preview = resolveCustomPlaceholders(preview);
       preview = preview.replaceAll(/\{prompt:([^}]+)\}/g, "[$1]");
       elements.templatePreview.textContent = preview || "Expansion preview will appear here.";
+    }
+
+    function resolveCustomPlaceholders(text) {
+      let resolved = String(text || "");
+      Object.entries(appState.config.placeholders || {}).forEach(([name, value]) => {
+        resolved = resolved.replaceAll(`{${name}}`, value);
+      });
+      return resolved;
     }
 
     function formatPreviewDate(date, padded) {
@@ -1530,12 +2109,14 @@ Michael</textarea>
       mapping.steps = collectMacroSteps();
       mapping.steps.push({ value: "", delay: 15 });
       renderMacroSteps();
+      showToast("Output step added.");
     }
 
     function removeMacroStep(stepIndex) {
       const mapping = getMapping(appState.selectedRule);
       mapping.steps = collectMacroSteps().filter((_, index) => index !== stepIndex);
       renderMacroSteps();
+      showToast("Output step removed.");
     }
 
     function collectMacroSteps() {
@@ -1574,7 +2155,7 @@ Michael</textarea>
     }
 
     function exportConfiguration() {
-      updateCurrentMappingFromForm(false);
+      if (!updateCurrentMappingFromForm(false)) return;
       const blob = new Blob([JSON.stringify(appState.config, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -1583,6 +2164,7 @@ Michael</textarea>
       link.click();
       URL.revokeObjectURL(url);
       logActivity("Configuration exported.");
+      showToast("Configuration exported.");
     }
 
     async function importConfiguration(event) {
@@ -1595,13 +2177,21 @@ Michael</textarea>
         const text = await file.text();
         const importedConfig = JSON.parse(text);
         appState.config = normalizeImportedConfiguration(importedConfig);
+        const conflictMessage = validateNoTriggerConflicts();
         renderKeyGrid();
         renderMacroSteps();
         renderMappingList();
         updateEditor();
         logActivity(`Imported ${file.name}.`);
+        if (conflictMessage) {
+          showModal("Imported With Conflicts", `<p>${escapeHtml(conflictMessage)}</p>`);
+          showToast("Imported, but trigger conflicts need attention.", "error");
+        } else {
+          showToast(`Imported ${file.name}.`);
+        }
       } catch (error) {
         logActivity(`Import failed: ${error.message}`);
+        showToast(`Import failed: ${error.message}`, "error");
       } finally {
         event.target.value = "";
       }
@@ -1616,19 +2206,24 @@ Michael</textarea>
       appState.selectedRule = "R01";
       renderAllConfigurationViews();
       logActivity("Factory mappings restored in the editor.");
+      showToast("Factory mappings restored in the editor.");
 
       if (appState.isConnected) {
         try {
-          const response = await sendDeviceCommand("set-config", { config: appState.config }, 15000);
+          const response = await sendDeviceCommand("set-config", { config: buildDeviceConfiguration() }, 15000);
           logActivity(`Factory mappings saved to the device (${response.data?.ruleCount ?? 0} active rules).`);
+          showToast("Factory mappings saved to the device.");
         } catch (error) {
           logActivity(`Factory reset could not be written: ${error.message}`);
+          showToast(`Factory reset write failed: ${error.message}`, "error");
         }
       }
     }
 
     function renderAllConfigurationViews() {
       renderKeyGrid();
+      renderPlaceholderList();
+      renderTokenGroups();
       renderMacroSteps();
       renderMappingList();
       updateEditor();
@@ -1639,6 +2234,9 @@ Michael</textarea>
         profileName: "QuickType Keypad Defaults",
         version: 1,
         mode: "inline-keyboard-intercept",
+        placeholders: {
+          initials: "MM"
+        },
         rules: createDefaultRules()
       };
     }
@@ -1710,6 +2308,7 @@ Michael</textarea>
 
       fallback.profileName = config.profileName || fallback.profileName;
       fallback.version = config.version || fallback.version;
+      fallback.placeholders = normalizePlaceholders(config.placeholders || fallback.placeholders);
 
       if (config.rules) {
         Object.keys(fallback.rules).forEach((ruleId) => {
@@ -1723,6 +2322,17 @@ Michael</textarea>
 
       importLegacyKeymap(config, fallback);
       return fallback;
+    }
+
+    function normalizePlaceholders(placeholders) {
+      const normalized = {};
+      Object.entries(placeholders || {}).forEach(([name, value]) => {
+        const safeName = sanitizePlaceholderName(name);
+        if (safeName && value !== undefined && value !== null) {
+          normalized[safeName] = String(value);
+        }
+      });
+      return normalized;
     }
 
     function importLegacyKeymap(config, fallback) {
@@ -1766,6 +2376,20 @@ Michael</textarea>
       return new TextEncoder().encode(json);
     }
 
+    function buildDeviceConfiguration() {
+      const deviceConfig = structuredClone(appState.config);
+      Object.values(deviceConfig.rules).forEach((rule) => {
+        rule.text = resolveCustomPlaceholders(rule.text);
+        if (Array.isArray(rule.steps)) {
+          rule.steps = rule.steps.map((step) => ({
+            ...step,
+            value: resolveCustomPlaceholders(step.value)
+          }));
+        }
+      });
+      return deviceConfig;
+    }
+
     function getMapping(ruleId) {
       return appState.config.rules[ruleId];
     }
@@ -1778,6 +2402,7 @@ Michael</textarea>
     function clearActivityLog() {
       elements.activityLog.innerHTML = "";
       logActivity("Activity log cleared.");
+      showToast("Activity log cleared.");
     }
 
     function logActivity(message) {
