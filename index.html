@@ -729,7 +729,7 @@
           <span id="statusDot" class="status-dot" aria-hidden="true"></span>
           <span id="connectionStatus">No device connected</span>
         </div>
-        <button id="connectButton" class="primary-button" type="button" title="Connect a WebHID device">Connect Device</button>
+        <button id="connectButton" class="primary-button" type="button" title="Connect the QuickType USB serial port">Connect Device</button>
         <div class="mode-control" aria-label="Inline keyboard path">
           <span>USB Path</span>
           <div class="mode-toggle">
@@ -745,7 +745,7 @@
           <li><button class="active" type="button" data-jump-target="keysPanel">Trigger Rules</button></li>
           <li><button type="button" data-jump-target="editorPanel">Replacement Editor</button></li>
           <li><button type="button" data-jump-target="rtcPanel">RTC Functions</button></li>
-          <li><button type="button" data-jump-target="activityPanel">HID Activity</button></li>
+          <li><button type="button" data-jump-target="activityPanel">Device Activity</button></li>
         </ul>
       </nav>
 
@@ -758,7 +758,7 @@
         </ul>
       </section>
 
-      <p class="sidebar-footer">WebHID is available in Chromium-based browsers from secure origins such as HTTPS or localhost.</p>
+      <p class="sidebar-footer">Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.</p>
     </aside>
 
     <main class="main">
@@ -775,8 +775,8 @@
         </div>
       </header>
 
-      <section id="webHidNotice" class="notice hidden">
-        This browser does not expose WebHID. You can still design a configuration, but device read/write will stay disabled.
+      <section id="webSerialNotice" class="notice hidden">
+        This browser does not expose Web Serial. You can still design and export a configuration, but device read/write requires Chrome or Edge on HTTPS or localhost.
       </section>
 
       <section class="workspace">
@@ -815,6 +815,7 @@
                 <div class="field">
                   <label for="triggerMode">Match Mode</label>
                   <select id="triggerMode" name="triggerMode">
+                    <option value="key">Physical key press</option>
                     <option value="suffix">After typed trigger</option>
                     <option value="delimiter">After delimiter</option>
                     <option value="instant">Immediately</option>
@@ -824,8 +825,16 @@
 
               <div class="two-column">
                 <div class="field">
-                  <label for="triggerPattern">Typed Trigger</label>
-                  <input id="triggerPattern" name="triggerPattern" type="text" maxlength="48" placeholder=";;sig or 00#">
+                  <label id="triggerPatternLabel" for="triggerPattern">Trigger</label>
+                  <input id="triggerPattern" name="triggerPattern" type="text" maxlength="48" list="physicalKeyOptions" placeholder="KP_0 or ;;sig">
+                  <datalist id="physicalKeyOptions">
+                    <option value="KP_NUMLOCK"><option value="KP_SLASH"><option value="KP_ASTERISK">
+                    <option value="KP_MINUS"><option value="KP_PLUS"><option value="KP_ENTER">
+                    <option value="KP_0"><option value="KP_00"><option value="KP_1"><option value="KP_2">
+                    <option value="KP_3"><option value="KP_4"><option value="KP_5"><option value="KP_6">
+                    <option value="KP_7"><option value="KP_8"><option value="KP_9"><option value="KP_PERIOD">
+                    <option value="ENTER"><option value="BACKSPACE"><option value="TAB"><option value="DELETE">
+                  </datalist>
                 </div>
                 <div class="field">
                   <label for="triggerScope">Keyboard Source</label>
@@ -844,9 +853,9 @@
 
               <div class="field">
                 <label for="macroText">Expansion Template</label>
-                <textarea id="macroText" name="macroText" spellcheck="false">Best,
+                <textarea id="macroText" name="macroText" maxlength="1024" spellcheck="false">Best,
 Michael</textarea>
-                <p class="helper-text">Use tokens for dynamic text. For example: {date}, {time}, {clipboard}, {cursor}, or {prompt:client}.</p>
+                <p id="templateHelp" class="helper-text">Use tokens for dynamic text. Clipboard sends Ctrl+V; prompt tokens type an editable bracketed placeholder.</p>
               </div>
 
               <div class="field">
@@ -915,11 +924,12 @@ Michael</textarea>
           <div class="panel-header">
             <div>
               <h3>RTC Functions</h3>
-              <p>Reserved token names for firmware date and time expansion.</p>
+              <p>Tokens resolved from the DS3231 when a rule runs.</p>
             </div>
           </div>
           <div class="panel-body">
             <div id="rtcFunctionList" class="function-list"></div>
+            <button id="syncClockButton" class="secondary-button" type="button" style="margin-top: 14px;">Sync Clock to This Computer</button>
           </div>
         </div>
       </section>
@@ -928,8 +938,8 @@ Michael</textarea>
         <div class="panel" id="activityPanel">
           <div class="panel-header">
             <div>
-              <h3>HID Activity</h3>
-              <p>Connection and report activity will appear here.</p>
+              <h3>Device Activity</h3>
+              <p>Connection, configuration, and firmware messages appear here.</p>
             </div>
             <button id="clearLogButton" class="icon-button" type="button" title="Clear activity log">C</button>
           </div>
@@ -942,13 +952,24 @@ Michael</textarea>
   </div>
 
   <script>
-    const QUICKTYPE_VENDOR_ID = null;
-    const QUICKTYPE_PRODUCT_ID = null;
-    const RULE_COUNT = 12;
+    const PROTOCOL_VERSION = 1;
+    const SERIAL_BAUD_RATE = 115200;
+    const REQUEST_TIMEOUT_MS = 8000;
+    const MAX_CONFIG_PAYLOAD_BYTES = 30000;
+    const RULE_COUNT = 24;
     const PLACEHOLDER_TOKENS = [
       { group: "RTC", label: "Date", value: "{date}", description: "Current RTC date" },
+      { group: "RTC", label: "Short Date", value: "{date_short}", description: "Current RTC date without leading zeroes" },
       { group: "RTC", label: "Time", value: "{time}", description: "Current RTC time" },
       { group: "RTC", label: "Timestamp", value: "{datetime}", description: "Current RTC date and time" },
+      { group: "RTC", label: "Tomorrow", value: "{tomorrow_short}", description: "Tomorrow's short date" },
+      { group: "RTC", label: "Month", value: "{month}", description: "Current month number" },
+      { group: "RTC", label: "Month 2-digit", value: "{month_padded}", description: "Current month with a leading zero" },
+      { group: "RTC", label: "Month name", value: "{month_name}", description: "Current full month name" },
+      { group: "RTC", label: "Day", value: "{day}", description: "Current day number" },
+      { group: "RTC", label: "Day 2-digit", value: "{day_padded}", description: "Current day with a leading zero" },
+      { group: "RTC", label: "Year", value: "{year}", description: "Current four-digit year" },
+      { group: "RTC", label: "Year 2-digit", value: "{year_short}", description: "Current two-digit year" },
       { group: "Placeholders", label: "Cursor", value: "{cursor}", description: "Move caret here after typing" },
       { group: "Placeholders", label: "Clipboard", value: "{clipboard}", description: "Paste captured clipboard text" },
       { group: "Placeholders", label: "Prompt", value: "{prompt:name}", description: "Ask for a value before expanding" },
@@ -958,7 +979,14 @@ Michael</textarea>
 
     const appState = {
       selectedRule: "R01",
-      device: null,
+      port: null,
+      reader: null,
+      writer: null,
+      readLoop: null,
+      readBuffer: "",
+      nextRequestId: 1,
+      pendingRequests: new Map(),
+      deviceInfo: null,
       isConnected: false,
       config: createDefaultConfig()
     };
@@ -970,7 +998,7 @@ Michael</textarea>
     function initApp() {
       cacheElements();
       bindEvents();
-      validateWebHidSupport();
+      validateWebSerialSupport();
       renderKeyGrid();
       renderTokenGroups();
       renderRtcFunctions();
@@ -992,7 +1020,8 @@ Michael</textarea>
       elements.importFile = document.getElementById("importFile");
       elements.factoryResetButton = document.getElementById("factoryResetButton");
       elements.clearLogButton = document.getElementById("clearLogButton");
-      elements.webHidNotice = document.getElementById("webHidNotice");
+      elements.webSerialNotice = document.getElementById("webSerialNotice");
+      elements.syncClockButton = document.getElementById("syncClockButton");
       elements.keyGrid = document.getElementById("keyGrid");
       elements.mappingForm = document.getElementById("mappingForm");
       elements.editorTitle = document.getElementById("editorTitle");
@@ -1000,9 +1029,11 @@ Michael</textarea>
       elements.actionType = document.getElementById("actionType");
       elements.triggerMode = document.getElementById("triggerMode");
       elements.triggerPattern = document.getElementById("triggerPattern");
+      elements.triggerPatternLabel = document.getElementById("triggerPatternLabel");
       elements.triggerScope = document.getElementById("triggerScope");
       elements.macroName = document.getElementById("macroName");
       elements.macroText = document.getElementById("macroText");
+      elements.templateHelp = document.getElementById("templateHelp");
       elements.preDelay = document.getElementById("preDelay");
       elements.keyDelay = document.getElementById("keyDelay");
       elements.tokenGroups = document.getElementById("tokenGroups");
@@ -1027,8 +1058,11 @@ Michael</textarea>
       elements.factoryResetButton.addEventListener("click", restoreFactoryDefaults);
       elements.clearLogButton.addEventListener("click", clearActivityLog);
       elements.addStepButton.addEventListener("click", addMacroStep);
+      elements.syncClockButton.addEventListener("click", syncDeviceClock);
       elements.mappingForm.addEventListener("submit", saveCurrentMapping);
       elements.macroText.addEventListener("input", renderTemplatePreview);
+      elements.actionType.addEventListener("change", updateEditorHints);
+      elements.triggerMode.addEventListener("change", updateEditorHints);
 
       document.querySelectorAll("[data-jump-target]").forEach((button) => {
         button.addEventListener("click", () => {
@@ -1039,74 +1073,79 @@ Michael</textarea>
       });
     }
 
-    function validateWebHidSupport() {
-      const isSupported = "hid" in navigator;
-      elements.webHidNotice.classList.toggle("hidden", isSupported);
+    function validateWebSerialSupport() {
+      const isSupported = "serial" in navigator;
+      elements.webSerialNotice.classList.toggle("hidden", isSupported);
       if (!isSupported) {
-        logActivity("WebHID unavailable in this browser.");
+        logActivity("Web Serial unavailable in this browser.");
       }
     }
 
     async function requestDeviceConnection() {
-      if (!("hid" in navigator)) {
-        logActivity("Cannot connect: WebHID is not supported.");
+      if (!("serial" in navigator)) {
+        logActivity("Cannot connect: Web Serial is not supported.");
         return;
       }
 
       try {
-        logActivity("Requesting QuickType device access...");
-        const filters = buildDeviceFilters();
-        const devices = await navigator.hid.requestDevice({ filters });
-        const device = devices[0];
-
-        if (!device) {
-          logActivity("No device selected.");
-          return;
-        }
-
-        await connectDevice(device);
+        logActivity("Choose the QuickType serial port in the browser prompt.");
+        const port = await navigator.serial.requestPort();
+        await connectDevice(port);
       } catch (error) {
-        logActivity(`Connection request failed: ${error.message}`);
+        logActivity(`Connection failed: ${error.message}`);
+        if (appState.port) {
+          await disconnectDevice();
+        }
       }
     }
 
-    function buildDeviceFilters() {
-      if (QUICKTYPE_VENDOR_ID && QUICKTYPE_PRODUCT_ID) {
-        return [{ vendorId: QUICKTYPE_VENDOR_ID, productId: QUICKTYPE_PRODUCT_ID }];
-      }
-
-      return [];
-    }
-
-    async function connectDevice(device) {
-      appState.device = device;
-
-      if (!device.opened) {
-        await device.open();
-      }
-
-      device.addEventListener("inputreport", handleInputReport);
+    async function connectDevice(port) {
+      appState.port = port;
+      await port.open({ baudRate: SERIAL_BAUD_RATE, bufferSize: 65536 });
+      appState.writer = port.writable.getWriter();
+      appState.reader = port.readable.getReader();
       appState.isConnected = true;
       updateDeviceControls();
-      logActivity(`Connected to ${device.productName || "QuickType device"}.`);
+      appState.readLoop = readSerialLoop();
+      logActivity("Serial port opened. Waiting for QuickType firmware...");
+
+      let response;
+      try {
+        response = await sendDeviceCommand("ping", {}, 3000);
+      } catch (firstError) {
+        await delay(1000);
+        response = await sendDeviceCommand("ping", {}, 8000);
+      }
+
+      appState.deviceInfo = response.data || {};
+      updateDeviceControls();
+      logActivity(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
     }
 
     async function disconnectDevice() {
-      if (!appState.device) {
+      if (!appState.port) {
         logActivity("No device to disconnect.");
         return;
       }
 
       try {
-        appState.device.removeEventListener("inputreport", handleInputReport);
-        if (appState.device.opened) {
-          await appState.device.close();
+        rejectPendingRequests(new Error("Device disconnected"));
+        if (appState.reader) {
+          await appState.reader.cancel();
+          appState.reader.releaseLock();
+          appState.reader = null;
         }
+        if (appState.writer) {
+          appState.writer.releaseLock();
+          appState.writer = null;
+        }
+        await appState.port.close();
         logActivity("Device disconnected.");
       } catch (error) {
         logActivity(`Disconnect failed: ${error.message}`);
       } finally {
-        appState.device = null;
+        appState.port = null;
+        appState.deviceInfo = null;
         appState.isConnected = false;
         updateDeviceControls();
       }
@@ -1117,9 +1156,20 @@ Michael</textarea>
         return;
       }
 
-      logActivity("Reading configuration from device...");
-      await sendHidReport("READ_CONFIG", new Uint8Array([0x01]));
-      logActivity("Read request sent. Parser stub is waiting for firmware report format.");
+      try {
+        logActivity("Reading configuration from device...");
+        const response = await sendDeviceCommand("get-config");
+        appState.config = normalizeImportedConfiguration(response.data);
+        appState.selectedRule = "R01";
+        renderAllConfigurationViews();
+        logActivity("Device configuration loaded.");
+      } catch (error) {
+        if (error.code === "NO_CONFIG") {
+          logActivity("The device has no saved configuration. The factory draft remains open; use Write Configuration to install it.");
+        } else {
+          logActivity(`Read failed: ${error.message}`);
+        }
+      }
     }
 
     async function writeDeviceConfiguration() {
@@ -1127,36 +1177,151 @@ Michael</textarea>
         return;
       }
 
-      const payload = serializeConfiguration(appState.config);
-      logActivity(`Writing ${payload.byteLength} bytes to device...`);
-      await sendHidReport("WRITE_CONFIG", payload);
-      logActivity("Write request sent. Firmware acknowledgement handling is stubbed.");
+      try {
+        updateCurrentMappingFromForm(false);
+        const payload = serializeConfiguration(appState.config);
+        if (payload.byteLength > MAX_CONFIG_PAYLOAD_BYTES) {
+          logActivity(`Write failed: configuration is ${payload.byteLength} bytes; the safe limit is ${MAX_CONFIG_PAYLOAD_BYTES}.`);
+          return;
+        }
+        logActivity(`Writing ${payload.byteLength} bytes to device...`);
+        const response = await sendDeviceCommand("set-config", { config: appState.config }, 15000);
+        logActivity(`Configuration saved (${response.data?.ruleCount ?? 0} active rules).`);
+      } catch (error) {
+        logActivity(`Write failed: ${error.message}`);
+      }
     }
 
-    async function sendHidReport(reportName, payload) {
-      if (!appState.device) {
-        throw new Error("No connected HID device");
+    async function syncDeviceClock() {
+      if (!ensureConnected("sync the clock")) {
+        return;
       }
 
-      console.info("[QuickType HID stub]", reportName, payload);
-      await Promise.resolve();
-    }
-
-    function handleInputReport(event) {
-      const parsed = parseInputReport(event.reportId, event.data);
-      logActivity(`Input report ${event.reportId}: ${parsed.summary}`);
-    }
-
-    function parseInputReport(reportId, dataView) {
-      console.info("[QuickType parser stub]", reportId, dataView);
-      return {
-        reportId,
-        summary: "unparsed firmware response"
+      const now = new Date();
+      const clock = {
+        year: now.getFullYear(),
+        month: now.getMonth() + 1,
+        day: now.getDate(),
+        dow: ((now.getDay() + 6) % 7) + 1,
+        hour: now.getHours(),
+        minute: now.getMinutes(),
+        second: now.getSeconds()
       };
+
+      try {
+        await sendDeviceCommand("set-clock", { clock });
+        logActivity(`RTC synchronized to ${now.toLocaleString()}.`);
+      } catch (error) {
+        logActivity(`Clock sync failed: ${error.message}`);
+      }
+    }
+
+    async function sendDeviceCommand(command, payload = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+      if (!appState.writer) {
+        throw new Error("Serial port is not open");
+      }
+
+      const id = appState.nextRequestId;
+      appState.nextRequestId += 1;
+      const request = { qt: PROTOCOL_VERSION, id, command, ...payload };
+      const encoded = new TextEncoder().encode(`${JSON.stringify(request)}\n`);
+
+      const responsePromise = new Promise((resolve, reject) => {
+        const timer = window.setTimeout(() => {
+          appState.pendingRequests.delete(id);
+          reject(new Error(`Device did not answer ${command} within ${timeoutMs / 1000} seconds`));
+        }, timeoutMs);
+        appState.pendingRequests.set(id, { resolve, reject, timer });
+      });
+
+      try {
+        await appState.writer.write(encoded);
+      } catch (error) {
+        const pending = appState.pendingRequests.get(id);
+        if (pending) {
+          clearTimeout(pending.timer);
+          appState.pendingRequests.delete(id);
+        }
+        throw error;
+      }
+
+      return responsePromise;
+    }
+
+    async function readSerialLoop() {
+      const decoder = new TextDecoder();
+      try {
+        while (appState.reader) {
+          const { value, done } = await appState.reader.read();
+          if (done) {
+            break;
+          }
+          appState.readBuffer += decoder.decode(value, { stream: true });
+          drainSerialLines();
+        }
+      } catch (error) {
+        if (appState.isConnected) {
+          logActivity(`Serial read stopped: ${error.message}`);
+          rejectPendingRequests(error);
+        }
+      }
+    }
+
+    function drainSerialLines() {
+      let newlineIndex = appState.readBuffer.indexOf("\n");
+      while (newlineIndex >= 0) {
+        const line = appState.readBuffer.slice(0, newlineIndex).replace(/\r$/, "").trim();
+        appState.readBuffer = appState.readBuffer.slice(newlineIndex + 1);
+        if (line) {
+          handleSerialLine(line);
+        }
+        newlineIndex = appState.readBuffer.indexOf("\n");
+      }
+    }
+
+    function handleSerialLine(line) {
+      let message;
+      try {
+        message = JSON.parse(line);
+      } catch {
+        logActivity(`Device: ${line}`);
+        return;
+      }
+
+      if (message.qt !== PROTOCOL_VERSION || !Number.isInteger(message.id)) {
+        logActivity(`Device message: ${line}`);
+        return;
+      }
+
+      const pending = appState.pendingRequests.get(message.id);
+      if (!pending) {
+        logActivity(`Unsolicited device response ${message.id}: ${message.type || "unknown"}`);
+        return;
+      }
+
+      clearTimeout(pending.timer);
+      appState.pendingRequests.delete(message.id);
+
+      if (message.ok) {
+        pending.resolve(message);
+        return;
+      }
+
+      const error = new Error(message.error?.message || "Device rejected the request");
+      error.code = message.error?.code || "DEVICE_ERROR";
+      pending.reject(error);
+    }
+
+    function rejectPendingRequests(error) {
+      appState.pendingRequests.forEach((pending) => {
+        clearTimeout(pending.timer);
+        pending.reject(error);
+      });
+      appState.pendingRequests.clear();
     }
 
     function ensureConnected(actionName) {
-      if (appState.isConnected && appState.device) {
+      if (appState.isConnected && appState.port && appState.writer) {
         return true;
       }
 
@@ -1166,11 +1331,19 @@ Michael</textarea>
 
     function updateDeviceControls() {
       elements.statusDot.classList.toggle("connected", appState.isConnected);
-      elements.connectionStatus.textContent = appState.isConnected ? "Device connected" : "No device connected";
-      elements.connectButton.disabled = appState.isConnected || !("hid" in navigator);
+      const version = appState.deviceInfo?.firmwareVersion;
+      elements.connectionStatus.textContent = appState.isConnected
+        ? `Connected${version ? ` · v${version}` : ""}`
+        : "No device connected";
+      elements.connectButton.disabled = appState.isConnected || !("serial" in navigator);
       elements.disconnectButton.disabled = !appState.isConnected;
       elements.readButton.disabled = !appState.isConnected;
       elements.writeButton.disabled = !appState.isConnected;
+      elements.syncClockButton.disabled = !appState.isConnected;
+    }
+
+    function delay(milliseconds) {
+      return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
     }
 
     function selectKey(ruleId) {
@@ -1278,10 +1451,27 @@ Michael</textarea>
       elements.preDelay.value = mapping.preDelay;
       elements.keyDelay.value = mapping.keyDelay;
       renderTemplatePreview();
+      updateEditorHints();
+    }
+
+    function updateEditorHints() {
+      const isPhysicalKey = elements.triggerMode.value === "key";
+      elements.triggerPatternLabel.textContent = isPhysicalKey ? "Physical Key" : "Typed Trigger";
+      elements.triggerPattern.placeholder = isPhysicalKey ? "KP_0, KP_ENTER, BACKSPACE..." : ";;sig or 00#";
+
+      if (elements.actionType.value === "shortcut") {
+        elements.templateHelp.textContent = "Enter a shortcut such as CTRL+B, CTRL+SHIFT+S, ALT+TAB, HOME, or ENTER.";
+      } else {
+        elements.templateHelp.textContent = "Use tokens for dynamic text. Clipboard sends Ctrl+V; prompt tokens type an editable bracketed placeholder.";
+      }
     }
 
     function saveCurrentMapping(event) {
       event.preventDefault();
+      updateCurrentMappingFromForm(true);
+    }
+
+    function updateCurrentMappingFromForm(announceSave) {
       const mapping = getMapping(appState.selectedRule);
       mapping.type = elements.actionType.value;
       mapping.trigger = elements.triggerMode.value;
@@ -1294,15 +1484,26 @@ Michael</textarea>
       mapping.steps = collectMacroSteps();
       renderKeyGrid();
       renderMappingList();
-      logActivity(`Saved ${appState.selectedRule} trigger rule.`);
+      if (announceSave) {
+        logActivity(`Saved ${appState.selectedRule} trigger rule.`);
+      }
     }
 
     function renderTemplatePreview() {
       const now = new Date();
       const tokenSamples = {
-        "{date}": now.toLocaleDateString(),
+        "{date}": formatPreviewDate(now, true),
+        "{date_short}": formatPreviewDate(now, false),
         "{time}": now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        "{datetime}": `${now.toLocaleDateString()} ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+        "{datetime}": `${formatPreviewDate(now, true)} ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+        "{tomorrow_short}": formatPreviewDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1), false),
+        "{month}": String(now.getMonth() + 1),
+        "{month_padded}": String(now.getMonth() + 1).padStart(2, "0"),
+        "{month_name}": now.toLocaleString([], { month: "long" }),
+        "{day}": String(now.getDate()),
+        "{day_padded}": String(now.getDate()).padStart(2, "0"),
+        "{year}": String(now.getFullYear()),
+        "{year_short}": String(now.getFullYear()).slice(-2),
         "{clipboard}": "[clipboard]",
         "{cursor}": "|",
         "{tab}": "\t",
@@ -1315,6 +1516,13 @@ Michael</textarea>
       });
       preview = preview.replaceAll(/\{prompt:([^}]+)\}/g, "[$1]");
       elements.templatePreview.textContent = preview || "Expansion preview will appear here.";
+    }
+
+    function formatPreviewDate(date, padded) {
+      const month = padded ? String(date.getMonth() + 1).padStart(2, "0") : String(date.getMonth() + 1);
+      const day = padded ? String(date.getDate()).padStart(2, "0") : String(date.getDate());
+      const year = padded ? String(date.getFullYear()) : String(date.getFullYear()).slice(-2);
+      return `${month}/${day}/${year}`;
     }
 
     function addMacroStep() {
@@ -1366,6 +1574,7 @@ Michael</textarea>
     }
 
     function exportConfiguration() {
+      updateCurrentMappingFromForm(false);
       const blob = new Blob([JSON.stringify(appState.config, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -1398,19 +1607,36 @@ Michael</textarea>
       }
     }
 
-    function restoreFactoryDefaults() {
+    async function restoreFactoryDefaults() {
+      if (!window.confirm("Restore the original QuickType keypad mappings?")) {
+        return;
+      }
+
       appState.config = createDefaultConfig();
       appState.selectedRule = "R01";
+      renderAllConfigurationViews();
+      logActivity("Factory mappings restored in the editor.");
+
+      if (appState.isConnected) {
+        try {
+          const response = await sendDeviceCommand("set-config", { config: appState.config }, 15000);
+          logActivity(`Factory mappings saved to the device (${response.data?.ruleCount ?? 0} active rules).`);
+        } catch (error) {
+          logActivity(`Factory reset could not be written: ${error.message}`);
+        }
+      }
+    }
+
+    function renderAllConfigurationViews() {
       renderKeyGrid();
       renderMacroSteps();
       renderMappingList();
       updateEditor();
-      logActivity("Restored draft factory defaults.");
     }
 
     function createDefaultConfig() {
       return {
-        profileName: "QuickType Draft",
+        profileName: "QuickType Keypad Defaults",
         version: 1,
         mode: "inline-keyboard-intercept",
         rules: createDefaultRules()
@@ -1422,18 +1648,57 @@ Michael</textarea>
       for (let index = 1; index <= RULE_COUNT; index += 1) {
         const ruleId = `R${String(index).padStart(2, "0")}`;
         rules[ruleId] = {
-          type: "expansion",
-          trigger: "suffix",
-          triggerPattern: index === 1 ? ";;sig" : "",
+          type: "disabled",
+          trigger: "key",
+          triggerPattern: "",
           triggerScope: "any",
-          label: index === 1 ? "Email signature" : "Unassigned",
-          text: index === 1 ? "Best,\nMichael\n{date}" : "",
+          label: "Unassigned",
+          text: "",
           preDelay: 0,
           keyDelay: 15,
-          steps: index === 1 ? [{ value: "resolve placeholders", delay: 0 }, { value: "type expansion", delay: 15 }] : [],
+          steps: [],
           replacementStrategy: "erase-trigger-then-type"
         };
       }
+
+      const defaults = [
+        ["R01", "KP_NUMLOCK", "Employee number", "232175"],
+        ["R02", "KP_SLASH", "Dated initials", "{date_short}:  {cursor} MM"],
+        ["R03", "KP_ASTERISK", "Short date and initials", "{month}/{day}{cursor} MM"],
+        ["R04", "KP_MINUS", "Divider", "--------------------"],
+        ["R05", "KP_ENTER", "Enter", "", [{ value: "key:ENTER", delay: 0 }]],
+        ["R06", "ENTER", "Enter", "", [{ value: "key:ENTER", delay: 0 }]],
+        ["R07", "BACKSPACE", "New bold note", "", [
+          { value: "key:HOME", delay: 15 },
+          { value: "key:ENTER", delay: 15 },
+          { value: "key:ENTER", delay: 15 },
+          { value: "key:UP", delay: 15 },
+          { value: "key:CTRL+B", delay: 0 }
+        ]],
+        ["R08", "KP_7", "Morning appointment", "{date_short}: conf 8-12 appt. on {tomorrow_short} MM"],
+        ["R09", "KP_8", "Afternoon appointment", "{date_short}: conf 1-5 appt. on {tomorrow_short} MM"],
+        ["R10", "KP_0", "Customer", "Customer"],
+        ["R11", "KP_00", "Left voicemail", "LVM to"],
+        ["R12", "KP_9", "Date MM/DD/YYYY", "{date}"],
+        ["R13", "KP_6", "Date M/D/YY", "{date_short}"],
+        ["R14", "KP_5", "Date ISO", "{year}-{month_padded}-{day_padded}"],
+        ["R15", "KP_4", "Date dashed", "{month_padded}-{day_padded}-{year}"],
+        ["R16", "KP_3", "Date long", "{month_name} {day}, {year}"],
+        ["R17", "KP_2", "Date compact", "{year}{month_padded}{day_padded}"],
+        ["R18", "KP_1", "Date compact short", "{month_padded}{day_padded}{year_short}"]
+      ];
+
+      defaults.forEach(([ruleId, triggerPattern, label, text, steps = []]) => {
+        rules[ruleId] = {
+          ...rules[ruleId],
+          type: steps.length ? "shortcut" : "expansion",
+          triggerPattern,
+          label,
+          text,
+          steps
+        };
+      });
+
       return rules;
     }
 
