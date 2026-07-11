@@ -191,10 +191,10 @@
     }
 
     .primary-button {
-      width: 100%;
       color: #ffffff;
       background: var(--accent);
       box-shadow: 0 10px 24px rgba(9,107,114,0.22);
+      padding: 0 14px;
     }
 
     .primary-button:hover,
@@ -210,6 +210,35 @@
       background: var(--accent-soft);
       border: 1px solid rgba(9,107,114,0.18);
       padding: 0 13px;
+    }
+
+    .secondary-button.write-dirty {
+      color: #6a4100;
+      background: #fff2cf;
+      border-color: #e5a93b;
+      animation: writePulse 1.45s ease-in-out infinite;
+    }
+
+    .secondary-button.write-dirty::after {
+      content: "!";
+      display: inline-grid;
+      place-items: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      background: #e5a93b;
+      color: #1d2730;
+      font-size: 0.72rem;
+      font-weight: 900;
+    }
+
+    @keyframes writePulse {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(229,169,59,0.46);
+      }
+      50% {
+        box-shadow: 0 0 0 7px rgba(229,169,59,0);
+      }
     }
 
     .ghost-button {
@@ -318,6 +347,39 @@
       justify-content: flex-end;
     }
 
+    .danger-disclosure {
+      flex-basis: 100%;
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 2px;
+    }
+
+    .danger-disclosure details {
+      display: grid;
+      justify-items: end;
+      gap: 6px;
+    }
+
+    .danger-disclosure summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      list-style: none;
+    }
+
+    .danger-disclosure summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .danger-disclosure summary::before {
+      content: "Show ";
+    }
+
+    .danger-disclosure details[open] summary::before {
+      content: "Hide ";
+    }
+
     .command-bar {
       display: flex;
       gap: 10px;
@@ -347,7 +409,7 @@
     }
 
     .workspace.primary {
-      grid-template-columns: minmax(500px, 44%) minmax(0, 1fr);
+      grid-template-columns: minmax(520px, 46%) minmax(0, 1fr);
       height: 100%;
     }
 
@@ -433,7 +495,7 @@
     .expansion-header,
     .key-button {
       display: grid;
-      grid-template-columns: 48px minmax(100px, 0.8fr) minmax(160px, 1.4fr) minmax(120px, 1fr);
+      grid-template-columns: 42px minmax(120px, 0.8fr) minmax(140px, 1fr) minmax(180px, 1.4fr);
       align-items: center;
       gap: 8px;
     }
@@ -476,6 +538,18 @@
       overflow-wrap: anywhere;
     }
 
+    .row-number {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-variant-numeric: tabular-nums;
+      font-weight: 800;
+    }
+
+    .key-number.missing {
+      color: var(--warn);
+      font-style: italic;
+    }
+
     .key-action {
       color: var(--muted);
       font-size: 0.82rem;
@@ -516,6 +590,29 @@
       gap: 9px;
     }
 
+    .editor-form {
+      height: 100%;
+      min-height: 0;
+      grid-template-rows: auto auto auto auto;
+    }
+
+    #editorPanel .panel-header {
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    #editorPanel .panel-header > div:first-child {
+      min-width: 0;
+    }
+
+    #editorPanel .panel-body {
+      overflow: auto;
+    }
+
+    .editor-fields {
+      align-items: end;
+    }
+
     .field {
       display: grid;
       gap: 7px;
@@ -546,11 +643,39 @@
       line-height: 1.45;
     }
 
+    .editor-template-field {
+      min-height: 0;
+    }
+
+    .editor-template-field textarea {
+      min-height: 170px;
+      resize: none;
+    }
+
     .field input:focus,
     .field select:focus,
     .field textarea:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 4px rgba(9,107,114,0.14);
+    }
+
+    .template-insert-row {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto;
+      gap: 8px;
+      align-items: end;
+      padding: 10px;
+      background: #f8fbfc;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+    }
+
+    .template-insert-row .field {
+      gap: 5px;
+    }
+
+    .template-insert-row .secondary-button {
+      min-height: 40px;
     }
 
     .two-column {
@@ -580,7 +705,7 @@
 
     .placeholder-row {
       display: grid;
-      grid-template-columns: minmax(90px, 0.8fr) minmax(120px, 1.4fr) 38px;
+      grid-template-columns: minmax(140px, 0.8fr) minmax(220px, 1.5fr) minmax(140px, auto);
       gap: 8px;
       align-items: center;
     }
@@ -595,11 +720,40 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
+    .placeholder-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .placeholder-item {
+      display: grid;
+      grid-template-columns: minmax(120px, 0.8fr) minmax(180px, 1.4fr) 38px;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+    }
+
+    .placeholder-item code {
+      color: var(--accent-strong);
+      font-weight: 900;
+      overflow-wrap: anywhere;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .placeholder-value {
+      color: var(--muted);
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
     .advanced-panel {
       border: 1px solid var(--line);
       border-radius: var(--radius);
       background: #f8fbfc;
-      padding: 12px;
+      padding: 10px 12px;
     }
 
     .advanced-panel summary {
@@ -609,7 +763,31 @@
     }
 
     .advanced-panel .form-grid {
-      margin-top: 14px;
+      margin-top: 10px;
+    }
+
+    .inline-tools-panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+      background: #f8fbfc;
+      padding: 9px 10px;
+    }
+
+    .inline-tools-panel summary {
+      cursor: pointer;
+      color: #334252;
+      font-weight: 900;
+    }
+
+    .inline-tools-panel .placeholder-manager {
+      margin-top: 10px;
+    }
+
+    .insert-panel-grid {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr);
+      gap: 12px;
+      margin-top: 10px;
     }
 
     .token-group {
@@ -649,7 +827,9 @@
     }
 
     .preview-box {
-      min-height: 52px;
+      min-height: 46px;
+      max-height: 86px;
+      overflow: auto;
       border: 1px solid var(--line);
       border-radius: var(--radius-small);
       background: #f8fbfc;
@@ -673,7 +853,7 @@
 
     .function-row {
       display: grid;
-      grid-template-columns: 96px 1fr;
+      grid-template-columns: minmax(150px, max-content) 1fr;
       gap: 10px;
       align-items: start;
       padding: 10px;
@@ -694,90 +874,49 @@
       line-height: 1.35;
     }
 
-    .macro-steps {
-      display: grid;
-      gap: 8px;
-      margin-top: 6px;
-    }
-
-    .macro-step {
-      display: grid;
-      grid-template-columns: 1fr 80px 38px;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .macro-step input {
-      min-width: 0;
-    }
-
     .editor-actions {
       display: flex;
-      gap: 10px;
+      gap: 6px;
       flex-wrap: wrap;
-      padding-top: 4px;
-    }
-
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-    }
-
-    .metric {
-      background: var(--panel-soft);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 12px;
-    }
-
-    .metric span {
-      display: block;
-      color: var(--muted);
-      font-size: 0.75rem;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-
-    .metric strong {
-      display: block;
-      margin-top: 6px;
-      font-size: 1.1rem;
-    }
-
-    .mapping-list {
-      display: grid;
-      gap: 8px;
-      max-height: 284px;
-      overflow: auto;
-      padding-right: 4px;
-    }
-
-    .mapping-row {
-      display: grid;
-      grid-template-columns: 54px 1fr auto;
+      justify-content: flex-end;
       align-items: center;
-      gap: 10px;
-      padding: 10px;
-      background: #ffffff;
-      border: 1px solid var(--line);
-      border-radius: var(--radius-small);
     }
 
-    .mapping-row code {
-      color: var(--accent-strong);
-      font-weight: 900;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    }
-
-    .mapping-row span {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
+    .editor-button {
+      min-height: 32px;
+      border-radius: 999px;
+      background: #f5f8fa;
+      color: #334252;
+      border: 1px solid var(--line-strong);
+      padding: 0 11px;
+      font-size: 0.82rem;
+      font-weight: 800;
       white-space: nowrap;
-      color: var(--muted);
-      font-size: 0.88rem;
+    }
+
+    .editor-button:hover {
+      background: #eaf0f5;
+      transform: none;
+    }
+
+    .editor-button.save {
+      background: #10232c;
+      color: #ffffff;
+      border-color: #10232c;
+    }
+
+    .editor-button.delete {
+      background: #fff5f5;
+      color: var(--danger);
+      border-color: rgba(183,51,51,0.28);
+    }
+
+    .editor-button.delete:hover {
+      background: #ffe8e8;
+    }
+
+    .editor-actions .editor-button {
+      white-space: nowrap;
     }
 
     .log {
@@ -896,15 +1035,12 @@
       }
 
       .two-column,
-      .summary-grid,
-      .macro-step,
-      .placeholder-row {
+      .insert-panel-grid,
+      .placeholder-row,
+      .placeholder-item {
         grid-template-columns: 1fr;
       }
 
-      .macro-step .icon-button {
-        width: 100%;
-      }
     }
   </style>
 </head>
@@ -915,7 +1051,7 @@
         <div class="brand-mark" aria-hidden="true">QT</div>
         <div>
           <h1>QuickType</h1>
-          <p>Xiao RP2040 macro device</p>
+          <p>USB Text Expansion Device</p>
         </div>
       </div>
 
@@ -938,14 +1074,14 @@
         <ul class="sidebar-list">
           <li><button class="active" type="button" data-tab="expansionsTab">Expansions</button></li>
           <li><button type="button" data-tab="placeholdersTab">Placeholders</button></li>
-          <li><button type="button" data-tab="rtcTab">RTC Functions</button></li>
+          <li><button type="button" data-tab="rtcTab">Date/Time Functions</button></li>
           <li><button type="button" data-tab="activityTab">Device Activity</button></li>
         </ul>
       </nav>
 
       <p class="sidebar-footer">
         Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.
-        <span class="build-stamp">Build 2026-07-10 15:52:56 PDT</span>
+        <span class="build-stamp">Build 2026-07-10 19:14:25 PDT</span>
       </p>
     </aside>
 
@@ -953,19 +1089,24 @@
       <header class="topbar">
         <div class="title-block">
           <h2>Expansion Configurator</h2>
-          <p>Configure inline keyboard interception rules that detect typed triggers and replace them with expansion text, placeholders, or RTC output.</p>
+          <p>Configure inline keyboard interception rules that detect typed triggers and replace them with expansion text, placeholders, or clock output.</p>
         </div>
         <div class="actions">
           <button id="connectButton" class="secondary-button" type="button">Connect</button>
           <button id="readButton" class="secondary-button" type="button">Read</button>
           <button id="writeButton" class="secondary-button" type="button">Write</button>
-          <button id="readClockButton" class="secondary-button" type="button">Read RTC</button>
+          <button id="readClockButton" class="secondary-button" type="button">Read Clock</button>
           <button id="syncClockButton" class="secondary-button" type="button">Sync Clock</button>
           <button id="disconnectButton" class="secondary-button" type="button">Disconnect</button>
           <button id="exportButton" class="secondary-button" type="button">Export</button>
           <label class="secondary-button" for="importFile">Import</label>
           <input id="importFile" class="hidden" type="file" accept="application/json,.json">
-          <button id="factoryResetButton" class="danger-button" type="button">Factory Reset</button>
+          <div class="danger-disclosure">
+            <details>
+              <summary>danger actions</summary>
+              <button id="factoryResetButton" class="danger-button" type="button">Factory Reset</button>
+            </details>
+          </div>
         </div>
       </header>
 
@@ -978,7 +1119,6 @@
           <div class="panel-header">
             <div>
               <h3>Expansions</h3>
-              <p>A scrollable list of typed triggers and replacement text.</p>
             </div>
             <button id="addExpansionButton" class="secondary-button" type="button">Add Expansion</button>
           </div>
@@ -990,52 +1130,52 @@
         <div class="panel" id="editorPanel">
           <div class="panel-header">
             <div>
-              <h3 id="editorTitle">Rule R01</h3>
-              <p id="editorSubtitle">Inline trigger replacement</p>
+              <h3 id="editorTitle">Editor</h3>
+            </div>
+            <div class="editor-actions">
+              <button id="duplicateExpansionButton" class="editor-button" type="button">Duplicate</button>
+              <button id="deleteExpansionButton" class="editor-button delete" type="button">Delete</button>
+              <button class="editor-button save" type="submit" form="mappingForm">Save</button>
             </div>
           </div>
           <div class="panel-body">
-            <form id="mappingForm" class="form-grid">
-              <div class="field">
-                <label id="triggerPatternLabel" for="triggerPattern">Trigger String</label>
-                <input id="triggerPattern" name="triggerPattern" type="text" maxlength="48" list="physicalKeyOptions" placeholder=";;sig">
-                <datalist id="physicalKeyOptions">
-                  <option value="KP_NUMLOCK"><option value="KP_SLASH"><option value="KP_ASTERISK">
-                  <option value="KP_MINUS"><option value="KP_PLUS"><option value="KP_ENTER">
-                  <option value="KP_0"><option value="KP_00"><option value="KP_1"><option value="KP_2">
-                  <option value="KP_3"><option value="KP_4"><option value="KP_5"><option value="KP_6">
-                  <option value="KP_7"><option value="KP_8"><option value="KP_9"><option value="KP_PERIOD">
-                  <option value="ENTER"><option value="BACKSPACE"><option value="TAB"><option value="DELETE">
-                </datalist>
-              </div>
+            <form id="mappingForm" class="form-grid editor-form" autocomplete="off">
+              <div class="two-column editor-fields">
+                <div class="field">
+                  <label id="triggerPatternLabel" for="triggerPattern">Trigger String</label>
+                  <input id="triggerPattern" name="triggerPattern" type="text" maxlength="48" autocomplete="off" spellcheck="false">
+                </div>
 
-              <div class="field">
-                <label for="macroName">Expansion Name</label>
-                <input id="macroName" name="macroName" type="text" maxlength="32" value="Email signature">
-              </div>
-
-              <div class="field">
-                <label for="macroText">Expansion Template</label>
-                <textarea id="macroText" name="macroText" maxlength="1024" spellcheck="false">Best,
-Michael</textarea>
-                <p id="templateHelp" class="helper-text">Use date tokens or reusable placeholders like {initials}. Placeholders are resolved before writing to the device.</p>
-              </div>
-
-              <div id="placeholdersPanel" class="field">
-                <label>Reusable Placeholders</label>
-                <div class="placeholder-manager">
-                  <div class="placeholder-row">
-                    <input id="placeholderName" type="text" maxlength="24" placeholder="initials" aria-label="Placeholder name">
-                    <input id="placeholderValue" type="text" maxlength="80" placeholder="MM" aria-label="Placeholder value">
-                    <button id="addPlaceholderButton" class="icon-button" type="button" title="Add placeholder">+</button>
-                  </div>
-                  <div id="placeholderList" class="token-toolbar" aria-label="Reusable placeholders"></div>
+                <div class="field">
+                  <label for="macroName">Label</label>
+                  <input id="macroName" name="macroName" type="text" maxlength="32" autocomplete="off" spellcheck="false">
                 </div>
               </div>
 
-              <div class="field">
-                <label>Insert Token</label>
-                <div id="tokenGroups" class="token-groups"></div>
+              <div class="field editor-template-field">
+                <label for="macroText">Expansion Template</label>
+                <div class="template-insert-row" aria-label="Template insertion tools">
+                  <div class="field">
+                    <label for="insertFieldSelect">Insert Field</label>
+                    <select id="insertFieldSelect"></select>
+                  </div>
+                  <button id="insertFieldButton" class="secondary-button" type="button">Insert</button>
+                </div>
+                <textarea id="macroText" name="macroText" maxlength="1024" autocomplete="off" spellcheck="false"></textarea>
+                <p id="templateHelp" class="helper-text">Date/time fields use the device clock. Reusable placeholders are saved text values like {initials}. Special fields handle cursor placement and formatting.</p>
+                <details class="inline-tools-panel">
+                  <summary>Manage reusable placeholders</summary>
+                  <div id="placeholdersPanel" class="field">
+                    <div class="placeholder-manager">
+                      <div class="placeholder-row">
+                        <input id="placeholderName" type="text" maxlength="24" autocomplete="off" spellcheck="false" aria-label="Placeholder name">
+                        <input id="placeholderValue" type="text" maxlength="80" autocomplete="off" spellcheck="false" aria-label="Placeholder value">
+                        <button id="addPlaceholderButton" class="icon-button" type="button" title="Add placeholder">+</button>
+                      </div>
+                      <div id="placeholderList" class="token-toolbar" aria-label="Reusable placeholders"></div>
+                    </div>
+                  </div>
+                </details>
               </div>
 
               <div class="field">
@@ -1044,15 +1184,14 @@ Michael</textarea>
               </div>
 
               <details class="advanced-panel">
-                <summary>Advanced trigger and keybinding options</summary>
+                <summary>Advanced options</summary>
                 <div class="form-grid">
                   <div class="two-column">
                     <div class="field">
                       <label for="actionType">Action Type</label>
                       <select id="actionType" name="actionType">
                         <option value="expansion">Text Expansion</option>
-                        <option value="placeholder">Placeholder Prompt</option>
-                        <option value="rtc">RTC Insert</option>
+                        <option value="rtc">Date/Time Insert</option>
                         <option value="shortcut">Keyboard Shortcut</option>
                         <option value="disabled">Disabled</option>
                       </select>
@@ -1063,7 +1202,6 @@ Michael</textarea>
                         <option value="suffix">After typed trigger</option>
                         <option value="delimiter">After delimiter</option>
                         <option value="instant">Immediately</option>
-                        <option value="key">Physical key press</option>
                       </select>
                     </div>
                   </div>
@@ -1088,56 +1226,19 @@ Michael</textarea>
                     </div>
                   </div>
 
-                  <div class="field">
-                    <label>Output Steps</label>
-                    <div id="macroSteps" class="macro-steps"></div>
-                  </div>
                 </div>
               </details>
-
-              <div class="editor-actions">
-                <button id="duplicateExpansionButton" class="secondary-button" type="button">Duplicate</button>
-                <button id="deleteExpansionButton" class="danger-button" type="button">Delete</button>
-                <button id="addStepButton" class="secondary-button" type="button">Add Step</button>
-                <button class="primary-button" type="submit">Save Expansion</button>
-              </div>
             </form>
           </div>
         </div>
       </section>
 
-      <section id="rtcTab" class="workspace tab-panel hidden">
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <h3>Configuration Summary</h3>
-              <p>Current working copy before writing to the device.</p>
-            </div>
-          </div>
-          <div class="panel-body">
-            <div class="summary-grid" aria-label="Configuration metrics">
-              <div class="metric">
-                <span>Rules</span>
-                <strong id="layerCount">12</strong>
-              </div>
-              <div class="metric">
-                <span>Active</span>
-                <strong id="mappedCount">0</strong>
-              </div>
-              <div class="metric">
-                <span>Mode</span>
-                <strong id="profileVersion">Inline</strong>
-              </div>
-            </div>
-            <div id="mappingList" class="mapping-list" style="margin-top: 16px;"></div>
-          </div>
-        </div>
-
+      <section id="rtcTab" class="workspace single tab-panel hidden">
         <div class="panel" id="rtcPanel">
           <div class="panel-header">
             <div>
-              <h3>RTC Functions</h3>
-              <p>Tokens resolved from the DS3231 when a rule runs.</p>
+              <h3>Date/Time Functions</h3>
+              <p>Fields resolved from the device clock when an expansion runs.</p>
             </div>
           </div>
           <div class="panel-body">
@@ -1157,8 +1258,8 @@ Michael</textarea>
           <div class="panel-body">
             <div class="placeholder-manager">
               <div class="placeholder-row">
-                <input id="placeholderNameTab" type="text" maxlength="24" placeholder="initials" aria-label="Placeholder name">
-                <input id="placeholderValueTab" type="text" maxlength="80" placeholder="MM" aria-label="Placeholder value">
+                <input id="placeholderNameTab" type="text" maxlength="24" autocomplete="off" spellcheck="false" aria-label="Placeholder name">
+                <input id="placeholderValueTab" type="text" maxlength="80" autocomplete="off" spellcheck="false" aria-label="Placeholder value">
                 <button id="addPlaceholderButtonTab" class="secondary-button" type="button">Add Placeholder</button>
               </div>
               <div id="placeholderListTab" class="token-toolbar" aria-label="Reusable placeholders"></div>
@@ -1200,21 +1301,37 @@ Michael</textarea>
     const MAX_CONFIG_PAYLOAD_BYTES = 30000;
     const RULE_COUNT = 24;
     const PLACEHOLDER_TOKENS = [
-      { group: "RTC", label: "Date", value: "{date}", description: "Current RTC date" },
-      { group: "RTC", label: "Short Date", value: "{date_short}", description: "Current RTC date without leading zeroes" },
-      { group: "RTC", label: "Time", value: "{time}", description: "Current RTC time" },
-      { group: "RTC", label: "Timestamp", value: "{datetime}", description: "Current RTC date and time" },
-      { group: "RTC", label: "Tomorrow", value: "{tomorrow_short}", description: "Tomorrow's short date" },
-      { group: "RTC", label: "Month", value: "{month}", description: "Current month number" },
-      { group: "RTC", label: "Month 2-digit", value: "{month_padded}", description: "Current month with a leading zero" },
-      { group: "RTC", label: "Month name", value: "{month_name}", description: "Current full month name" },
-      { group: "RTC", label: "Day", value: "{day}", description: "Current day number" },
-      { group: "RTC", label: "Day 2-digit", value: "{day_padded}", description: "Current day with a leading zero" },
-      { group: "RTC", label: "Year", value: "{year}", description: "Current four-digit year" },
-      { group: "RTC", label: "Year 2-digit", value: "{year_short}", description: "Current two-digit year" },
-      { group: "Placeholders", label: "Cursor", value: "{cursor}", description: "Move caret here after typing" },
-      { group: "Placeholders", label: "Clipboard", value: "{clipboard}", description: "Paste captured clipboard text" },
-      { group: "Placeholders", label: "Prompt", value: "{prompt:name}", description: "Ask for a value before expanding" },
+      { group: "Date/Time Fields", label: "Date", value: "{date}", example: "07/10/2026", description: "Full date" },
+      { group: "Date/Time Fields", label: "Short Date", value: "{date_short}", example: "7/10/26", description: "Date without leading zeroes" },
+      { group: "Date/Time Fields", label: "ISO Date", value: "{iso_date}", example: "2026-07-10", description: "ISO date" },
+      { group: "Date/Time Fields", label: "Time", value: "{time}", example: "6:38 PM", description: "Current time" },
+      { group: "Date/Time Fields", label: "Time with seconds", value: "{time_seconds}", example: "6:38:31 PM", description: "Current time with seconds" },
+      { group: "Date/Time Fields", label: "24-hour time", value: "{time_24}", example: "18:38", description: "24-hour time" },
+      { group: "Date/Time Fields", label: "24-hour time with seconds", value: "{time_24_seconds}", example: "18:38:31", description: "24-hour time with seconds" },
+      { group: "Date/Time Fields", label: "Timestamp", value: "{datetime}", example: "07/10/2026 6:38 PM", description: "Date and time together" },
+      { group: "Date/Time Fields", label: "ISO Date/Time", value: "{iso_datetime}", example: "2026-07-10T18:38:31", description: "ISO date and time" },
+      { group: "Date/Time Fields", label: "ISO Date/Time + Zone", value: "{iso_datetime_tz}", example: "2026-07-10T18:38:31-07:00", description: "ISO date, time, and offset" },
+      { group: "Date/Time Fields", label: "Custom format", value: "{date:MM/D/YY}", example: "07/10/26", description: "Custom date/time pattern" },
+      { group: "Date/Time Fields", label: "Tomorrow", value: "{tomorrow_short}", example: "7/11/26", description: "Tomorrow's short date" },
+      { group: "Date/Time Fields", label: "Weekday", value: "{weekday}", example: "Friday", description: "Full day of week" },
+      { group: "Date/Time Fields", label: "Weekday short", value: "{weekday_short}", example: "Fri", description: "Short day of week" },
+      { group: "Date/Time Fields", label: "Weekday number", value: "{weekday_number}", example: "5", description: "Monday=1, Sunday=7" },
+      { group: "Date/Time Fields", label: "Month", value: "{month}", example: "7", description: "Month number" },
+      { group: "Date/Time Fields", label: "Month 2-digit", value: "{month_padded}", example: "07", description: "Month number with leading zero" },
+      { group: "Date/Time Fields", label: "Month name", value: "{month_name}", example: "July", description: "Full month name" },
+      { group: "Date/Time Fields", label: "Day", value: "{day}", example: "10", description: "Day number" },
+      { group: "Date/Time Fields", label: "Day 2-digit", value: "{day_padded}", example: "10", description: "Day number with leading zero" },
+      { group: "Date/Time Fields", label: "Year", value: "{year}", example: "2026", description: "Four-digit year" },
+      { group: "Date/Time Fields", label: "Year 2-digit", value: "{year_short}", example: "26", description: "Two-digit year" },
+      { group: "Date/Time Fields", label: "Hour 24", value: "{hour_24}", example: "18", description: "24-hour value" },
+      { group: "Date/Time Fields", label: "Hour 12", value: "{hour_12}", example: "6", description: "12-hour value" },
+      { group: "Date/Time Fields", label: "Minute", value: "{minute}", example: "38", description: "Minute" },
+      { group: "Date/Time Fields", label: "Second", value: "{second}", example: "31", description: "Second" },
+      { group: "Date/Time Fields", label: "AM/PM", value: "{ampm}", example: "PM", description: "AM or PM" },
+      { group: "Date/Time Fields", label: "Time zone", value: "{timezone}", example: "America/Los_Angeles", description: "Browser time zone saved during clock sync" },
+      { group: "Date/Time Fields", label: "Time zone offset", value: "{timezone_offset}", example: "-07:00", description: "UTC offset saved during clock sync" },
+      { group: "Special Fields", label: "Cursor", value: "{cursor}", description: "Move caret here after typing" },
+      { group: "Special Fields", label: "Clipboard", value: "{clipboard}", description: "Paste captured clipboard text" },
       { group: "Formatting", label: "Tab", value: "{tab}", description: "Insert a tab key" },
       { group: "Formatting", label: "Enter", value: "{enter}", description: "Insert an enter key" }
     ];
@@ -1230,6 +1347,7 @@ Michael</textarea>
       pendingRequests: new Map(),
       deviceInfo: null,
       isConnected: false,
+      configDirty: false,
       config: createDefaultConfig()
     };
 
@@ -1246,10 +1364,9 @@ Michael</textarea>
       renderPlaceholderList();
       renderTokenGroups();
       renderRtcFunctions();
-      renderMacroSteps();
-      renderMappingList();
       updateEditor();
       updateDeviceControls();
+      setConfigDirty(false);
       logActivity("QuickType configurator ready.");
     }
 
@@ -1281,7 +1398,6 @@ Michael</textarea>
       elements.keyGrid = document.getElementById("keyGrid");
       elements.mappingForm = document.getElementById("mappingForm");
       elements.editorTitle = document.getElementById("editorTitle");
-      elements.editorSubtitle = document.getElementById("editorSubtitle");
       elements.actionType = document.getElementById("actionType");
       elements.triggerMode = document.getElementById("triggerMode");
       elements.triggerPattern = document.getElementById("triggerPattern");
@@ -1290,16 +1406,11 @@ Michael</textarea>
       elements.macroName = document.getElementById("macroName");
       elements.macroText = document.getElementById("macroText");
       elements.templateHelp = document.getElementById("templateHelp");
+      elements.insertFieldSelect = document.getElementById("insertFieldSelect");
+      elements.insertFieldButton = document.getElementById("insertFieldButton");
       elements.preDelay = document.getElementById("preDelay");
       elements.keyDelay = document.getElementById("keyDelay");
-      elements.tokenGroups = document.getElementById("tokenGroups");
       elements.templatePreview = document.getElementById("templatePreview");
-      elements.macroSteps = document.getElementById("macroSteps");
-      elements.addStepButton = document.getElementById("addStepButton");
-      elements.layerCount = document.getElementById("layerCount");
-      elements.mappedCount = document.getElementById("mappedCount");
-      elements.profileVersion = document.getElementById("profileVersion");
-      elements.mappingList = document.getElementById("mappingList");
       elements.rtcFunctionList = document.getElementById("rtcFunctionList");
       elements.activityLog = document.getElementById("activityLog");
       elements.toastStack = document.getElementById("toastStack");
@@ -1324,10 +1435,12 @@ Michael</textarea>
       elements.deleteExpansionButton.addEventListener("click", deleteExpansionRule);
       elements.addPlaceholderButton.addEventListener("click", addPlaceholder);
       elements.addPlaceholderButtonTab.addEventListener("click", addPlaceholderFromTab);
-      elements.addStepButton.addEventListener("click", addMacroStep);
+      elements.insertFieldButton.addEventListener("click", insertSelectedField);
       elements.syncClockButton.addEventListener("click", syncDeviceClock);
       elements.modalCloseButton.addEventListener("click", hideModal);
       elements.mappingForm.addEventListener("submit", saveCurrentMapping);
+      elements.mappingForm.addEventListener("input", () => setConfigDirty(true));
+      elements.mappingForm.addEventListener("change", () => setConfigDirty(true));
       elements.macroText.addEventListener("input", renderTemplatePreview);
       elements.actionType.addEventListener("change", updateEditorHints);
       elements.triggerMode.addEventListener("change", updateEditorHints);
@@ -1417,6 +1530,7 @@ Michael</textarea>
       updateDeviceControls();
       logActivity(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
       showToast(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
+      await readDeviceConfiguration({ automatic: true });
     }
 
     async function disconnectDevice() {
@@ -1450,23 +1564,27 @@ Michael</textarea>
       }
     }
 
-    async function readDeviceConfiguration() {
+    async function readDeviceConfiguration(options = {}) {
       if (!ensureConnected("read configuration")) {
         return;
       }
 
       try {
-        logActivity("Reading configuration from device...");
+        logActivity(options.automatic ? "Loading saved configuration from device..." : "Reading configuration from device...");
+        if (options.automatic) {
+          showToast("Loading saved device configuration...");
+        }
         const response = await sendDeviceCommand("get-config");
         appState.config = normalizeImportedConfiguration(response.data);
         selectDefaultRuleForEditor();
         renderAllConfigurationViews();
+        setConfigDirty(false);
         logActivity("Device configuration loaded.");
         showToast("Device configuration loaded.");
       } catch (error) {
         if (error.code === "NO_CONFIG") {
-          logActivity("The device has no saved configuration. The factory draft remains open; use Write Configuration to install it.");
-          showToast("No saved device configuration found.");
+          logActivity("The device has no saved configuration. The current editor draft remains open; use Write to install it.");
+          showToast(options.automatic ? "Connected. No saved configuration found." : "No saved device configuration found.");
         } else {
           logActivity(`Read failed: ${error.message}`);
           showToast(`Read failed: ${error.message}`, "error");
@@ -1497,6 +1615,7 @@ Michael</textarea>
         logActivity(`Writing ${payload.byteLength} bytes to device...`);
         showToast("Writing configuration...");
         const response = await sendDeviceCommand("set-config", { config: deviceConfig }, 15000);
+        setConfigDirty(false);
         logActivity(`Configuration saved (${response.data?.ruleCount ?? 0} active rules).`);
         showToast(`Configuration saved (${response.data?.ruleCount ?? 0} active rules).`);
       } catch (error) {
@@ -1506,22 +1625,22 @@ Michael</textarea>
     }
 
     async function readDeviceClock() {
-      if (!ensureConnected("read the RTC")) {
-        showToast("Connect QuickType before reading the RTC.", "error");
+      if (!ensureConnected("read the clock")) {
+        showToast("Connect QuickType before reading the clock.", "error");
         return;
       }
 
       try {
-        showToast("Reading RTC...");
+        showToast("Reading clock...");
         const response = await sendDeviceCommand("get-clock");
         const clock = response.data?.clock;
         if (!clock) throw new Error("Device did not return a clock value.");
         const text = `${clock.year}-${String(clock.month).padStart(2, "0")}-${String(clock.day).padStart(2, "0")} ${String(clock.hour).padStart(2, "0")}:${String(clock.minute).padStart(2, "0")}:${String(clock.second).padStart(2, "0")}`;
-        showModal("QuickType RTC", `<p>Device clock reads:</p><p><strong>${escapeHtml(text)}</strong></p>`);
-        logActivity(`RTC read: ${text}`);
+        showModal("QuickType Clock", `<p>Device clock reads:</p><p><strong>${escapeHtml(text)}</strong></p>`);
+        logActivity(`Clock read: ${text}`);
       } catch (error) {
-        showToast(`RTC read failed: ${error.message}`, "error");
-        logActivity(`RTC read failed: ${error.message}`);
+        showToast(`Clock read failed: ${error.message}`, "error");
+        logActivity(`Clock read failed: ${error.message}`);
       }
     }
 
@@ -1540,12 +1659,14 @@ Michael</textarea>
         minute: now.getMinutes(),
         second: now.getSeconds()
       };
+      const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || "Local";
+      const timezoneOffsetMinutes = -now.getTimezoneOffset();
 
       try {
-        showToast("Syncing RTC...");
-        await sendDeviceCommand("set-clock", { clock });
-        logActivity(`RTC synchronized to ${now.toLocaleString()}.`);
-        showToast(`RTC synchronized to ${now.toLocaleString()}.`);
+        showToast("Syncing clock...");
+        await sendDeviceCommand("set-clock", { clock, timezoneName, timezoneOffsetMinutes });
+        logActivity(`Clock synchronized to ${now.toLocaleString()}.`);
+        showToast(`Clock synchronized to ${now.toLocaleString()}.`);
       } catch (error) {
         logActivity(`Clock sync failed: ${error.message}`);
         showToast(`Clock sync failed: ${error.message}`, "error");
@@ -1677,6 +1798,21 @@ Michael</textarea>
       elements.writeButton.disabled = !appState.isConnected;
       elements.readClockButton.disabled = !appState.isConnected;
       elements.syncClockButton.disabled = !appState.isConnected;
+      updateWriteDirtyIndicator();
+    }
+
+    function setConfigDirty(isDirty) {
+      appState.configDirty = Boolean(isDirty);
+      updateWriteDirtyIndicator();
+    }
+
+    function updateWriteDirtyIndicator() {
+      if (!elements.writeButton) return;
+      elements.writeButton.classList.toggle("write-dirty", appState.configDirty);
+      elements.writeButton.title = appState.configDirty
+        ? "Configuration has local changes that have not been written to QuickType."
+        : "";
+      elements.writeButton.setAttribute("aria-label", appState.configDirty ? "Write unwritten configuration to QuickType" : "Write configuration");
     }
 
     function delay(milliseconds) {
@@ -1696,7 +1832,6 @@ Michael</textarea>
     function selectKey(ruleId) {
       appState.selectedRule = ruleId;
       renderKeyGrid();
-      renderMacroSteps();
       updateEditor();
     }
 
@@ -1718,22 +1853,23 @@ Michael</textarea>
 
       elements.keyGrid.innerHTML = `
         <div class="expansion-header">
-          <span>App</span>
+          <span>#</span>
           <span>Trigger</span>
-          <span>Expansion</span>
           <span>Label</span>
+          <span>Snippet</span>
         </div>
       `;
-      expansionRows.forEach(({ ruleId, mapping }) => {
+      expansionRows.forEach(({ ruleId, mapping }, index) => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "key-button";
         button.classList.toggle("active", ruleId === appState.selectedRule);
+        const missingTrigger = !mapping.triggerPattern;
         button.innerHTML = `
-          <span class="key-meta">QT</span>
-          <span class="key-number">${escapeHtml(mapping.triggerPattern || ruleId)}</span>
-          <span class="key-action">${escapeHtml(compactSnippet(mapping.text || mapping.steps?.map((step) => step.value).join(" ") || ""))}</span>
+          <span class="row-number">${String(index + 1).padStart(2, "0")}</span>
+          <span class="key-number${missingTrigger ? " missing" : ""}">${escapeHtml(mapping.triggerPattern || "Needs trigger")}</span>
           <span class="key-meta">${escapeHtml(mapping.label || "Unassigned")}</span>
+          <span class="key-action">${escapeHtml(compactSnippet(mapping.text || mapping.steps?.map((step) => step.value).join(" ") || ""))}</span>
         `;
         button.addEventListener("click", () => selectKey(ruleId));
         elements.keyGrid.appendChild(button);
@@ -1747,13 +1883,26 @@ Michael</textarea>
     }
 
     function isPrimaryExpansion(mapping) {
-      if (!mapping || !mapping.triggerPattern) return false;
+      if (!mapping) return false;
       if (mapping.type === "disabled") return false;
-      return true;
+      if (mapping.trigger === "key") return false;
+      return Boolean(
+        mapping.triggerPattern ||
+        (mapping.label && mapping.label !== "Unassigned") ||
+        mapping.text ||
+        mapping.steps?.length
+      );
     }
 
     function compactSnippet(value) {
       return String(value || "").replaceAll(/\s+/g, " ").trim() || "(no contents)";
+    }
+
+    function expansionDisplayName(mapping) {
+      if (!mapping) return "New Expansion";
+      if (mapping.label && mapping.label !== "Unassigned") return mapping.label;
+      if (mapping.triggerPattern) return mapping.triggerPattern;
+      return "New Expansion";
     }
 
     function addExpansionRule() {
@@ -1772,7 +1921,8 @@ Michael</textarea>
       appState.selectedRule = ruleId;
       renderAllConfigurationViews();
       elements.triggerPattern.focus();
-      logActivity(`Added ${ruleId}.`);
+      setConfigDirty(true);
+      logActivity("Added expansion.");
       showToast("Expansion added.");
     }
 
@@ -1787,18 +1937,20 @@ Michael</textarea>
       appState.selectedRule = ruleId;
       renderAllConfigurationViews();
       elements.triggerPattern.focus();
+      setConfigDirty(true);
       showToast("Expansion duplicated. Add a new trigger string before saving.");
     }
 
     function deleteExpansionRule() {
       const mapping = getMapping(appState.selectedRule);
-      if (!window.confirm(`Delete "${mapping.label || appState.selectedRule}"?`)) {
+      if (!window.confirm(`Delete "${expansionDisplayName(mapping)}"?`)) {
         showToast("Delete cancelled.");
         return;
       }
       appState.config.rules[appState.selectedRule] = createBlankRule();
       selectDefaultRuleForEditor();
       renderAllConfigurationViews();
+      setConfigDirty(true);
       showToast("Expansion deleted.");
       logActivity("Expansion deleted.");
     }
@@ -1807,7 +1959,7 @@ Michael</textarea>
       for (let index = 1; index <= RULE_COUNT; index += 1) {
         const ruleId = `R${String(index).padStart(2, "0")}`;
         const mapping = getMapping(ruleId);
-        if (!mapping.triggerPattern || mapping.label === "Unassigned" || mapping.type === "disabled") {
+        if (mapping.type === "disabled" || (mapping.label === "Unassigned" && !mapping.triggerPattern && !mapping.text && !mapping.steps?.length)) {
           return ruleId;
         }
       }
@@ -1835,20 +1987,25 @@ Michael</textarea>
 
       const html = entries.length
         ? entries.map(([name, value]) => `
-            <button class="token-button" type="button" title="${escapeAttribute(value)}" data-placeholder-token="${escapeAttribute(name)}">{${escapeHtml(name)}}</button>
-            <button class="icon-button" type="button" title="Remove ${escapeAttribute(name)}" data-remove-placeholder="${escapeAttribute(name)}">X</button>
+            <div class="placeholder-item">
+              <button class="token-button" type="button" title="Insert {${escapeAttribute(name)}}" data-placeholder-token="${escapeAttribute(name)}">{${escapeHtml(name)}}</button>
+              <span class="placeholder-value">${escapeHtml(value)}</span>
+              <button class="icon-button" type="button" title="Remove ${escapeAttribute(name)}" data-remove-placeholder="${escapeAttribute(name)}">X</button>
+            </div>
           `).join("")
         : '<span class="helper-text">No reusable placeholders yet.</span>';
       elements.placeholderList.innerHTML = html;
       elements.placeholderListTab.innerHTML = html;
+      elements.placeholderList.classList.add("placeholder-list");
+      elements.placeholderListTab.classList.add("placeholder-list");
 
       [elements.placeholderList, elements.placeholderListTab].forEach((list) => {
         list.querySelectorAll("[data-placeholder-token]").forEach((button) => {
-        button.addEventListener("click", () => insertToken(`{${button.dataset.placeholderToken}}`));
-      });
+          button.addEventListener("click", () => insertToken(`{${button.dataset.placeholderToken}}`));
+        });
         list.querySelectorAll("[data-remove-placeholder]").forEach((button) => {
-        button.addEventListener("click", () => removePlaceholder(button.dataset.removePlaceholder));
-      });
+          button.addEventListener("click", () => removePlaceholder(button.dataset.removePlaceholder));
+        });
       });
     }
 
@@ -1875,6 +2032,7 @@ Michael</textarea>
       renderPlaceholderList();
       renderTokenGroups();
       renderTemplatePreview();
+      setConfigDirty(true);
       logActivity(`Placeholder {${name}} saved.`);
       showToast(`Placeholder {${name}} saved.`);
     }
@@ -1887,6 +2045,7 @@ Michael</textarea>
       renderPlaceholderList();
       renderTokenGroups();
       renderTemplatePreview();
+      setConfigDirty(true);
       logActivity(`Placeholder {${name}} removed.`);
       showToast(`Placeholder {${name}} removed.`);
     }
@@ -1902,7 +2061,7 @@ Michael</textarea>
 
     function renderTokenGroups() {
       const customTokens = Object.keys(appState.config.placeholders || {}).map((name) => ({
-        group: "Reusable",
+        group: "Reusable Placeholders",
         label: `{${name}}`,
         value: `{${name}}`,
         description: appState.config.placeholders[name]
@@ -1913,30 +2072,39 @@ Michael</textarea>
         return result;
       }, {});
 
-      elements.tokenGroups.innerHTML = Object.entries(groups).map(([groupName, tokens]) => `
-        <div class="token-group">
-          <div class="token-group-title">${escapeHtml(groupName)}</div>
-          <div class="token-toolbar">
-            ${tokens.map((token) => `
-              <button class="token-button" type="button" title="${escapeAttribute(token.description)}" data-token="${escapeAttribute(token.value)}">${escapeHtml(token.label)}</button>
-            `).join("")}
-          </div>
-        </div>
+      elements.insertFieldSelect.innerHTML = Object.entries(groups).map(([groupName, tokens]) => `
+        <optgroup label="${escapeAttribute(groupName)}">
+          ${tokens.map((token) => `
+            <option value="${escapeAttribute(token.value)}">${escapeHtml(formatInsertFieldOption(token))}</option>
+          `).join("")}
+        </optgroup>
       `).join("");
+    }
 
-      elements.tokenGroups.querySelectorAll("[data-token]").forEach((button) => {
-        button.addEventListener("click", () => insertToken(button.dataset.token));
-      });
+    function formatInsertFieldOption(token) {
+      if (token.example) {
+        return `${token.value} -> ${token.example}`;
+      }
+      return `${token.value} - ${token.description}`;
     }
 
     function renderRtcFunctions() {
-      const rtcTokens = PLACEHOLDER_TOKENS.filter((token) => token.group === "RTC");
-      elements.rtcFunctionList.innerHTML = rtcTokens.map((token) => `
+      const clockFields = PLACEHOLDER_TOKENS.filter((token) => token.group === "Date/Time Fields");
+      elements.rtcFunctionList.innerHTML = clockFields.map((token) => `
         <div class="function-row">
           <code>${escapeHtml(token.value)}</code>
-          <span>${escapeHtml(token.description)}. Firmware can resolve this from the onboard RTC before typing.</span>
+          <span>${escapeHtml(token.description)}. Example: <strong>${escapeHtml(token.example)}</strong></span>
         </div>
       `).join("");
+    }
+
+    function insertSelectedField() {
+      const value = elements.insertFieldSelect.value;
+      if (!value) {
+        showToast("Choose a field to insert.", "error");
+        return;
+      }
+      insertToken(value);
     }
 
     function insertToken(token) {
@@ -1950,37 +2118,17 @@ Michael</textarea>
       textarea.selectionStart = start + token.length;
       textarea.selectionEnd = textarea.selectionStart;
       renderTemplatePreview();
-    }
-
-    function renderMacroSteps() {
-      const mapping = getMapping(appState.selectedRule);
-      elements.macroSteps.innerHTML = "";
-
-      mapping.steps.forEach((step, index) => {
-        const row = document.createElement("div");
-        row.className = "macro-step";
-        row.innerHTML = `
-          <input type="text" value="${escapeAttribute(step.value)}" aria-label="Macro step ${index + 1} value" data-step-value="${index}">
-          <input type="number" min="0" max="5000" step="10" value="${step.delay}" aria-label="Macro step ${index + 1} delay" data-step-delay="${index}">
-          <button class="icon-button" type="button" title="Remove step" data-remove-step="${index}">X</button>
-        `;
-        elements.macroSteps.appendChild(row);
-      });
-
-      elements.macroSteps.querySelectorAll("[data-remove-step]").forEach((button) => {
-        button.addEventListener("click", () => removeMacroStep(Number(button.dataset.removeStep)));
-      });
+      setConfigDirty(true);
     }
 
     function updateEditor() {
       const mapping = getMapping(appState.selectedRule);
-      elements.editorTitle.textContent = `Rule ${appState.selectedRule}`;
-      elements.editorSubtitle.textContent = "Inline trigger replacement";
-      elements.actionType.value = mapping.type;
-      elements.triggerMode.value = mapping.trigger;
+      elements.editorTitle.textContent = "Editor";
+      elements.actionType.value = normalizeActionType(mapping.type);
+      elements.triggerMode.value = normalizeTriggerMode(mapping.trigger);
       elements.triggerPattern.value = mapping.triggerPattern;
       elements.triggerScope.value = mapping.triggerScope;
-      elements.macroName.value = mapping.label;
+      elements.macroName.value = mapping.label === "Unassigned" ? "" : mapping.label;
       elements.macroText.value = mapping.text;
       elements.preDelay.value = mapping.preDelay;
       elements.keyDelay.value = mapping.keyDelay;
@@ -1989,14 +2137,12 @@ Michael</textarea>
     }
 
     function updateEditorHints() {
-      const isPhysicalKey = elements.triggerMode.value === "key";
-      elements.triggerPatternLabel.textContent = isPhysicalKey ? "Physical Key" : "Typed Trigger";
-      elements.triggerPattern.placeholder = isPhysicalKey ? "KP_0, KP_ENTER, BACKSPACE..." : ";;sig or 00#";
+      elements.triggerPatternLabel.textContent = "Trigger String";
 
       if (elements.actionType.value === "shortcut") {
         elements.templateHelp.textContent = "Enter a shortcut such as CTRL+B, CTRL+SHIFT+S, ALT+TAB, HOME, or ENTER.";
       } else {
-        elements.templateHelp.textContent = "Use date tokens or reusable placeholders like {initials}. Placeholders are resolved before writing to the device.";
+        elements.templateHelp.textContent = "Date/time fields use the device clock. Reusable placeholders are saved text values like {initials}. Special fields handle cursor placement and formatting.";
       }
     }
 
@@ -2007,15 +2153,16 @@ Michael</textarea>
 
     function updateCurrentMappingFromForm(announceSave) {
       const mapping = getMapping(appState.selectedRule);
+      const before = JSON.stringify(mapping);
       mapping.type = elements.actionType.value;
-      mapping.trigger = elements.triggerMode.value;
+      mapping.trigger = normalizeTriggerMode(elements.triggerMode.value);
       mapping.triggerPattern = elements.triggerPattern.value.trim();
       mapping.triggerScope = elements.triggerScope.value;
       mapping.label = elements.macroName.value.trim() || "Unassigned";
       mapping.text = elements.macroText.value;
       mapping.preDelay = normalizeNumber(elements.preDelay.value, 0);
       mapping.keyDelay = normalizeNumber(elements.keyDelay.value, 15);
-      mapping.steps = collectMacroSteps();
+      mapping.steps = [];
       const conflictMessage = validateNoTriggerConflicts();
       if (conflictMessage) {
         showModal("Trigger Conflict", `<p>${escapeHtml(conflictMessage)}</p>`);
@@ -2023,9 +2170,12 @@ Michael</textarea>
         return false;
       }
       renderKeyGrid();
-      renderMappingList();
+      updateEditor();
+      if (before !== JSON.stringify(mapping)) {
+        setConfigDirty(true);
+      }
       if (announceSave) {
-        logActivity(`Saved ${appState.selectedRule} trigger rule.`);
+        logActivity(`Saved ${expansionDisplayName(mapping)}.`);
         showToast("Expansion saved.");
       }
       return true;
@@ -2042,17 +2192,38 @@ Michael</textarea>
           scope: String(rule.triggerScope || "any").toLowerCase()
         };
         for (const prior of seen) {
-          if (
-            prior.trigger === current.trigger &&
-            prior.pattern === current.pattern &&
-            scopesOverlap(prior.scope, current.scope)
-          ) {
+          if (prior.trigger !== current.trigger || !scopesOverlap(prior.scope, current.scope)) {
+            continue;
+          }
+
+          if (prior.pattern === current.pattern) {
             return `${prior.ruleId} and ${current.ruleId} both use "${rule.triggerPattern}" for overlapping keyboard sources. Clear or change one trigger.`;
+          }
+
+          const prefixConflict = getTriggerPrefixConflict(prior, current);
+          if (prefixConflict) {
+            return `${prior.ruleId} uses "${prefixConflict.shorter}" and ${current.ruleId} uses "${prefixConflict.longer}". "${prefixConflict.shorter}" can fire before "${prefixConflict.longer}" is fully typed. Use a unique trigger or delimiter match mode.`;
           }
         }
         seen.push(current);
       }
       return "";
+    }
+
+    function getTriggerPrefixConflict(first, second) {
+      if (first.trigger === "delimiter" && second.trigger === "delimiter") {
+        return null;
+      }
+
+      const firstPattern = first.pattern;
+      const secondPattern = second.pattern;
+      if (firstPattern.length === secondPattern.length) {
+        return null;
+      }
+
+      const shorter = firstPattern.length < secondPattern.length ? firstPattern : secondPattern;
+      const longer = firstPattern.length < secondPattern.length ? secondPattern : firstPattern;
+      return longer.startsWith(shorter) ? { shorter, longer } : null;
     }
 
     function scopesOverlap(first, second) {
@@ -2061,12 +2232,26 @@ Michael</textarea>
 
     function renderTemplatePreview() {
       const now = new Date();
+      const time24 = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const time24Seconds = `${time24}:${String(now.getSeconds()).padStart(2, "0")}`;
+      const isoDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone || "Local";
+      const timezoneOffset = formatTimezoneOffset(-now.getTimezoneOffset());
       const tokenSamples = {
         "{date}": formatPreviewDate(now, true),
         "{date_short}": formatPreviewDate(now, false),
+        "{iso_date}": isoDate,
         "{time}": now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        "{time_seconds}": now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+        "{time_24}": time24,
+        "{time_24_seconds}": time24Seconds,
         "{datetime}": `${formatPreviewDate(now, true)} ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+        "{iso_datetime}": `${isoDate}T${time24Seconds}`,
+        "{iso_datetime_tz}": `${isoDate}T${time24Seconds}${timezoneOffset}`,
         "{tomorrow_short}": formatPreviewDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1), false),
+        "{weekday}": now.toLocaleString([], { weekday: "long" }),
+        "{weekday_short}": now.toLocaleString([], { weekday: "short" }),
+        "{weekday_number}": String(((now.getDay() + 6) % 7) + 1),
         "{month}": String(now.getMonth() + 1),
         "{month_padded}": String(now.getMonth() + 1).padStart(2, "0"),
         "{month_name}": now.toLocaleString([], { month: "long" }),
@@ -2074,6 +2259,13 @@ Michael</textarea>
         "{day_padded}": String(now.getDate()).padStart(2, "0"),
         "{year}": String(now.getFullYear()),
         "{year_short}": String(now.getFullYear()).slice(-2),
+        "{hour_24}": String(now.getHours()).padStart(2, "0"),
+        "{hour_12}": String((now.getHours() % 12) || 12),
+        "{minute}": String(now.getMinutes()).padStart(2, "0"),
+        "{second}": String(now.getSeconds()).padStart(2, "0"),
+        "{ampm}": now.getHours() >= 12 ? "PM" : "AM",
+        "{timezone}": timezoneName,
+        "{timezone_offset}": timezoneOffset,
         "{clipboard}": "[clipboard]",
         "{cursor}": "|",
         "{tab}": "\t",
@@ -2084,8 +2276,8 @@ Michael</textarea>
       Object.entries(tokenSamples).forEach(([token, sample]) => {
         preview = preview.replaceAll(token, sample);
       });
+      preview = preview.replaceAll(/\{date:([^}]+)\}/g, (_, pattern) => formatCustomPreviewDateTime(pattern, now, timezoneOffset, timezoneName));
       preview = resolveCustomPlaceholders(preview);
-      preview = preview.replaceAll(/\{prompt:([^}]+)\}/g, "[$1]");
       elements.templatePreview.textContent = preview || "Expansion preview will appear here.";
     }
 
@@ -2104,54 +2296,50 @@ Michael</textarea>
       return `${month}/${day}/${year}`;
     }
 
-    function addMacroStep() {
-      const mapping = getMapping(appState.selectedRule);
-      mapping.steps = collectMacroSteps();
-      mapping.steps.push({ value: "", delay: 15 });
-      renderMacroSteps();
-      showToast("Output step added.");
+    function formatTimezoneOffset(offsetMinutes) {
+      const sign = offsetMinutes >= 0 ? "+" : "-";
+      const absolute = Math.abs(offsetMinutes);
+      const hours = String(Math.floor(absolute / 60)).padStart(2, "0");
+      const minutes = String(absolute % 60).padStart(2, "0");
+      return `${sign}${hours}:${minutes}`;
     }
 
-    function removeMacroStep(stepIndex) {
-      const mapping = getMapping(appState.selectedRule);
-      mapping.steps = collectMacroSteps().filter((_, index) => index !== stepIndex);
-      renderMacroSteps();
-      showToast("Output step removed.");
-    }
+    function formatCustomPreviewDateTime(pattern, date, timezoneOffset, timezoneName) {
+      const replacements = [
+        ["YYYY", String(date.getFullYear())],
+        ["YY", String(date.getFullYear()).slice(-2)],
+        ["MMMM", date.toLocaleString([], { month: "long" })],
+        ["MMM", date.toLocaleString([], { month: "short" })],
+        ["MM", String(date.getMonth() + 1).padStart(2, "0")],
+        ["M", String(date.getMonth() + 1)],
+        ["DD", String(date.getDate()).padStart(2, "0")],
+        ["D", String(date.getDate())],
+        ["dddd", date.toLocaleString([], { weekday: "long" })],
+        ["ddd", date.toLocaleString([], { weekday: "short" })],
+        ["HH", String(date.getHours()).padStart(2, "0")],
+        ["H", String(date.getHours())],
+        ["hh", String((date.getHours() % 12) || 12).padStart(2, "0")],
+        ["h", String((date.getHours() % 12) || 12)],
+        ["mm", String(date.getMinutes()).padStart(2, "0")],
+        ["ss", String(date.getSeconds()).padStart(2, "0")],
+        ["A", date.getHours() >= 12 ? "PM" : "AM"],
+        ["a", date.getHours() >= 12 ? "pm" : "am"],
+        ["Z", timezoneOffset],
+        ["z", timezoneName]
+      ];
 
-    function collectMacroSteps() {
-      const values = [...elements.macroSteps.querySelectorAll("[data-step-value]")];
-      return values.map((input) => {
-        const index = Number(input.dataset.stepValue);
-        const delayInput = elements.macroSteps.querySelector(`[data-step-delay="${index}"]`);
-        return {
-          value: input.value,
-          delay: normalizeNumber(delayInput.value, 15)
-        };
-      });
-    }
-
-    function renderMappingList() {
-      const rows = [];
-      let mappedCount = 0;
-
-      Object.entries(appState.config.rules).forEach(([ruleId, mapping]) => {
-        if (mapping.label && mapping.label !== "Unassigned") {
-          mappedCount += 1;
-          rows.push({ ruleId, mapping });
+      let output = "";
+      for (let index = 0; index < pattern.length;) {
+        const match = replacements.find(([key]) => pattern.startsWith(key, index));
+        if (match) {
+          output += match[1];
+          index += match[0].length;
+        } else {
+          output += pattern[index];
+          index += 1;
         }
-      });
-
-      elements.mappedCount.textContent = String(mappedCount);
-      elements.mappingList.innerHTML = rows.length
-        ? rows.map((row) => `
-            <div class="mapping-row">
-              <code>${escapeHtml(row.mapping.triggerPattern || row.ruleId)}</code>
-              <span>${escapeHtml(row.mapping.label)}</span>
-              <small>${escapeHtml(row.mapping.triggerScope)}</small>
-            </div>
-          `).join("")
-        : '<div class="notice">No trigger rules yet. Select a rule, enter a typed trigger, and save the replacement.</div>';
+      }
+      return output;
     }
 
     function exportConfiguration() {
@@ -2179,9 +2367,8 @@ Michael</textarea>
         appState.config = normalizeImportedConfiguration(importedConfig);
         const conflictMessage = validateNoTriggerConflicts();
         renderKeyGrid();
-        renderMacroSteps();
-        renderMappingList();
         updateEditor();
+        setConfigDirty(true);
         logActivity(`Imported ${file.name}.`);
         if (conflictMessage) {
           showModal("Imported With Conflicts", `<p>${escapeHtml(conflictMessage)}</p>`);
@@ -2198,24 +2385,26 @@ Michael</textarea>
     }
 
     async function restoreFactoryDefaults() {
-      if (!window.confirm("Restore the original QuickType keypad mappings?")) {
+      if (!window.confirm("Factory Reset clears the editor configuration and, if connected, writes the blank configuration to QuickType. Continue?")) {
         return;
       }
 
       appState.config = createDefaultConfig();
       appState.selectedRule = "R01";
       renderAllConfigurationViews();
-      logActivity("Factory mappings restored in the editor.");
-      showToast("Factory mappings restored in the editor.");
+      setConfigDirty(true);
+      logActivity("Blank expansion configuration restored in the editor.");
+      showToast("Blank expansion configuration restored.");
 
       if (appState.isConnected) {
         try {
           const response = await sendDeviceCommand("set-config", { config: buildDeviceConfiguration() }, 15000);
-          logActivity(`Factory mappings saved to the device (${response.data?.ruleCount ?? 0} active rules).`);
-          showToast("Factory mappings saved to the device.");
+          setConfigDirty(false);
+          logActivity(`Blank expansion configuration saved to the device (${response.data?.ruleCount ?? 0} active rules).`);
+          showToast("Blank expansion configuration saved to the device.");
         } catch (error) {
-          logActivity(`Factory reset could not be written: ${error.message}`);
-          showToast(`Factory reset write failed: ${error.message}`, "error");
+          logActivity(`Blank configuration could not be written: ${error.message}`);
+          showToast(`Blank configuration write failed: ${error.message}`, "error");
         }
       }
     }
@@ -2224,14 +2413,12 @@ Michael</textarea>
       renderKeyGrid();
       renderPlaceholderList();
       renderTokenGroups();
-      renderMacroSteps();
-      renderMappingList();
       updateEditor();
     }
 
     function createDefaultConfig() {
       return {
-        profileName: "QuickType Keypad Defaults",
+        profileName: "QuickType Expansions",
         version: 1,
         mode: "inline-keyboard-intercept",
         placeholders: {
@@ -2245,57 +2432,8 @@ Michael</textarea>
       const rules = {};
       for (let index = 1; index <= RULE_COUNT; index += 1) {
         const ruleId = `R${String(index).padStart(2, "0")}`;
-        rules[ruleId] = {
-          type: "disabled",
-          trigger: "key",
-          triggerPattern: "",
-          triggerScope: "any",
-          label: "Unassigned",
-          text: "",
-          preDelay: 0,
-          keyDelay: 15,
-          steps: [],
-          replacementStrategy: "erase-trigger-then-type"
-        };
+        rules[ruleId] = createBlankRule();
       }
-
-      const defaults = [
-        ["R01", "KP_NUMLOCK", "Employee number", "232175"],
-        ["R02", "KP_SLASH", "Dated initials", "{date_short}:  {cursor} MM"],
-        ["R03", "KP_ASTERISK", "Short date and initials", "{month}/{day}{cursor} MM"],
-        ["R04", "KP_MINUS", "Divider", "--------------------"],
-        ["R05", "KP_ENTER", "Enter", "", [{ value: "key:ENTER", delay: 0 }]],
-        ["R06", "ENTER", "Enter", "", [{ value: "key:ENTER", delay: 0 }]],
-        ["R07", "BACKSPACE", "New bold note", "", [
-          { value: "key:HOME", delay: 15 },
-          { value: "key:ENTER", delay: 15 },
-          { value: "key:ENTER", delay: 15 },
-          { value: "key:UP", delay: 15 },
-          { value: "key:CTRL+B", delay: 0 }
-        ]],
-        ["R08", "KP_7", "Morning appointment", "{date_short}: conf 8-12 appt. on {tomorrow_short} MM"],
-        ["R09", "KP_8", "Afternoon appointment", "{date_short}: conf 1-5 appt. on {tomorrow_short} MM"],
-        ["R10", "KP_0", "Customer", "Customer"],
-        ["R11", "KP_00", "Left voicemail", "LVM to"],
-        ["R12", "KP_9", "Date MM/DD/YYYY", "{date}"],
-        ["R13", "KP_6", "Date M/D/YY", "{date_short}"],
-        ["R14", "KP_5", "Date ISO", "{year}-{month_padded}-{day_padded}"],
-        ["R15", "KP_4", "Date dashed", "{month_padded}-{day_padded}-{year}"],
-        ["R16", "KP_3", "Date long", "{month_name} {day}, {year}"],
-        ["R17", "KP_2", "Date compact", "{year}{month_padded}{day_padded}"],
-        ["R18", "KP_1", "Date compact short", "{month_padded}{day_padded}{year_short}"]
-      ];
-
-      defaults.forEach(([ruleId, triggerPattern, label, text, steps = []]) => {
-        rules[ruleId] = {
-          ...rules[ruleId],
-          type: steps.length ? "shortcut" : "expansion",
-          triggerPattern,
-          label,
-          text,
-          steps
-        };
-      });
 
       return rules;
     }
@@ -2353,7 +2491,7 @@ Michael</textarea>
         fallback.rules[ruleId] = {
           ...fallback.rules[ruleId],
           ...mapping,
-          triggerPattern: mapping.triggerPattern || mapping.keyboardSource || mapping.keypadSource || ""
+          triggerPattern: mapping.triggerPattern || ""
         };
       });
     }
@@ -2362,13 +2500,23 @@ Michael</textarea>
       if (!mapping) {
         return {};
       }
+      const legacyPhysicalKey = mapping.trigger === "key";
 
       return {
         ...mapping,
-        type: mapping.type === "text" ? "expansion" : mapping.type,
-        trigger: mapping.trigger === "tap" ? "suffix" : mapping.trigger,
+        type: legacyPhysicalKey ? "disabled" : normalizeActionType(mapping.type === "text" ? "expansion" : mapping.type),
+        trigger: normalizeTriggerMode(mapping.trigger),
+        triggerPattern: legacyPhysicalKey ? "" : mapping.triggerPattern,
         triggerScope: mapping.triggerScope || "any"
       };
+    }
+
+    function normalizeActionType(value) {
+      return ["expansion", "rtc", "shortcut", "disabled"].includes(value) ? value : "expansion";
+    }
+
+    function normalizeTriggerMode(value) {
+      return ["suffix", "delimiter", "instant"].includes(value) ? value : "suffix";
     }
 
     function serializeConfiguration(config) {

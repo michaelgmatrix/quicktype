@@ -39,6 +39,8 @@ static constexpr uint8_t RTC_ADDR = 0x68;
 static constexpr char TIMESTAMP_FILE[] = "/Timestamp.txt";
 static constexpr char CONFIG_FILE[] = "/quicktype-config.json";
 static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
+static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
+static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
 static constexpr char FIRMWARE_VERSION[] = "0.2.0";
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
@@ -98,6 +100,8 @@ static String serialInputLine;
 static bool serialInputOverflow = false;
 static String typedBuffer;
 static String typedSources;
+static String clockTimezoneName = "Local";
+static int clockTimezoneOffsetMinutes = 0;
 
 // Forward declarations
 uint8_t decToBcd(int value);
@@ -107,6 +111,13 @@ int daysInMonth(int year, int month);
 int weekdayMonday1(int year, int month, int day);
 RtcDateTime datePlusDays(RtcDateTime dt, int daysToAdd);
 const char* monthNameFull(int month);
+const char* monthNameShort(int month);
+const char* weekdayNameFull(int dow);
+const char* weekdayNameShort(int dow);
+String formatTimezoneOffset(int offsetMinutes);
+String formatCustomDateTime(const String& pattern, const RtcDateTime& dt);
+void loadClockMetadata();
+bool saveClockMetadata(const String& timezoneName, int offsetMinutes);
 
 bool validateDateTime(const RtcDateTime& dt);
 String readFirstUsefulLine(const char* filename);
@@ -156,6 +167,7 @@ void handleKeyboardReport(hid_keyboard_report_t const* report);
 
 void clearCompiledConfiguration();
 bool compileConfiguration(JsonVariantConst config, String& errorMessage);
+size_t activeRuleCount();
 bool loadConfigurationFromStorage();
 bool saveConfiguration(JsonVariantConst config, String& errorMessage);
 void processSerialProtocol();
@@ -1070,6 +1082,16 @@ bool compileConfiguration(JsonVariantConst config, String& errorMessage) {
   return true;
 }
 
+size_t activeRuleCount() {
+  size_t count = 0;
+  for (size_t index = 0; index < configRuleCount; index++) {
+    if (configRules[index].enabled) {
+      count++;
+    }
+  }
+  return count;
+}
+
 bool loadConfigurationFromStorage() {
   if (!LittleFS.exists(CONFIG_FILE)) {
     clearCompiledConfiguration();
@@ -1110,8 +1132,10 @@ bool loadConfigurationFromStorage() {
   }
 
   Serial.print("Loaded QuickType configuration with ");
+  Serial.print(activeRuleCount());
+  Serial.print(" active rules (");
   Serial.print(configRuleCount);
-  Serial.println(" rules.");
+  Serial.println(" compiled slots).");
   return true;
 }
 
@@ -1222,11 +1246,17 @@ bool sendShortcut(const String& shortcut, uint16_t keyDelayMs) {
 }
 
 String rtcTokenValue(const String& token) {
-  bool isRtcToken = token == "date" || token == "date_short" || token == "time" ||
-                    token == "datetime" || token == "tomorrow_short" || token == "month" ||
-                    token == "month_padded" || token == "month_name" || token == "day" ||
-                    token == "day_padded" || token == "year" || token == "year_short";
-  if (!isRtcToken) {
+  bool isClockToken = token == "date" || token == "date_short" || token == "iso_date" ||
+                      token == "time" || token == "time_seconds" || token == "time_24" ||
+                      token == "time_24_seconds" || token == "datetime" || token == "iso_datetime" ||
+                      token == "iso_datetime_tz" || token == "tomorrow_short" || token == "weekday" ||
+                      token == "weekday_short" || token == "weekday_number" || token == "month" ||
+                      token == "month_padded" || token == "month_name" || token == "day" ||
+                      token == "day_padded" || token == "year" || token == "year_short" ||
+                      token == "hour_24" || token == "hour_12" || token == "minute" ||
+                      token == "second" || token == "ampm" || token == "timezone" ||
+                      token == "timezone_offset" || token.startsWith("date:");
+  if (!isClockToken) {
     return "";
   }
 
@@ -1235,15 +1265,35 @@ String rtcTokenValue(const String& token) {
     return "[RTC unavailable]";
   }
 
-  char buffer[48];
+  if (token.startsWith("date:")) {
+    return formatCustomDateTime(token.substring(5), now);
+  }
+
+  char buffer[80];
+  int dow = now.dow;
+  if (dow < 1 || dow > 7) {
+    dow = weekdayMonday1(now.year, now.month, now.day);
+  }
+  int hour12 = now.hour % 12;
+  if (hour12 == 0) hour12 = 12;
+
   if (token == "date") snprintf(buffer, sizeof(buffer), "%02d/%02d/%04d", now.month, now.day, now.year);
   else if (token == "date_short") snprintf(buffer, sizeof(buffer), "%d/%d/%02d", now.month, now.day, now.year % 100);
-  else if (token == "time") snprintf(buffer, sizeof(buffer), "%02d:%02d", now.hour, now.minute);
-  else if (token == "datetime") snprintf(buffer, sizeof(buffer), "%02d/%02d/%04d %02d:%02d", now.month, now.day, now.year, now.hour, now.minute);
+  else if (token == "iso_date") snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d", now.year, now.month, now.day);
+  else if (token == "time") snprintf(buffer, sizeof(buffer), "%d:%02d %s", hour12, now.minute, now.hour >= 12 ? "PM" : "AM");
+  else if (token == "time_seconds") snprintf(buffer, sizeof(buffer), "%d:%02d:%02d %s", hour12, now.minute, now.second, now.hour >= 12 ? "PM" : "AM");
+  else if (token == "time_24") snprintf(buffer, sizeof(buffer), "%02d:%02d", now.hour, now.minute);
+  else if (token == "time_24_seconds") snprintf(buffer, sizeof(buffer), "%02d:%02d:%02d", now.hour, now.minute, now.second);
+  else if (token == "datetime") snprintf(buffer, sizeof(buffer), "%02d/%02d/%04d %d:%02d %s", now.month, now.day, now.year, hour12, now.minute, now.hour >= 12 ? "PM" : "AM");
+  else if (token == "iso_datetime") snprintf(buffer, sizeof(buffer), "%04d-%02d-%02dT%02d:%02d:%02d", now.year, now.month, now.day, now.hour, now.minute, now.second);
+  else if (token == "iso_datetime_tz") snprintf(buffer, sizeof(buffer), "%04d-%02d-%02dT%02d:%02d:%02d%s", now.year, now.month, now.day, now.hour, now.minute, now.second, formatTimezoneOffset(clockTimezoneOffsetMinutes).c_str());
   else if (token == "tomorrow_short") {
     RtcDateTime tomorrow = datePlusDays(now, 1);
     snprintf(buffer, sizeof(buffer), "%d/%d/%02d", tomorrow.month, tomorrow.day, tomorrow.year % 100);
   }
+  else if (token == "weekday") snprintf(buffer, sizeof(buffer), "%s", weekdayNameFull(dow));
+  else if (token == "weekday_short") snprintf(buffer, sizeof(buffer), "%s", weekdayNameShort(dow));
+  else if (token == "weekday_number") snprintf(buffer, sizeof(buffer), "%d", dow);
   else if (token == "month") snprintf(buffer, sizeof(buffer), "%d", now.month);
   else if (token == "month_padded") snprintf(buffer, sizeof(buffer), "%02d", now.month);
   else if (token == "month_name") snprintf(buffer, sizeof(buffer), "%s", monthNameFull(now.month));
@@ -1251,6 +1301,13 @@ String rtcTokenValue(const String& token) {
   else if (token == "day_padded") snprintf(buffer, sizeof(buffer), "%02d", now.day);
   else if (token == "year") snprintf(buffer, sizeof(buffer), "%04d", now.year);
   else if (token == "year_short") snprintf(buffer, sizeof(buffer), "%02d", now.year % 100);
+  else if (token == "hour_24") snprintf(buffer, sizeof(buffer), "%02d", now.hour);
+  else if (token == "hour_12") snprintf(buffer, sizeof(buffer), "%d", hour12);
+  else if (token == "minute") snprintf(buffer, sizeof(buffer), "%02d", now.minute);
+  else if (token == "second") snprintf(buffer, sizeof(buffer), "%02d", now.second);
+  else if (token == "ampm") snprintf(buffer, sizeof(buffer), "%s", now.hour >= 12 ? "PM" : "AM");
+  else if (token == "timezone") snprintf(buffer, sizeof(buffer), "%s", clockTimezoneName.c_str());
+  else if (token == "timezone_offset") snprintf(buffer, sizeof(buffer), "%s", formatTimezoneOffset(clockTimezoneOffsetMinutes).c_str());
   else return "";
 
   return String(buffer);
@@ -1290,10 +1347,6 @@ bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs) {
       if (!sendHidKeyWithDelay(0, HID_KEY_ENTER, keyDelayMs)) return false;
     } else if (token == "clipboard") {
       if (!sendHidKeyWithDelay(KEYBOARD_MODIFIER_LEFTCTRL, HID_KEY_V, keyDelayMs)) return false;
-    } else if (token.startsWith("prompt:")) {
-      String placeholder = "[" + token.substring(7) + "]";
-      if (!typeAsciiStringWithDelay(placeholder, keyDelayMs)) return false;
-      if (cursorSeen) charactersAfterCursor += placeholder.length();
     } else {
       String literalToken = "{" + token + "}";
       if (!typeAsciiStringWithDelay(literalToken, keyDelayMs)) return false;
@@ -1381,7 +1434,7 @@ void sendProtocolInfo(uint32_t id) {
   response["data"]["firmwareVersion"] = FIRMWARE_VERSION;
   response["data"]["configSchema"] = CONFIG_SCHEMA_VERSION;
   response["data"]["hasConfiguration"] = storedConfigurationLoaded;
-  response["data"]["ruleCount"] = configRuleCount;
+  response["data"]["ruleCount"] = activeRuleCount();
   serializeJson(response, Serial);
   Serial.println();
 }
@@ -1432,6 +1485,9 @@ void sendProtocolClock(uint32_t id) {
   response["data"]["clock"]["hour"] = now.hour;
   response["data"]["clock"]["minute"] = now.minute;
   response["data"]["clock"]["second"] = now.second;
+  response["data"]["clock"]["timezoneName"] = clockTimezoneName;
+  response["data"]["clock"]["timezoneOffsetMinutes"] = clockTimezoneOffsetMinutes;
+  response["data"]["clock"]["timezoneOffset"] = formatTimezoneOffset(clockTimezoneOffsetMinutes);
   response["data"]["oscillatorStop"] = rtcOscillatorStopFlagSet();
   serializeJson(response, Serial);
   Serial.println();
@@ -1481,7 +1537,7 @@ void handleProtocolLine(const String& line) {
     response["id"] = id;
     response["ok"] = true;
     response["type"] = "config-saved";
-    response["data"]["ruleCount"] = configRuleCount;
+    response["data"]["ruleCount"] = activeRuleCount();
     serializeJson(response, Serial);
     Serial.println();
     return;
@@ -1503,6 +1559,9 @@ void handleProtocolLine(const String& line) {
     }
     rtcSetDateTime(value);
     rtcClearOscillatorStopFlag();
+    const char* timezoneName = request["timezoneName"] | clockTimezoneName.c_str();
+    int timezoneOffsetMinutes = request["timezoneOffsetMinutes"] | clockTimezoneOffsetMinutes;
+    saveClockMetadata(String(timezoneName), timezoneOffsetMinutes);
     sendProtocolSuccess(id, "clock-set");
     return;
   }
@@ -1666,6 +1725,135 @@ const char* monthNameFull(int month) {
     case 12: return "December";
     default: return "Invalid";
   }
+}
+
+const char* monthNameShort(int month) {
+  switch (month) {
+    case 1: return "Jan";
+    case 2: return "Feb";
+    case 3: return "Mar";
+    case 4: return "Apr";
+    case 5: return "May";
+    case 6: return "Jun";
+    case 7: return "Jul";
+    case 8: return "Aug";
+    case 9: return "Sep";
+    case 10: return "Oct";
+    case 11: return "Nov";
+    case 12: return "Dec";
+    default: return "Invalid";
+  }
+}
+
+const char* weekdayNameFull(int dow) {
+  switch (dow) {
+    case 1: return "Monday";
+    case 2: return "Tuesday";
+    case 3: return "Wednesday";
+    case 4: return "Thursday";
+    case 5: return "Friday";
+    case 6: return "Saturday";
+    case 7: return "Sunday";
+    default: return "Invalid";
+  }
+}
+
+const char* weekdayNameShort(int dow) {
+  switch (dow) {
+    case 1: return "Mon";
+    case 2: return "Tue";
+    case 3: return "Wed";
+    case 4: return "Thu";
+    case 5: return "Fri";
+    case 6: return "Sat";
+    case 7: return "Sun";
+    default: return "Inv";
+  }
+}
+
+String formatTimezoneOffset(int offsetMinutes) {
+  char buffer[8];
+  char sign = offsetMinutes >= 0 ? '+' : '-';
+  int absolute = abs(offsetMinutes);
+  snprintf(buffer, sizeof(buffer), "%c%02d:%02d", sign, absolute / 60, absolute % 60);
+  return String(buffer);
+}
+
+String formatCustomDateTime(const String& pattern, const RtcDateTime& dt) {
+  String output;
+  int dow = dt.dow;
+  if (dow < 1 || dow > 7) {
+    dow = weekdayMonday1(dt.year, dt.month, dt.day);
+  }
+  int hour12 = dt.hour % 12;
+  if (hour12 == 0) hour12 = 12;
+
+  for (int index = 0; index < pattern.length();) {
+    if (pattern.startsWith("YYYY", index)) { output += String(dt.year); index += 4; }
+    else if (pattern.startsWith("YY", index)) { if (dt.year % 100 < 10) output += "0"; output += String(dt.year % 100); index += 2; }
+    else if (pattern.startsWith("MMMM", index)) { output += monthNameFull(dt.month); index += 4; }
+    else if (pattern.startsWith("MMM", index)) { output += monthNameShort(dt.month); index += 3; }
+    else if (pattern.startsWith("MM", index)) { if (dt.month < 10) output += "0"; output += String(dt.month); index += 2; }
+    else if (pattern.startsWith("M", index)) { output += String(dt.month); index += 1; }
+    else if (pattern.startsWith("DD", index)) { if (dt.day < 10) output += "0"; output += String(dt.day); index += 2; }
+    else if (pattern.startsWith("D", index)) { output += String(dt.day); index += 1; }
+    else if (pattern.startsWith("dddd", index)) { output += weekdayNameFull(dow); index += 4; }
+    else if (pattern.startsWith("ddd", index)) { output += weekdayNameShort(dow); index += 3; }
+    else if (pattern.startsWith("HH", index)) { if (dt.hour < 10) output += "0"; output += String(dt.hour); index += 2; }
+    else if (pattern.startsWith("H", index)) { output += String(dt.hour); index += 1; }
+    else if (pattern.startsWith("hh", index)) { if (hour12 < 10) output += "0"; output += String(hour12); index += 2; }
+    else if (pattern.startsWith("h", index)) { output += String(hour12); index += 1; }
+    else if (pattern.startsWith("mm", index)) { if (dt.minute < 10) output += "0"; output += String(dt.minute); index += 2; }
+    else if (pattern.startsWith("ss", index)) { if (dt.second < 10) output += "0"; output += String(dt.second); index += 2; }
+    else if (pattern.startsWith("A", index)) { output += dt.hour >= 12 ? "PM" : "AM"; index += 1; }
+    else if (pattern.startsWith("a", index)) { output += dt.hour >= 12 ? "pm" : "am"; index += 1; }
+    else if (pattern.startsWith("Z", index)) { output += formatTimezoneOffset(clockTimezoneOffsetMinutes); index += 1; }
+    else if (pattern.startsWith("z", index)) { output += clockTimezoneName; index += 1; }
+    else { output += pattern[index]; index += 1; }
+  }
+
+  return output;
+}
+
+void loadClockMetadata() {
+  if (!LittleFS.exists(CLOCK_META_FILE)) {
+    return;
+  }
+
+  File file = LittleFS.open(CLOCK_META_FILE, "r");
+  if (!file) {
+    return;
+  }
+
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+  if (error) {
+    return;
+  }
+
+  clockTimezoneName = doc["timezoneName"] | "Local";
+  clockTimezoneOffsetMinutes = doc["timezoneOffsetMinutes"] | 0;
+}
+
+bool saveClockMetadata(const String& timezoneName, int offsetMinutes) {
+  clockTimezoneName = timezoneName.length() ? timezoneName : "Local";
+  clockTimezoneOffsetMinutes = offsetMinutes;
+
+  JsonDocument doc;
+  doc["timezoneName"] = clockTimezoneName;
+  doc["timezoneOffsetMinutes"] = clockTimezoneOffsetMinutes;
+
+  LittleFS.remove(CLOCK_META_TEMP_FILE);
+  File file = LittleFS.open(CLOCK_META_TEMP_FILE, "w");
+  if (!file) {
+    return false;
+  }
+
+  serializeJson(doc, file);
+  file.close();
+  LittleFS.remove(CLOCK_META_FILE);
+  return LittleFS.rename(CLOCK_META_TEMP_FILE, CLOCK_META_FILE);
 }
 
 bool validateDateTime(const RtcDateTime& dt) {
@@ -1953,6 +2141,7 @@ void setup() {
 
   Serial.println("LittleFS mounted.");
   loadConfigurationFromStorage();
+  loadClockMetadata();
 
   if (!rtcPresent()) {
     Serial.println("ERROR: RTC not found at I2C address 0x68.");

@@ -46,4 +46,4 @@ Supported commands are `ping`, `get-config`, `set-config`, `get-clock`, `set-clo
 - `delimiter`: replaces a trigger when followed by space, tab, or Enter and restores that delimiter after the expansion.
 - `keyboard`, `numpad`, and `any` scopes restrict the source of typed triggers.
 
-Templates support RTC values, cursor repositioning, Tab, Enter, Ctrl+V clipboard paste, and bracketed prompt placeholders. Shortcut rules accept values such as `CTRL+B`, `CTRL+SHIFT+S`, `ALT+TAB`, `HOME`, and `ENTER`. Output steps may contain `type expansion`, `resolve placeholders`, `key:<shortcut>`, or literal template text.
+Templates support clock fields such as `{date}`, `{weekday}`, `{time_24}`, `{timezone_offset}`, `{iso_datetime_tz}`, and custom formats such as `{date:MM/D/YY}`. They also support cursor repositioning, Tab, Enter, and Ctrl+V clipboard paste. Shortcut rules accept values such as `CTRL+B`, `CTRL+SHIFT+S`, `ALT+TAB`, `HOME`, and `ENTER`. Output steps may contain `type expansion`, `resolve placeholders`, `key:<shortcut>`, or literal template text.
