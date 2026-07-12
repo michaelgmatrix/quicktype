@@ -118,41 +118,6 @@
       padding: 14px;
     }
 
-    .mode-control {
-      display: grid;
-      gap: 8px;
-      margin-top: 14px;
-    }
-
-    .mode-control span {
-      color: #a9b7c2;
-      font-size: 0.74rem;
-      font-weight: 800;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    .mode-toggle {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      overflow: hidden;
-      border: 1px solid rgba(255,255,255,0.14);
-      border-radius: var(--radius-small);
-      background: rgba(255,255,255,0.06);
-    }
-
-    .mode-toggle button {
-      min-height: 36px;
-      color: #c8d4dc;
-      background: transparent;
-      font-weight: 800;
-    }
-
-    .mode-toggle button.active {
-      color: #101820;
-      background: #7ed3d2;
-    }
-
     .status-line {
       display: flex;
       align-items: center;
@@ -495,7 +460,7 @@
     .expansion-header,
     .key-button {
       display: grid;
-      grid-template-columns: 42px minmax(120px, 0.8fr) minmax(140px, 1fr) minmax(180px, 1.4fr);
+      grid-template-columns: minmax(120px, 0.8fr) minmax(140px, 1fr) minmax(180px, 1.4fr);
       align-items: center;
       gap: 8px;
     }
@@ -525,6 +490,29 @@
       border-bottom: 1px solid var(--line);
     }
 
+    .expansion-sort {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 6px;
+      min-width: 0;
+      padding: 0;
+      color: inherit;
+      background: transparent;
+      font: inherit;
+      text-align: left;
+    }
+
+    .expansion-sort:hover {
+      color: var(--accent);
+    }
+
+    .sort-indicator {
+      width: 10px;
+      color: var(--muted);
+      font-size: 0.68rem;
+    }
+
     .key-button:hover,
     .key-button.active {
       background: var(--accent-soft);
@@ -536,13 +524,6 @@
       font-weight: 900;
       font-size: 0.86rem;
       overflow-wrap: anywhere;
-    }
-
-    .row-number {
-      color: var(--muted);
-      font-size: 0.78rem;
-      font-variant-numeric: tabular-nums;
-      font-weight: 800;
     }
 
     .key-number.missing {
@@ -1060,13 +1041,6 @@
           <span id="statusDot" class="status-dot" aria-hidden="true"></span>
           <span id="connectionStatus">No device connected</span>
         </div>
-        <div class="mode-control" aria-label="Inline keyboard path">
-          <span>USB Path</span>
-          <div class="mode-toggle">
-            <button class="active" type="button">Inline</button>
-            <button type="button" disabled>Pass-through</button>
-          </div>
-        </div>
       </section>
 
       <nav class="sidebar-section" aria-label="Configurator sections">
@@ -1095,6 +1069,7 @@
           <button id="connectButton" class="secondary-button" type="button">Connect</button>
           <button id="readButton" class="secondary-button" type="button">Read</button>
           <button id="writeButton" class="secondary-button" type="button">Write</button>
+          <button id="telemetryButton" class="secondary-button" type="button">Telemetry</button>
           <button id="readClockButton" class="secondary-button" type="button">Read Clock</button>
           <button id="syncClockButton" class="secondary-button" type="button">Sync Clock</button>
           <button id="disconnectButton" class="secondary-button" type="button">Disconnect</button>
@@ -1348,6 +1323,7 @@
       deviceInfo: null,
       isConnected: false,
       configDirty: false,
+      expansionSort: { key: null, direction: "asc" },
       config: createDefaultConfig()
     };
 
@@ -1377,6 +1353,7 @@
       elements.disconnectButton = document.getElementById("disconnectButton");
       elements.readButton = document.getElementById("readButton");
       elements.writeButton = document.getElementById("writeButton");
+      elements.telemetryButton = document.getElementById("telemetryButton");
       elements.readClockButton = document.getElementById("readClockButton");
       elements.exportButton = document.getElementById("exportButton");
       elements.importFile = document.getElementById("importFile");
@@ -1425,6 +1402,7 @@
       elements.disconnectButton.addEventListener("click", disconnectDevice);
       elements.readButton.addEventListener("click", readDeviceConfiguration);
       elements.writeButton.addEventListener("click", writeDeviceConfiguration);
+      elements.telemetryButton.addEventListener("click", readDeviceTelemetry);
       elements.readClockButton.addEventListener("click", readDeviceClock);
       elements.exportButton.addEventListener("click", exportConfiguration);
       elements.importFile.addEventListener("change", importConfiguration);
@@ -1509,8 +1487,8 @@
     }
 
     async function connectDevice(port) {
-      appState.port = port;
       await port.open({ baudRate: SERIAL_BAUD_RATE, bufferSize: 65536 });
+      appState.port = port;
       appState.writer = port.writable.getWriter();
       appState.reader = port.readable.getReader();
       appState.isConnected = true;
@@ -1540,17 +1518,56 @@
       }
 
       try {
-        rejectPendingRequests(new Error("Device disconnected"));
-        if (appState.reader) {
-          await appState.reader.cancel();
-          appState.reader.releaseLock();
-          appState.reader = null;
+        if (appState.pendingRequests.size > 0) {
+          logActivity("Waiting for pending device command before disconnecting...");
+          await waitForPendingDeviceRequests(16000);
         }
-        if (appState.writer) {
-          appState.writer.releaseLock();
-          appState.writer = null;
+
+        if (appState.pendingRequests.size > 0) {
+          rejectPendingRequests(new Error("Device disconnected"));
         }
-        await appState.port.close();
+
+        const reader = appState.reader;
+        const writer = appState.writer;
+        let disconnectError = null;
+        appState.reader = null;
+        appState.writer = null;
+
+        if (reader) {
+          try {
+            await reader.cancel();
+          } catch (error) {
+            disconnectError = disconnectError || error;
+          } finally {
+            reader.releaseLock();
+          }
+        }
+
+        if (writer) {
+          try {
+            await writer.close();
+          } catch (error) {
+            disconnectError = disconnectError || error;
+          } finally {
+            writer.releaseLock();
+          }
+        }
+
+        if (appState.readLoop) {
+          await appState.readLoop.catch(() => {});
+          appState.readLoop = null;
+        }
+
+        try {
+          await appState.port.close();
+        } catch (error) {
+          disconnectError = disconnectError || error;
+        }
+
+        if (disconnectError) {
+          throw disconnectError;
+        }
+
         logActivity("Device disconnected.");
         showToast("Device disconnected.");
       } catch (error) {
@@ -1561,6 +1578,13 @@
         appState.deviceInfo = null;
         appState.isConnected = false;
         updateDeviceControls();
+      }
+    }
+
+    async function waitForPendingDeviceRequests(timeoutMs) {
+      const started = Date.now();
+      while (appState.pendingRequests.size > 0 && Date.now() - started < timeoutMs) {
+        await delay(100);
       }
     }
 
@@ -1642,6 +1666,40 @@
         showToast(`Clock read failed: ${error.message}`, "error");
         logActivity(`Clock read failed: ${error.message}`);
       }
+    }
+
+    async function readDeviceTelemetry() {
+      if (!ensureConnected("read telemetry")) {
+        showToast("Connect QuickType before reading telemetry.", "error");
+        return;
+      }
+
+      try {
+        const response = await sendDeviceCommand("get-telemetry", {}, 5000);
+        logTelemetry(response.data, "Telemetry");
+        showToast("Telemetry read.");
+      } catch (error) {
+        logActivity(`Telemetry read failed: ${error.message}`);
+        showToast(`Telemetry read failed: ${error.message}`, "error");
+      }
+    }
+
+    function logTelemetry(data, prefix = "Telemetry") {
+      if (!data) {
+        logActivity(`${prefix}: no data`);
+        return;
+      }
+
+      const counters = data.counters || {};
+      const last = data.last || {};
+      logActivity(
+        `${prefix}: up=${data.uptimeMs}ms heap=${data.freeHeap} host=${data.hostInterfaces}/kbd=${data.keyboardInterfaces}` +
+        ` req=${counters.hostReportRequests || 0} cb=${counters.hostReportCallbacks || 0}` +
+        ` kbd=${counters.keyboardReports || 0} fwd=${counters.forwardedKeyboard || 0}` +
+        ` zlen=${counters.zeroLengthReports || 0} decFail=${counters.keyboardDecodeFails || 0}` +
+        ` sendFail=${counters.keyboardSendFails || 0} hidNotReady=${counters.hidNotReady || 0}` +
+        ` lastHost=${last.hostReportMs || 0} lastFwd=${last.forwardedKeyboardMs || 0}`
+      );
     }
 
     async function syncDeviceClock() {
@@ -1750,6 +1808,11 @@
         return;
       }
 
+      if (message.id === 0 && message.type === "telemetry") {
+        logTelemetry(message.data, "Heartbeat");
+        return;
+      }
+
       const pending = appState.pendingRequests.get(message.id);
       if (!pending) {
         logActivity(`Unsolicited device response ${message.id}: ${message.type || "unknown"}`);
@@ -1796,6 +1859,7 @@
       elements.disconnectButton.disabled = !appState.isConnected;
       elements.readButton.disabled = !appState.isConnected;
       elements.writeButton.disabled = !appState.isConnected;
+      elements.telemetryButton.disabled = !appState.isConnected;
       elements.readClockButton.disabled = !appState.isConnected;
       elements.syncClockButton.disabled = !appState.isConnected;
       updateWriteDirtyIndicator();
@@ -1853,20 +1917,21 @@
 
       elements.keyGrid.innerHTML = `
         <div class="expansion-header">
-          <span>#</span>
-          <span>Trigger</span>
-          <span>Label</span>
-          <span>Snippet</span>
+          ${expansionSortHeader("trigger", "Trigger")}
+          ${expansionSortHeader("label", "Label")}
+          ${expansionSortHeader("expansion", "Expansion")}
         </div>
       `;
-      expansionRows.forEach(({ ruleId, mapping }, index) => {
+      elements.keyGrid.querySelectorAll("[data-expansion-sort]").forEach((button) => {
+        button.addEventListener("click", () => sortExpansionTable(button.dataset.expansionSort));
+      });
+      expansionRows.forEach(({ ruleId, mapping }) => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "key-button";
         button.classList.toggle("active", ruleId === appState.selectedRule);
         const missingTrigger = !mapping.triggerPattern;
         button.innerHTML = `
-          <span class="row-number">${String(index + 1).padStart(2, "0")}</span>
           <span class="key-number${missingTrigger ? " missing" : ""}">${escapeHtml(mapping.triggerPattern || "Needs trigger")}</span>
           <span class="key-meta">${escapeHtml(mapping.label || "Unassigned")}</span>
           <span class="key-action">${escapeHtml(compactSnippet(mapping.text || mapping.steps?.map((step) => step.value).join(" ") || ""))}</span>
@@ -1877,9 +1942,43 @@
     }
 
     function getExpansionRows() {
-      return Object.entries(appState.config.rules)
+      const rows = Object.entries(appState.config.rules)
         .filter(([, mapping]) => isPrimaryExpansion(mapping))
         .map(([ruleId, mapping]) => ({ ruleId, mapping }));
+
+      const { key, direction } = appState.expansionSort;
+      if (!key) return rows;
+
+      const multiplier = direction === "desc" ? -1 : 1;
+      return rows.sort((left, right) => {
+        const comparison = expansionSortValue(left.mapping, key).localeCompare(
+          expansionSortValue(right.mapping, key),
+          undefined,
+          { sensitivity: "base", numeric: true }
+        );
+        return comparison !== 0 ? comparison * multiplier : left.ruleId.localeCompare(right.ruleId);
+      });
+    }
+
+    function expansionSortValue(mapping, key) {
+      if (key === "trigger") return mapping.triggerPattern || "";
+      if (key === "label") return mapping.label || "";
+      return compactSnippet(mapping.text || mapping.steps?.map((step) => step.value).join(" ") || "");
+    }
+
+    function expansionSortHeader(key, label) {
+      const active = appState.expansionSort.key === key;
+      const indicator = active ? (appState.expansionSort.direction === "asc" ? "▲" : "▼") : "";
+      return `<button class="expansion-sort" type="button" data-expansion-sort="${key}" aria-pressed="${active}" title="Sort by ${label}"><span>${label}</span><span class="sort-indicator" aria-hidden="true">${indicator}</span></button>`;
+    }
+
+    function sortExpansionTable(key) {
+      if (appState.expansionSort.key === key) {
+        appState.expansionSort.direction = appState.expansionSort.direction === "asc" ? "desc" : "asc";
+      } else {
+        appState.expansionSort = { key, direction: "asc" };
+      }
+      renderKeyGrid();
     }
 
     function isPrimaryExpansion(mapping) {

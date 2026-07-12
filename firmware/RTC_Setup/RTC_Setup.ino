@@ -1,3 +1,4 @@
+// QuickType firmware version: 0.2.26
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -6,6 +7,7 @@
 #include <pio_usb.h>
 #include <Adafruit_TinyUSB.h>
 #include <tusb.h>
+#include <hardware/watchdog.h>
 
 // ============================================================
 // Seeed XIAO RP2040 wiring
@@ -39,21 +41,33 @@ static constexpr uint8_t RTC_ADDR = 0x68;
 static constexpr char TIMESTAMP_FILE[] = "/Timestamp.txt";
 static constexpr char CONFIG_FILE[] = "/quicktype-config.json";
 static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
+static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.0";
+static constexpr char FIRMWARE_VERSION[] = "0.2.26";
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 24;
 static constexpr size_t MAX_RULE_STEPS = 8;
 static constexpr size_t MAX_TRIGGER_BUFFER = 64;
+static constexpr size_t MAX_HOST_HID_INTERFACES = 8;
+static constexpr size_t MAX_CONSUMER_BIT_USAGES = 32;
+static constexpr bool ENABLE_SERIAL_DEBUG_LOGS = false;
+static constexpr uint32_t SERIAL_STATE_POLL_MS = 250;
+static constexpr uint32_t WATCHDOG_TIMEOUT_MS = 8000;
+
+enum HidReportId : uint8_t {
+  RID_KEYBOARD = 1,
+  RID_CONSUMER_CONTROL = 2
+};
 
 // Set this to true if you want Timestamp.txt renamed after a successful RTC set.
 static constexpr bool RENAME_TIMESTAMP_FILE_AFTER_SUCCESS = false;
 
-// HID keyboard report descriptor for the native USB-C device side.
+// HID report descriptor for the native USB-C device side.
 uint8_t const hidReportDescriptor[] = {
-  TUD_HID_REPORT_DESC_KEYBOARD()
+  TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(RID_KEYBOARD)),
+  TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(RID_CONSUMER_CONTROL))
 };
 
 // Native USB-C HID keyboard device.
@@ -92,7 +106,112 @@ struct ConfigRule {
   bool enabled;
 };
 
+struct HostHidInterfaceInfo {
+  uint8_t devAddr;
+  uint8_t instance;
+  uint8_t keyboardReportId;
+  uint8_t consumerReportId;
+  uint32_t nextReportRequestMs;
+  uint16_t consumerBitOffset;
+  uint16_t consumerBitUsages[MAX_CONSUMER_BIT_USAGES];
+  uint8_t consumerBitCount;
+  bool mounted;
+  bool keyboard;
+  bool consumerControl;
+  bool consumerBitmask;
+};
+
+struct TelemetryState {
+  uint32_t loopCount;
+  uint32_t bridgeServiceCount;
+  uint32_t hostReportRequestCount;
+  uint32_t hostReportRequestFailCount;
+  uint32_t hostReportCallbackCount;
+  uint32_t hostZeroLengthReportCount;
+  uint32_t keyboardReportCount;
+  uint32_t keyboardDecodeFailCount;
+  uint32_t consumerReportCount;
+  uint32_t forwardedKeyboardCount;
+  uint32_t forwardedConsumerCount;
+  uint32_t keyboardSendFailCount;
+  uint32_t consumerSendFailCount;
+  uint32_t hidNotReadyCount;
+  uint32_t hostQuiesceCount;
+  uint32_t hostRecoverCount;
+  uint32_t hostReceiveAbortCount;
+  uint32_t hostReceiveAbortFailCount;
+  uint32_t configWriteCount;
+  uint32_t configWriteFailCount;
+  uint32_t protocolCommandCount;
+  uint32_t serialDisconnectCount;
+  uint32_t lastLoopMs;
+  uint32_t maxLoopGapMs;
+  uint32_t lastHostReportMs;
+  uint32_t lastKeyboardReportMs;
+  uint32_t lastConsumerReportMs;
+  uint32_t lastForwardedKeyboardMs;
+  uint32_t lastForwardedConsumerMs;
+  uint32_t lastHostQuiesceMs;
+  uint32_t lastHostRecoverMs;
+  uint32_t lastConfigWriteMs;
+  uint32_t lastProtocolCommandMs;
+  uint32_t lastHeartbeatMs;
+  uint16_t lastConsumerUsage;
+  uint8_t lastKeyUsage;
+  uint8_t lastModifier;
+  bool serialWasConnected;
+};
+
+void serviceNativeUsb();
+
+class CooperativeFileWriter : public Print {
+public:
+  explicit CooperativeFileWriter(File& file) : fileRef(file) {}
+
+  size_t write(uint8_t value) override {
+    size_t written = fileRef.write(value);
+    serviceProgress();
+    return written;
+  }
+
+  size_t write(const uint8_t* buffer, size_t size) override {
+    size_t totalWritten = 0;
+    while (totalWritten < size) {
+      size_t chunkSize = min((size_t)64, size - totalWritten);
+      size_t written = fileRef.write(buffer + totalWritten, chunkSize);
+      totalWritten += written;
+      serviceNativeUsb();
+      if (written != chunkSize) {
+        break;
+      }
+    }
+    return totalWritten;
+  }
+
+private:
+  File& fileRef;
+  size_t bytesSinceService = 0;
+
+  void serviceProgress() {
+    bytesSinceService++;
+    if (bytesSinceService >= 64) {
+      serviceNativeUsb();
+      bytesSinceService = 0;
+    }
+  }
+};
+
 static hid_keyboard_report_t previousKeyboardReport = {};
+static hid_keyboard_report_t pendingKeyboardReport = {};
+static HostHidInterfaceInfo hostHidInterfaces[MAX_HOST_HID_INTERFACES];
+static TelemetryState telemetry = {};
+static uint16_t activeTopRowConsumerUsage = 0;
+static uint16_t pendingConsumerUsage = 0;
+static bool pendingKeyboardReportValid = false;
+static constexpr size_t CONSUMER_QUEUE_SIZE = 8;
+static uint16_t consumerUsageQueue[CONSUMER_QUEUE_SIZE];
+static size_t consumerQueueHead = 0;
+static size_t consumerQueueTail = 0;
 static ConfigRule configRules[MAX_CONFIG_RULES];
 static size_t configRuleCount = 0;
 static bool storedConfigurationLoaded = false;
@@ -102,6 +221,8 @@ static String typedBuffer;
 static String typedSources;
 static String clockTimezoneName = "Local";
 static int clockTimezoneOffsetMinutes = 0;
+static uint32_t lastSerialStatePollMs = 0;
+static bool watchdogStarted = false;
 
 // Forward declarations
 uint8_t decToBcd(int value);
@@ -134,6 +255,15 @@ void handleTimestampFile();
 
 void configureUsbDeviceKeyboard();
 void configureUsbHost();
+bool serialDebugConnected();
+bool serialProtocolConnected();
+void resetSerialProtocolInput();
+bool serialWriteBytes(uint8_t const* data, size_t size);
+bool serialWriteText(const char* text);
+bool serialWriteUInt(uint32_t value);
+bool sendProtocolJson(JsonDocument& response);
+void serviceNativeUsb();
+void cooperativeDelay(uint32_t delayMs);
 bool waitForUsbHidReady(uint32_t timeoutMs);
 bool sendHidKey(uint8_t modifier, uint8_t keycode);
 bool sendHidKeyWithDelay(uint8_t modifier, uint8_t keycode, uint16_t delayMs);
@@ -153,11 +283,41 @@ void outputDateFormatForKey(uint8_t keycode);
 const char* keypadUsageName(uint8_t usage);
 const char* physicalKeyName(uint8_t usage);
 bool keyWasInPreviousReport(uint8_t keycode);
+bool hasShortcutModifier(uint8_t modifier);
+bool decodeKeyboardReport(uint8_t const* report, uint16_t len, uint8_t expectedReportId, hid_keyboard_report_t& out);
+bool usbHidReadyNow();
+bool sendKeyboardReportNow(hid_keyboard_report_t const* report);
+bool sendConsumerUsageNow(uint16_t usage);
+void servicePendingHidReports();
 bool forwardKeyboardReport(hid_keyboard_report_t const* report);
+uint16_t topRowConsumerUsage(uint8_t keycode);
+bool translateTopRowConsumerKeys(hid_keyboard_report_t const* report, hid_keyboard_report_t& keyboardOut);
+HostHidInterfaceInfo* hostHidInterfaceInfo(uint8_t dev_addr, uint8_t instance);
+void clearHostHidInterface(uint8_t dev_addr, uint8_t instance);
+void parseHostHidDescriptor(
+  uint8_t const* desc_report,
+  uint16_t desc_len,
+  bool& keyboard,
+  uint8_t& keyboardReportId,
+  bool& consumerControl,
+  uint8_t& consumerReportId
+);
+void rememberHostHidInterface(
+  uint8_t dev_addr,
+  uint8_t instance,
+  bool keyboard,
+  uint8_t keyboardReportId,
+  bool consumerControl,
+  uint8_t consumerReportId
+);
+void parseConsumerBitmaskDescriptor(uint8_t const* desc_report, uint16_t desc_len, HostHidInterfaceInfo& info);
+bool sendConsumerUsage(uint16_t usage);
+bool forwardConsumerControlReport(uint8_t const* report, uint16_t len, const HostHidInterfaceInfo& info);
 bool handleLegacyKey(uint8_t keycode);
 char hidKeycodeToAscii(uint8_t keycode, uint8_t modifier, bool& isNumpad);
 bool processPhysicalKeyRule(uint8_t keycode);
 void recordTypedCharacter(char value, bool isNumpad);
+bool outputExpansionListTable();
 bool processTypedTriggerRules(char currentCharacter);
 bool executeConfiguredRule(const ConfigRule& rule, size_t eraseCount, char delimiterToRestore);
 bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs);
@@ -168,6 +328,8 @@ void handleKeyboardReport(hid_keyboard_report_t const* report);
 void clearCompiledConfiguration();
 bool compileConfiguration(JsonVariantConst config, String& errorMessage);
 size_t activeRuleCount();
+void recoverConfigurationStorage();
+bool verifyConfigurationFile(const char* filename, size_t expectedSize);
 bool loadConfigurationFromStorage();
 bool saveConfiguration(JsonVariantConst config, String& errorMessage);
 void processSerialProtocol();
@@ -177,6 +339,16 @@ void sendProtocolSuccess(uint32_t id, const char* type);
 void sendProtocolInfo(uint32_t id);
 void sendStoredConfiguration(uint32_t id);
 void sendProtocolClock(uint32_t id);
+void sendProtocolTelemetry(uint32_t id);
+void addTelemetryToJson(JsonObject target);
+void emitTelemetryHeartbeat();
+size_t mountedHostInterfaceCount();
+size_t mountedKeyboardInterfaceCount();
+size_t mountedConsumerInterfaceCount();
+void requestNextHidReport(uint8_t dev_addr, uint8_t instance);
+void pollMountedHidReports();
+void serviceUsbBridge();
+void resetBridgeStateAfterConfigurationChange();
 
 // ============================================================
 // Native USB HID keyboard device setup
@@ -187,29 +359,214 @@ void configureUsbDeviceKeyboard() {
   // This must be called before Serial.begin() and before delay(),
   // so the HID interface exists when the PC enumerates the USB device.
 
-  usb_hid.setBootProtocol(HID_ITF_PROTOCOL_KEYBOARD);
   usb_hid.setPollInterval(2);
   usb_hid.setReportDescriptor(hidReportDescriptor, sizeof(hidReportDescriptor));
   usb_hid.setStringDescriptor("XIAO Timestamp Keyboard");
   usb_hid.begin();
 }
 
+bool serialDebugConnected() {
+  return ENABLE_SERIAL_DEBUG_LOGS && serialProtocolConnected();
+}
+
+bool serialProtocolConnected() {
+  return Serial && Serial.dtr();
+}
+
+void resetSerialProtocolInput() {
+  serialInputLine = "";
+  serialInputOverflow = false;
+}
+
+bool serialWriteBytes(uint8_t const* data, size_t size) {
+  if (data == nullptr && size > 0) {
+    return false;
+  }
+
+  size_t written = 0;
+  uint32_t blockedSince = millis();
+  while (written < size) {
+    serviceNativeUsb();
+
+    if (!serialProtocolConnected()) {
+      resetSerialProtocolInput();
+      return false;
+    }
+
+    int available = Serial.availableForWrite();
+    if (available <= 0) {
+      if (millis() - blockedSince > 25) {
+        resetSerialProtocolInput();
+        return false;
+      }
+      delay(1);
+      continue;
+    }
+
+    blockedSince = millis();
+    size_t chunkSize = min((size_t)available, size - written);
+    size_t chunkWritten = Serial.write(data + written, chunkSize);
+    if (chunkWritten == 0) {
+      delay(1);
+      continue;
+    }
+    written += chunkWritten;
+  }
+
+  return true;
+}
+
+bool serialWriteText(const char* text) {
+  if (text == nullptr) {
+    return false;
+  }
+  return serialWriteBytes((uint8_t const*)text, strlen(text));
+}
+
+bool serialWriteUInt(uint32_t value) {
+  char buffer[11];
+  snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)value);
+  return serialWriteText(buffer);
+}
+
+bool sendProtocolJson(JsonDocument& response) {
+  if (!serialProtocolConnected()) {
+    resetSerialProtocolInput();
+    return false;
+  }
+
+  String output;
+  serializeJson(response, output);
+  output += '\n';
+  return serialWriteBytes((uint8_t const*)output.c_str(), output.length());
+}
+
+void serviceNativeUsb() {
+  if (watchdogStarted) {
+    watchdog_update();
+  }
+  TinyUSB_Device_Task();
+}
+
+size_t mountedHostInterfaceCount() {
+  size_t count = 0;
+  for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
+    if (hostHidInterfaces[index].mounted) count++;
+  }
+  return count;
+}
+
+size_t mountedKeyboardInterfaceCount() {
+  size_t count = 0;
+  for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
+    if (hostHidInterfaces[index].mounted && hostHidInterfaces[index].keyboard) count++;
+  }
+  return count;
+}
+
+size_t mountedConsumerInterfaceCount() {
+  size_t count = 0;
+  for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
+    if (hostHidInterfaces[index].mounted && hostHidInterfaces[index].consumerControl) count++;
+  }
+  return count;
+}
+
+void addTelemetryToJson(JsonObject target) {
+  target["uptimeMs"] = millis();
+  target["freeHeap"] = rp2040.getFreeHeap();
+  target["serialConnected"] = serialDebugConnected();
+  target["tinyUsbMounted"] = TinyUSBDevice.mounted();
+  target["tinyUsbSuspended"] = TinyUSBDevice.suspended();
+  target["nativeHidReady"] = usb_hid.ready();
+  target["storedConfig"] = storedConfigurationLoaded;
+  target["activeRules"] = activeRuleCount();
+  target["compiledRules"] = configRuleCount;
+  target["hostInterfaces"] = mountedHostInterfaceCount();
+  target["keyboardInterfaces"] = mountedKeyboardInterfaceCount();
+  target["consumerInterfaces"] = mountedConsumerInterfaceCount();
+  target["pendingKeyboard"] = pendingKeyboardReportValid;
+  target["pendingConsumer"] = (consumerQueueTail != consumerQueueHead);
+  target["typedBufferLength"] = typedBuffer.length();
+
+  JsonObject counters = target["counters"].to<JsonObject>();
+  counters["loop"] = telemetry.loopCount;
+  counters["bridgeService"] = telemetry.bridgeServiceCount;
+  counters["hostReportRequests"] = telemetry.hostReportRequestCount;
+  counters["hostReportRequestFails"] = telemetry.hostReportRequestFailCount;
+  counters["hostReportCallbacks"] = telemetry.hostReportCallbackCount;
+  counters["zeroLengthReports"] = telemetry.hostZeroLengthReportCount;
+  counters["keyboardReports"] = telemetry.keyboardReportCount;
+  counters["keyboardDecodeFails"] = telemetry.keyboardDecodeFailCount;
+  counters["consumerReports"] = telemetry.consumerReportCount;
+  counters["forwardedKeyboard"] = telemetry.forwardedKeyboardCount;
+  counters["forwardedConsumer"] = telemetry.forwardedConsumerCount;
+  counters["keyboardSendFails"] = telemetry.keyboardSendFailCount;
+  counters["consumerSendFails"] = telemetry.consumerSendFailCount;
+  counters["hidNotReady"] = telemetry.hidNotReadyCount;
+  counters["hostQuiesces"] = telemetry.hostQuiesceCount;
+  counters["hostRecovers"] = telemetry.hostRecoverCount;
+  counters["hostReceiveAborts"] = telemetry.hostReceiveAbortCount;
+  counters["hostReceiveAbortFails"] = telemetry.hostReceiveAbortFailCount;
+  counters["configWrites"] = telemetry.configWriteCount;
+  counters["configWriteFails"] = telemetry.configWriteFailCount;
+  counters["protocolCommands"] = telemetry.protocolCommandCount;
+  counters["serialDisconnects"] = telemetry.serialDisconnectCount;
+
+  JsonObject last = target["last"].to<JsonObject>();
+  last["loopMs"] = telemetry.lastLoopMs;
+  last["maxLoopGapMs"] = telemetry.maxLoopGapMs;
+  last["hostReportMs"] = telemetry.lastHostReportMs;
+  last["keyboardReportMs"] = telemetry.lastKeyboardReportMs;
+  last["consumerReportMs"] = telemetry.lastConsumerReportMs;
+  last["forwardedKeyboardMs"] = telemetry.lastForwardedKeyboardMs;
+  last["forwardedConsumerMs"] = telemetry.lastForwardedConsumerMs;
+  last["hostQuiesceMs"] = telemetry.lastHostQuiesceMs;
+  last["hostRecoverMs"] = telemetry.lastHostRecoverMs;
+  last["configWriteMs"] = telemetry.lastConfigWriteMs;
+  last["protocolCommandMs"] = telemetry.lastProtocolCommandMs;
+  last["keyUsage"] = telemetry.lastKeyUsage;
+  last["modifier"] = telemetry.lastModifier;
+  last["consumerUsage"] = telemetry.lastConsumerUsage;
+}
+
+void emitTelemetryHeartbeat() {
+  // Telemetry is pull-only. Serial connection state is serviced in
+  // processSerialProtocol() so idle disconnects do not touch CDC every loop.
+}
+
+void cooperativeDelay(uint32_t delayMs) {
+  if (delayMs == 0) {
+    return;
+  }
+
+  uint32_t started = millis();
+  do {
+    serviceNativeUsb();
+    delay(1);
+  } while (millis() - started < delayMs);
+}
+
 bool waitForUsbHidReady(uint32_t timeoutMs) {
   uint32_t started = millis();
 
   while (!usb_hid.ready()) {
+    serviceNativeUsb();
+
     if (TinyUSBDevice.suspended()) {
       TinyUSBDevice.remoteWakeup();
     }
 
     if (millis() - started >= timeoutMs) {
-      Serial.println("ERROR: USB HID keyboard is not ready.");
-      Serial.print("TinyUSB mounted: ");
-      Serial.println(TinyUSBDevice.mounted() ? "yes" : "no");
+      if (serialDebugConnected()) {
+        Serial.println("ERROR: USB HID keyboard is not ready.");
+        Serial.print("TinyUSB mounted: ");
+        Serial.println(TinyUSBDevice.mounted() ? "yes" : "no");
+      }
       return false;
     }
 
-    delay(1);
+    cooperativeDelay(1);
   }
 
   return true;
@@ -227,19 +584,23 @@ bool sendHidKeyWithDelay(uint8_t modifier, uint8_t keycode, uint16_t delayMs) {
   uint8_t keycodes[6] = { 0 };
   keycodes[0] = keycode;
 
-  if (!usb_hid.keyboardReport(0, modifier, keycodes)) {
-    Serial.println("ERROR: Failed to send HID key press.");
+  if (!usb_hid.keyboardReport(RID_KEYBOARD, modifier, keycodes)) {
+    if (serialDebugConnected()) {
+      Serial.println("ERROR: Failed to send HID key press.");
+    }
     return false;
   }
 
-  delay(delayMs);
+  cooperativeDelay(delayMs);
 
-  if (!usb_hid.keyboardRelease(0)) {
-    Serial.println("ERROR: Failed to send HID key release.");
+  if (!usb_hid.keyboardRelease(RID_KEYBOARD)) {
+    if (serialDebugConnected()) {
+      Serial.println("ERROR: Failed to send HID key release.");
+    }
     return false;
   }
 
-  delay(delayMs);
+  cooperativeDelay(delayMs);
 
   return true;
 }
@@ -252,16 +613,18 @@ bool typeAsciiCharWithDelay(char c, uint16_t delayMs) {
   if (c == '\n' || c == '\r') return sendHidKeyWithDelay(0, HID_KEY_ENTER, delayMs);
   if (c == '\t') return sendHidKeyWithDelay(0, HID_KEY_TAB, delayMs);
   if ((uint8_t)c < 0x20 || (uint8_t)c > 0x7E) {
-    Serial.print("ERROR: Unsupported non-ASCII character for HID typing: 0x");
-    Serial.println((uint8_t)c, HEX);
+    if (serialDebugConnected()) {
+      Serial.print("ERROR: Unsupported non-ASCII character for HID typing: 0x");
+      Serial.println((uint8_t)c, HEX);
+    }
     return false;
   }
 
   if (!waitForUsbHidReady(1000)) return false;
-  if (!usb_hid.keyboardPress(0, c)) return false;
-  delay(delayMs);
-  if (!usb_hid.keyboardRelease(0)) return false;
-  delay(delayMs);
+  if (!usb_hid.keyboardPress(RID_KEYBOARD, c)) return false;
+  cooperativeDelay(delayMs);
+  if (!usb_hid.keyboardRelease(RID_KEYBOARD)) return false;
+  cooperativeDelay(delayMs);
   return true;
 }
 
@@ -320,7 +683,9 @@ bool sendHomeEnterEnterUp() {
 // Reusable key pattern:
 // HOME, ENTER, ENTER, UP Arrow, CTRL+B
 bool sendHomeEnterEnterUpCtrlB() {
-  Serial.println("Sending reusable pattern: HOME, ENTER, ENTER, UP Arrow, CTRL+B.");
+  if (serialDebugConnected()) {
+    Serial.println("Sending reusable pattern: HOME, ENTER, ENTER, UP Arrow, CTRL+B.");
+  }
 
   if (!sendHomeEnterEnterUp()) {
     return false;
@@ -341,7 +706,9 @@ void outputSlashMacro() {
   RtcDateTime now = rtcGetDateTime();
 
   if (!validateDateTime(now)) {
-    Serial.println("ERROR: RTC date/time read is invalid. HID output skipped.");
+    if (serialDebugConnected()) {
+      Serial.println("ERROR: RTC date/time read is invalid. HID output skipped.");
+    }
     return;
   }
 
@@ -356,9 +723,11 @@ void outputSlashMacro() {
     now.year % 100
   );
 
-  Serial.print("Typing slash macro: ");
-  Serial.println(buffer);
-  Serial.println("Then sending Left Arrow x3.");
+  if (serialDebugConnected()) {
+    Serial.print("Typing slash macro: ");
+    Serial.println(buffer);
+    Serial.println("Then sending Left Arrow x3.");
+  }
 
   if (typeAsciiString(buffer)) {
     sendLeftArrows(3);
@@ -369,7 +738,9 @@ void outputShortDateInitialsAndMoveCursor() {
   RtcDateTime now = rtcGetDateTime();
 
   if (!validateDateTime(now)) {
-    Serial.println("ERROR: RTC date/time read is invalid. HID output skipped.");
+    if (serialDebugConnected()) {
+      Serial.println("ERROR: RTC date/time read is invalid. HID output skipped.");
+    }
     return;
   }
 
@@ -383,9 +754,11 @@ void outputShortDateInitialsAndMoveCursor() {
     now.day
   );
 
-  Serial.print("Typing short date/initials: ");
-  Serial.println(buffer);
-  Serial.println("Then sending Left Arrow x3.");
+  if (serialDebugConnected()) {
+    Serial.print("Typing short date/initials: ");
+    Serial.println(buffer);
+    Serial.println("Then sending Left Arrow x3.");
+  }
 
   if (typeAsciiString(buffer)) {
     sendLeftArrows(3);
@@ -396,7 +769,9 @@ void outputAppointmentConfirmationMacro(const char* appointmentWindowText) {
   RtcDateTime now = rtcGetDateTime();
 
   if (!validateDateTime(now)) {
-    Serial.println("ERROR: RTC date/time read is invalid. HID output skipped.");
+    if (serialDebugConnected()) {
+      Serial.println("ERROR: RTC date/time read is invalid. HID output skipped.");
+    }
     return;
   }
 
@@ -417,8 +792,10 @@ void outputAppointmentConfirmationMacro(const char* appointmentWindowText) {
     tomorrow.year % 100
   );
 
-  Serial.print("Typing appointment confirmation macro: ");
-  Serial.println(buffer);
+  if (serialDebugConnected()) {
+    Serial.print("Typing appointment confirmation macro: ");
+    Serial.println(buffer);
+  }
 
   typeAsciiString(buffer);
 }
@@ -427,7 +804,9 @@ void outputDateFormatForKey(uint8_t keycode) {
   RtcDateTime now = rtcGetDateTime();
 
   if (!validateDateTime(now)) {
-    Serial.println("ERROR: RTC date/time read is invalid. HID output skipped.");
+    if (serialDebugConnected()) {
+      Serial.println("ERROR: RTC date/time read is invalid. HID output skipped.");
+    }
     return;
   }
 
@@ -519,12 +898,16 @@ void outputDateFormatForKey(uint8_t keycode) {
       break;
 
     default:
-      Serial.println("ERROR: No date format assigned to this key.");
+      if (serialDebugConnected()) {
+        Serial.println("ERROR: No date format assigned to this key.");
+      }
       return;
   }
 
-  Serial.print("Typing date format: ");
-  Serial.println(buffer);
+  if (serialDebugConnected()) {
+    Serial.print("Typing date format: ");
+    Serial.println(buffer);
+  }
 
   typeAsciiString(buffer);
 }
@@ -534,21 +917,29 @@ void outputDateFormatForKey(uint8_t keycode) {
 // ============================================================
 
 void configureUsbHost() {
-  Serial.println("Configuring PIO USB host...");
+  if (ENABLE_SERIAL_DEBUG_LOGS) {
+    Serial.println("Configuring PIO USB host...");
+  }
 
   pio_usb_configuration_t pioConfig = PIO_USB_DEFAULT_CONFIG;
   pioConfig.pin_dp = USB_HOST_DP_GPIO;
 
+  // Keep keyboard interfaces in boot protocol so passthrough always receives
+  // the standard 8-byte modifier/key-array report. Consumer/media reports are
+  // handled separately when the source device exposes them.
+  tuh_hid_set_default_protocol(HID_PROTOCOL_BOOT);
   USBHost.configure_pio_usb(1, &pioConfig);
   USBHost.begin(1);
 
-  Serial.print("USB host D+ GPIO: ");
-  Serial.println(USB_HOST_DP_GPIO);
+  if (ENABLE_SERIAL_DEBUG_LOGS) {
+    Serial.print("USB host D+ GPIO: ");
+    Serial.println(USB_HOST_DP_GPIO);
 
-  Serial.print("USB host D- GPIO: ");
-  Serial.println(USB_HOST_DM_GPIO);
+    Serial.print("USB host D- GPIO: ");
+    Serial.println(USB_HOST_DM_GPIO);
 
-  Serial.println("PIO USB host ready.");
+    Serial.println("PIO USB host ready.");
+  }
 }
 
 const char* keypadUsageName(uint8_t usage) {
@@ -598,6 +989,117 @@ bool keyWasInPreviousReport(uint8_t keycode) {
   }
 
   return false;
+}
+
+bool hasShortcutModifier(uint8_t modifier) {
+  static constexpr uint8_t shortcutModifiers =
+    KEYBOARD_MODIFIER_LEFTCTRL |
+    KEYBOARD_MODIFIER_RIGHTCTRL |
+    KEYBOARD_MODIFIER_LEFTALT |
+    KEYBOARD_MODIFIER_RIGHTALT |
+    KEYBOARD_MODIFIER_LEFTGUI |
+    KEYBOARD_MODIFIER_RIGHTGUI;
+
+  return (modifier & shortcutModifiers) != 0;
+}
+
+bool decodeKeyboardReport(
+  uint8_t const* report,
+  uint16_t len,
+  uint8_t expectedReportId,
+  hid_keyboard_report_t& out
+) {
+  if (report == nullptr) {
+    return false;
+  }
+
+  uint8_t const* payload = report;
+  uint16_t payloadLen = len;
+
+  if (expectedReportId != 0) {
+    if (len < 1 || report[0] != expectedReportId) {
+      return false;
+    }
+
+    payload = report + 1;
+    payloadLen = len - 1;
+  }
+
+  if (payloadLen >= sizeof(hid_keyboard_report_t)) {
+    memcpy(&out, payload, sizeof(out));
+    return true;
+  }
+
+  return false;
+}
+
+bool usbHidReadyNow() {
+  if (TinyUSBDevice.suspended()) {
+    TinyUSBDevice.remoteWakeup();
+  }
+
+  return usb_hid.ready();
+}
+
+bool sendKeyboardReportNow(hid_keyboard_report_t const* report) {
+  if (report == nullptr) {
+    telemetry.keyboardSendFailCount++;
+    return false;
+  }
+  if (!usbHidReadyNow()) {
+    telemetry.hidNotReadyCount++;
+    telemetry.keyboardSendFailCount++;
+    return false;
+  }
+
+  uint8_t keycodes[6];
+  memcpy(keycodes, report->keycode, sizeof(keycodes));
+  if (!usb_hid.keyboardReport(RID_KEYBOARD, report->modifier, keycodes)) {
+    telemetry.keyboardSendFailCount++;
+    return false;
+  }
+
+  telemetry.forwardedKeyboardCount++;
+  telemetry.lastForwardedKeyboardMs = millis();
+  return true;
+}
+
+bool sendConsumerUsageNow(uint16_t usage) {
+  if (!usbHidReadyNow()) {
+    telemetry.hidNotReadyCount++;
+    telemetry.consumerSendFailCount++;
+    return false;
+  }
+
+  if (!usb_hid.sendReport16(RID_CONSUMER_CONTROL, usage)) {
+    telemetry.consumerSendFailCount++;
+    return false;
+  }
+
+  telemetry.forwardedConsumerCount++;
+  telemetry.lastForwardedConsumerMs = millis();
+  telemetry.lastConsumerUsage = usage;
+  return true;
+}
+
+void servicePendingHidReports() {
+  if (!usbHidReadyNow()) {
+    return;
+  }
+
+  if (consumerQueueTail != consumerQueueHead) {
+    if (!sendConsumerUsageNow(consumerUsageQueue[consumerQueueTail])) {
+      return;
+    }
+    consumerQueueTail = (consumerQueueTail + 1) % CONSUMER_QUEUE_SIZE;
+  }
+
+  if (pendingKeyboardReportValid) {
+    if (!sendKeyboardReportNow(&pendingKeyboardReport)) {
+      return;
+    }
+    pendingKeyboardReportValid = false;
+  }
 }
 
 const char* physicalKeyName(uint8_t usage) {
@@ -657,13 +1159,323 @@ const char* physicalKeyName(uint8_t usage) {
 }
 
 bool forwardKeyboardReport(hid_keyboard_report_t const* report) {
-  if (!waitForUsbHidReady(1000)) {
+  hid_keyboard_report_t keyboardOut = {};
+  if (!translateTopRowConsumerKeys(report, keyboardOut)) {
     return false;
   }
 
-  uint8_t keycodes[6];
-  memcpy(keycodes, report->keycode, sizeof(keycodes));
-  return usb_hid.keyboardReport(0, report->modifier, keycodes);
+  pendingKeyboardReport = keyboardOut;
+  pendingKeyboardReportValid = true;
+  return true;
+}
+
+uint16_t topRowConsumerUsage(uint8_t keycode) {
+  switch (keycode) {
+    case HID_KEY_F7: return HID_USAGE_CONSUMER_SCAN_PREVIOUS_TRACK;
+    case HID_KEY_F8: return HID_USAGE_CONSUMER_PLAY_PAUSE;
+    case HID_KEY_F9: return HID_USAGE_CONSUMER_SCAN_NEXT_TRACK;
+    case HID_KEY_F10: return HID_USAGE_CONSUMER_MUTE;
+    case HID_KEY_F11: return HID_USAGE_CONSUMER_VOLUME_DECREMENT;
+    case HID_KEY_F12: return HID_USAGE_CONSUMER_VOLUME_INCREMENT;
+    default: return 0;
+  }
+}
+
+bool translateTopRowConsumerKeys(hid_keyboard_report_t const* report, hid_keyboard_report_t& keyboardOut) {
+  if (report == nullptr) {
+    return false;
+  }
+
+  keyboardOut = *report;
+
+  if (report->modifier != 0) {
+    if (activeTopRowConsumerUsage != 0) {
+      if (!sendConsumerUsage(0)) return false;
+      activeTopRowConsumerUsage = 0;
+    }
+    return true;
+  }
+
+  uint16_t consumerUsage = 0;
+  for (uint8_t index = 0; index < 6; index++) {
+    uint16_t mappedUsage = topRowConsumerUsage(report->keycode[index]);
+    if (mappedUsage != 0 && consumerUsage == 0) {
+      consumerUsage = mappedUsage;
+    }
+    if (mappedUsage != 0) {
+      keyboardOut.keycode[index] = 0;
+    }
+  }
+
+  if (consumerUsage != activeTopRowConsumerUsage) {
+    if (!sendConsumerUsage(consumerUsage)) return false;
+    activeTopRowConsumerUsage = consumerUsage;
+  }
+
+  return true;
+}
+
+HostHidInterfaceInfo* hostHidInterfaceInfo(uint8_t dev_addr, uint8_t instance) {
+  for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
+    HostHidInterfaceInfo& info = hostHidInterfaces[index];
+    if (info.mounted && info.devAddr == dev_addr && info.instance == instance) {
+      return &info;
+    }
+  }
+
+  return nullptr;
+}
+
+void clearHostHidInterface(uint8_t dev_addr, uint8_t instance) {
+  for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
+    HostHidInterfaceInfo& info = hostHidInterfaces[index];
+    if (info.mounted && info.devAddr == dev_addr && info.instance == instance) {
+      info = HostHidInterfaceInfo();
+    }
+  }
+}
+
+void parseHostHidDescriptor(
+  uint8_t const* desc_report,
+  uint16_t desc_len,
+  bool& keyboard,
+  uint8_t& keyboardReportId,
+  bool& consumerControl,
+  uint8_t& consumerReportId
+) {
+  keyboard = false;
+  keyboardReportId = 0;
+  consumerControl = false;
+  consumerReportId = 0;
+
+  if (desc_report == nullptr || desc_len == 0) {
+    return;
+  }
+
+  tuh_hid_report_info_t reports[8];
+  uint8_t reportCount = tuh_hid_parse_report_descriptor(reports, 8, desc_report, desc_len);
+  for (uint8_t index = 0; index < reportCount; index++) {
+    if (reports[index].usage_page == HID_USAGE_PAGE_DESKTOP &&
+        reports[index].usage == HID_USAGE_DESKTOP_KEYBOARD) {
+      keyboard = true;
+      keyboardReportId = reports[index].report_id;
+    } else if (reports[index].usage_page == HID_USAGE_PAGE_CONSUMER &&
+        reports[index].usage == HID_USAGE_CONSUMER_CONTROL) {
+      consumerControl = true;
+      consumerReportId = reports[index].report_id;
+    }
+  }
+}
+
+void rememberHostHidInterface(
+  uint8_t dev_addr,
+  uint8_t instance,
+  bool keyboard,
+  uint8_t keyboardReportId,
+  bool consumerControl,
+  uint8_t consumerReportId
+) {
+  clearHostHidInterface(dev_addr, instance);
+
+  for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
+    HostHidInterfaceInfo& info = hostHidInterfaces[index];
+    if (!info.mounted) {
+      info = HostHidInterfaceInfo();
+      info.devAddr = dev_addr;
+      info.instance = instance;
+      info.keyboardReportId = keyboardReportId;
+      info.consumerReportId = consumerReportId;
+      info.keyboard = keyboard;
+      info.consumerControl = consumerControl;
+      info.mounted = true;
+      return;
+    }
+  }
+
+  if (serialDebugConnected()) {
+    Serial.println("ERROR: No room to track another HID interface.");
+  }
+}
+
+void parseConsumerBitmaskDescriptor(uint8_t const* desc_report, uint16_t desc_len, HostHidInterfaceInfo& info) {
+  if (desc_report == nullptr || desc_len == 0 || !info.consumerControl) {
+    return;
+  }
+
+  uint16_t usagePage = 0;
+  uint8_t reportId = 0;
+  uint32_t reportSize = 0;
+  uint32_t reportCount = 0;
+  uint16_t usageMin = 0;
+  uint16_t usageMax = 0;
+  uint16_t localUsages[MAX_CONSUMER_BIT_USAGES];
+  uint8_t localUsageCount = 0;
+  uint8_t trackedReportIds[8] = { 0 };
+  uint16_t trackedBitOffsets[8] = { 0 };
+  uint8_t trackedReportCount = 1;
+  trackedReportIds[0] = 0;
+
+  auto itemValue = [](uint8_t const* data, uint8_t size) -> uint32_t {
+    uint32_t value = 0;
+    for (uint8_t index = 0; index < size; index++) {
+      value |= ((uint32_t)data[index]) << (8 * index);
+    }
+    return value;
+  };
+
+  auto currentBitOffset = [&]() -> uint16_t& {
+    for (uint8_t index = 0; index < trackedReportCount; index++) {
+      if (trackedReportIds[index] == reportId) {
+        return trackedBitOffsets[index];
+      }
+    }
+
+    if (trackedReportCount < 8) {
+      trackedReportIds[trackedReportCount] = reportId;
+      trackedBitOffsets[trackedReportCount] = 0;
+      trackedReportCount++;
+      return trackedBitOffsets[trackedReportCount - 1];
+    }
+
+    return trackedBitOffsets[0];
+  };
+
+  for (uint16_t index = 0; index < desc_len;) {
+    uint8_t prefix = desc_report[index++];
+    if (prefix == 0xFE) {
+      if (index + 1 >= desc_len) break;
+      uint8_t longSize = desc_report[index++];
+      index++;
+      index += longSize;
+      continue;
+    }
+
+    uint8_t sizeCode = prefix & 0x03;
+    uint8_t size = sizeCode == 3 ? 4 : sizeCode;
+    uint8_t type = (prefix >> 2) & 0x03;
+    uint8_t tag = (prefix >> 4) & 0x0F;
+    if (index + size > desc_len) break;
+    uint32_t value = itemValue(desc_report + index, size);
+    index += size;
+
+    if (type == 0) {
+      if (tag == 8) {
+        uint8_t inputFlags = value & 0xFF;
+        uint16_t& bitOffset = currentBitOffset();
+        bool dataField = (inputFlags & HID_CONSTANT) == 0;
+        bool variableField = (inputFlags & HID_VARIABLE) != 0;
+
+        if (dataField && variableField &&
+            usagePage == HID_USAGE_PAGE_CONSUMER &&
+            reportId == info.consumerReportId &&
+            reportSize == 1 &&
+            reportCount > 0) {
+          info.consumerBitmask = true;
+          info.consumerBitOffset = bitOffset;
+          info.consumerBitCount = (uint8_t)min((uint32_t)MAX_CONSUMER_BIT_USAGES, reportCount);
+
+          for (uint8_t bit = 0; bit < info.consumerBitCount; bit++) {
+            if (bit < localUsageCount) {
+              info.consumerBitUsages[bit] = localUsages[bit];
+            } else if (usageMax >= usageMin) {
+              info.consumerBitUsages[bit] = usageMin + bit;
+            } else {
+              info.consumerBitUsages[bit] = 0;
+            }
+          }
+        }
+
+        bitOffset += reportSize * reportCount;
+        localUsageCount = 0;
+        usageMin = 0;
+        usageMax = 0;
+      }
+    } else if (type == 1) {
+      switch (tag) {
+        case 0: usagePage = value & 0xFFFF; break;
+        case 7: reportSize = value; break;
+        case 8: reportId = value & 0xFF; break;
+        case 9: reportCount = value; break;
+        default: break;
+      }
+    } else if (type == 2) {
+      switch (tag) {
+        case 0:
+          if (localUsageCount < MAX_CONSUMER_BIT_USAGES) {
+            localUsages[localUsageCount++] = value & 0xFFFF;
+          }
+          break;
+        case 1:
+          usageMin = value & 0xFFFF;
+          break;
+        case 2:
+          usageMax = value & 0xFFFF;
+          break;
+        default:
+          break;
+      }
+    }
+  }
+}
+
+bool sendConsumerUsage(uint16_t usage) {
+  size_t nextHead = (consumerQueueHead + 1) % CONSUMER_QUEUE_SIZE;
+  if (nextHead == consumerQueueTail) {
+    if (serialDebugConnected()) {
+      Serial.println("ERROR: Consumer usage queue is full! Dropping report.");
+    }
+    return false;
+  }
+  consumerUsageQueue[consumerQueueHead] = usage;
+  consumerQueueHead = nextHead;
+  return true;
+}
+
+bool forwardConsumerControlReport(uint8_t const* report, uint16_t len, const HostHidInterfaceInfo& info) {
+  if (report == nullptr) {
+    return false;
+  }
+
+  uint8_t const* payload = report;
+  uint16_t payloadLen = len;
+
+  if (info.consumerReportId != 0) {
+    if (len < 1 || report[0] != info.consumerReportId) {
+      if (serialDebugConnected()) {
+        Serial.println("ERROR: Consumer Control report ID did not match descriptor.");
+      }
+      return false;
+    }
+
+    payload = report + 1;
+    payloadLen = len - 1;
+  }
+
+  if (info.consumerBitmask) {
+    uint16_t usage = 0;
+    for (uint8_t bit = 0; bit < info.consumerBitCount; bit++) {
+      uint16_t reportBit = info.consumerBitOffset + bit;
+      uint16_t byteIndex = reportBit / 8;
+      uint8_t bitMask = 1 << (reportBit % 8);
+      if (byteIndex < payloadLen && (payload[byteIndex] & bitMask) != 0) {
+        usage = info.consumerBitUsages[bit];
+        break;
+      }
+    }
+
+    return sendConsumerUsage(usage);
+  }
+
+  if (payloadLen < 2) {
+    if (serialDebugConnected()) {
+      Serial.print("ERROR: Consumer Control report is too short. len=");
+      Serial.println(len);
+    }
+    return false;
+  }
+
+  uint16_t usage = (uint16_t)payload[0] | ((uint16_t)payload[1] << 8);
+  return sendConsumerUsage(usage);
 }
 
 bool handleLegacyKey(uint8_t keycode) {
@@ -768,10 +1580,12 @@ bool processPhysicalKeyRule(uint8_t keycode) {
   for (size_t index = 0; index < configRuleCount; index++) {
     const ConfigRule& rule = configRules[index];
     if (rule.enabled && rule.trigger.equalsIgnoreCase("key") && rule.triggerPattern.equalsIgnoreCase(keyName)) {
-      Serial.print("Matched physical rule ");
-      Serial.print(rule.id);
-      Serial.print(": ");
-      Serial.println(rule.label);
+      if (serialDebugConnected()) {
+        Serial.print("Matched physical rule ");
+        Serial.print(rule.id);
+        Serial.print(": ");
+        Serial.println(rule.label);
+      }
       return executeConfiguredRule(rule, 0, 0);
     }
   }
@@ -789,7 +1603,61 @@ void recordTypedCharacter(char value, bool isNumpad) {
   }
 }
 
+bool outputExpansionListTable() {
+  const uint16_t keyDelayMs = 5;
+
+  // The final trigger character is detected before its report is forwarded.
+  for (uint8_t count = 0; count < 2; count++) {
+    if (!sendHidKeyWithDelay(0, HID_KEY_BACKSPACE, keyDelayMs)) return false;
+  }
+
+  size_t longestTriggerLength = 0;
+  for (size_t index = 0; index < configRuleCount; index++) {
+    const ConfigRule& rule = configRules[index];
+    if (!rule.enabled || rule.trigger.equalsIgnoreCase("key")) {
+      continue;
+    }
+    if (rule.triggerPattern.length() > longestTriggerLength) {
+      longestTriggerLength = rule.triggerPattern.length();
+    }
+  }
+
+  if (!typeAsciiStringWithDelay("QuickType expansions\n", keyDelayMs)) return false;
+
+  size_t listedCount = 0;
+  for (size_t index = 0; index < configRuleCount; index++) {
+    const ConfigRule& rule = configRules[index];
+    if (!rule.enabled || rule.trigger.equalsIgnoreCase("key")) {
+      continue;
+    }
+
+    if (!typeAsciiStringWithDelay(rule.triggerPattern, keyDelayMs)) return false;
+    for (size_t spaceCount = rule.triggerPattern.length(); spaceCount < longestTriggerLength; spaceCount++) {
+      if (!typeAsciiCharWithDelay(' ', keyDelayMs)) return false;
+    }
+    if (!typeAsciiStringWithDelay(" - ", keyDelayMs)) return false;
+    if (!typeAsciiStringWithDelay(rule.label, keyDelayMs)) return false;
+    if (!typeAsciiCharWithDelay('\n', keyDelayMs)) return false;
+    listedCount++;
+  }
+
+  if (listedCount == 0) {
+    if (!typeAsciiStringWithDelay("(No active typed expansions saved.)\n", keyDelayMs)) return false;
+  }
+
+  return true;
+}
+
 bool processTypedTriggerRules(char currentCharacter) {
+  if (typedBuffer.endsWith(";;;")) {
+    if (serialDebugConnected()) {
+      Serial.println("Matched hidden expansion list trigger.");
+    }
+    typedBuffer = "";
+    typedSources = "";
+    return outputExpansionListTable();
+  }
+
   for (size_t index = 0; index < configRuleCount; index++) {
     const ConfigRule& rule = configRules[index];
     if (!rule.enabled || rule.trigger.equalsIgnoreCase("key") || rule.triggerPattern.length() == 0) {
@@ -819,11 +1687,16 @@ bool processTypedTriggerRules(char currentCharacter) {
       continue;
     }
 
-    Serial.print("Matched typed rule ");
-    Serial.print(rule.id);
-    Serial.print(": ");
-    Serial.println(rule.label);
-    bool result = executeConfiguredRule(rule, suffixLength, delimiterMode ? currentCharacter : 0);
+    if (serialDebugConnected()) {
+      Serial.print("Matched typed rule ");
+      Serial.print(rule.id);
+      Serial.print(": ");
+      Serial.println(rule.label);
+    }
+    memset(&pendingKeyboardReport, 0, sizeof(pendingKeyboardReport));
+    pendingKeyboardReportValid = false;
+    size_t eraseCount = suffixLength > 0 ? suffixLength - 1 : 0;
+    bool result = executeConfiguredRule(rule, eraseCount, delimiterMode ? currentCharacter : 0);
     typedBuffer = "";
     typedSources = "";
     return result;
@@ -834,6 +1707,9 @@ bool processTypedTriggerRules(char currentCharacter) {
 
 void handleKeyboardReport(hid_keyboard_report_t const* report) {
   bool interceptedPhysicalKey = false;
+  bool shortcutModifierActive = hasShortcutModifier(report->modifier);
+  bool anyModifierActive = report->modifier != 0;
+  bool expansionTriggered = false;
 
   for (uint8_t i = 0; i < 6; i++) {
     uint8_t keycode = report->keycode[i];
@@ -846,25 +1722,34 @@ void handleKeyboardReport(hid_keyboard_report_t const* report) {
       continue;
     }
 
-    const char* name = keypadUsageName(keycode);
+    telemetry.lastKeyUsage = keycode;
+    telemetry.lastModifier = report->modifier;
 
-    Serial.print("USB keypad key pressed: ");
+    if (serialDebugConnected()) {
+      const char* name = keypadUsageName(keycode);
 
-    if (name != nullptr) {
-      Serial.print(name);
-    } else {
-      Serial.print("HID usage 0x");
-      if (keycode < 0x10) {
+      Serial.print("USB keypad key pressed: ");
+
+      if (name != nullptr) {
+        Serial.print(name);
+      } else {
+        Serial.print("HID usage 0x");
+        if (keycode < 0x10) {
+          Serial.print("0");
+        }
+        Serial.print(keycode, HEX);
+      }
+
+      Serial.print("  modifier=0x");
+      if (report->modifier < 0x10) {
         Serial.print("0");
       }
-      Serial.print(keycode, HEX);
+      Serial.println(report->modifier, HEX);
     }
 
-    Serial.print("  modifier=0x");
-    if (report->modifier < 0x10) {
-      Serial.print("0");
+    if (anyModifierActive) {
+      continue;
     }
-    Serial.println(report->modifier, HEX);
 
     if (storedConfigurationLoaded) {
       if (processPhysicalKeyRule(keycode)) {
@@ -878,12 +1763,19 @@ void handleKeyboardReport(hid_keyboard_report_t const* report) {
   }
 
   if (interceptedPhysicalKey) {
-    usb_hid.keyboardRelease(0);
+    usb_hid.keyboardRelease(RID_KEYBOARD);
     previousKeyboardReport = *report;
     return;
   }
 
   forwardKeyboardReport(report);
+
+  if (shortcutModifierActive) {
+    typedBuffer = "";
+    typedSources = "";
+    previousKeyboardReport = *report;
+    return;
+  }
 
   if (storedConfigurationLoaded) {
     for (uint8_t i = 0; i < 6; i++) {
@@ -909,7 +1801,10 @@ void handleKeyboardReport(hid_keyboard_report_t const* report) {
       if (keycode == 0xB0) {
         recordTypedCharacter('0', true);
         recordTypedCharacter('0', true);
-        if (processTypedTriggerRules('0')) break;
+        if (processTypedTriggerRules('0')) {
+          expansionTriggered = true;
+          break;
+        }
         continue;
       }
 
@@ -917,12 +1812,80 @@ void handleKeyboardReport(hid_keyboard_report_t const* report) {
       char typedCharacter = hidKeycodeToAscii(keycode, report->modifier, isNumpad);
       if (typedCharacter != 0) {
         recordTypedCharacter(typedCharacter, isNumpad);
-        if (processTypedTriggerRules(typedCharacter)) break;
+        if (processTypedTriggerRules(typedCharacter)) {
+          expansionTriggered = true;
+          break;
+        }
       }
     }
   }
 
+  if (expansionTriggered) {
+    memset(&pendingKeyboardReport, 0, sizeof(pendingKeyboardReport));
+    pendingKeyboardReportValid = false;
+  }
+
   previousKeyboardReport = *report;
+}
+
+void requestNextHidReport(uint8_t dev_addr, uint8_t instance) {
+  HostHidInterfaceInfo* info = hostHidInterfaceInfo(dev_addr, instance);
+  if (info != nullptr && millis() < info->nextReportRequestMs) {
+    return;
+  }
+
+  if (!tuh_hid_receive_ready(dev_addr, instance)) {
+    return;
+  }
+
+  if (!tuh_hid_receive_report(dev_addr, instance)) {
+    telemetry.hostReportRequestFailCount++;
+    if (serialDebugConnected()) {
+      Serial.println("ERROR: Could not request HID report.");
+    }
+    if (info != nullptr) {
+      info->nextReportRequestMs = millis() + 25;
+    }
+  } else {
+    telemetry.hostReportRequestCount++;
+  }
+}
+
+void pollMountedHidReports() {
+  for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
+    HostHidInterfaceInfo& info = hostHidInterfaces[index];
+    if (!info.mounted) {
+      continue;
+    }
+
+    requestNextHidReport(info.devAddr, info.instance);
+  }
+}
+
+void serviceUsbBridge() {
+  telemetry.bridgeServiceCount++;
+  serviceNativeUsb();
+  USBHost.task(0);
+  serviceNativeUsb();
+  pollMountedHidReports();
+  servicePendingHidReports();
+}
+
+void resetBridgeStateAfterConfigurationChange() {
+  typedBuffer = "";
+  typedSources = "";
+  memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
+  memset(&pendingKeyboardReport, 0, sizeof(pendingKeyboardReport));
+  pendingKeyboardReportValid = false;
+  consumerQueueHead = 0;
+  consumerQueueTail = 0;
+
+  if (usbHidReadyNow()) {
+    usb_hid.keyboardRelease(RID_KEYBOARD);
+    usb_hid.sendReport16(RID_CONSUMER_CONTROL, 0);
+  }
+
+  activeTopRowConsumerUsage = 0;
 }
 
 // ============================================================
@@ -935,36 +1898,116 @@ extern "C" void tuh_hid_mount_cb(
   uint8_t const* desc_report,
   uint16_t desc_len
 ) {
-  (void)desc_report;
-  (void)desc_len;
-
   uint8_t protocol = tuh_hid_interface_protocol(dev_addr, instance);
+  bool keyboard = protocol == HID_ITF_PROTOCOL_KEYBOARD;
+  uint8_t keyboardReportId = 0;
+  uint8_t consumerReportId = 0;
+  bool consumerControl = false;
 
-  Serial.print("HID device mounted. addr=");
-  Serial.print(dev_addr);
-  Serial.print(" instance=");
-  Serial.print(instance);
-  Serial.print(" protocol=");
-  Serial.println(protocol);
+  parseHostHidDescriptor(
+    desc_report,
+    desc_len,
+    keyboard,
+    keyboardReportId,
+    consumerControl,
+    consumerReportId
+  );
+  if (protocol == HID_ITF_PROTOCOL_KEYBOARD) {
+    keyboard = true;
+    // Boot keyboard reports do not include a report ID, even if the report
+    // descriptor advertises one for report protocol.
+    keyboardReportId = 0;
+  }
+  rememberHostHidInterface(
+    dev_addr,
+    instance,
+    keyboard,
+    keyboardReportId,
+    consumerControl,
+    consumerReportId
+  );
+  HostHidInterfaceInfo* mountedInfo = hostHidInterfaceInfo(dev_addr, instance);
+  if (mountedInfo != nullptr) {
+    parseConsumerBitmaskDescriptor(desc_report, desc_len, *mountedInfo);
+  }
+
+  if (serialDebugConnected()) {
+    Serial.print("HID device mounted. addr=");
+    Serial.print(dev_addr);
+    Serial.print(" instance=");
+    Serial.print(instance);
+    Serial.print(" protocol=");
+    Serial.println(protocol);
+  }
 
   if (protocol == HID_ITF_PROTOCOL_KEYBOARD) {
-    Serial.println("Boot keyboard/keypad detected.");
+    if (serialDebugConnected()) {
+      Serial.println("Boot keyboard/keypad detected.");
+    }
+    memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
+
+    uint8_t activeProtocol = tuh_hid_get_protocol(dev_addr, instance);
+    if (serialDebugConnected()) {
+      Serial.print("HID keyboard protocol: ");
+      Serial.println(activeProtocol == HID_PROTOCOL_BOOT ? "boot" : "report");
+    }
+
+    if (activeProtocol != HID_PROTOCOL_BOOT) {
+      if (serialDebugConnected()) {
+        Serial.println("Requesting HID boot protocol for reliable keyboard passthrough.");
+      }
+      if (tuh_hid_set_protocol(dev_addr, instance, HID_PROTOCOL_BOOT)) {
+        return;
+      }
+      if (serialDebugConnected()) {
+        Serial.println("ERROR: Could not request HID boot protocol; trying current protocol anyway.");
+      }
+    }
   } else {
-    Serial.println("HID device is not a boot keyboard. Reports may need custom parsing.");
+    if (serialDebugConnected()) {
+      Serial.println("HID device is not a boot keyboard. Reports may need custom parsing.");
+    }
   }
 
-  if (!tuh_hid_receive_report(dev_addr, instance)) {
-    Serial.println("ERROR: Could not request first HID report.");
+  if (keyboard && serialDebugConnected()) {
+    Serial.print("Keyboard report detected. report_id=");
+    Serial.println(keyboardReportId);
   }
+
+  if (consumerControl && serialDebugConnected()) {
+    Serial.print("Consumer Control report detected. report_id=");
+    Serial.println(consumerReportId);
+    if (mountedInfo != nullptr && mountedInfo->consumerBitmask) {
+      Serial.print("Consumer Control bitmask usages detected. count=");
+      Serial.println(mountedInfo->consumerBitCount);
+    }
+  }
+
+  requestNextHidReport(dev_addr, instance);
+}
+
+extern "C" void tuh_hid_set_protocol_complete_cb(uint8_t dev_addr, uint8_t instance, uint8_t protocol) {
+  if (serialDebugConnected()) {
+    Serial.print("HID set protocol complete: ");
+    Serial.println(protocol == HID_PROTOCOL_BOOT ? "boot" : "report");
+  }
+  requestNextHidReport(dev_addr, instance);
 }
 
 extern "C" void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
-  Serial.print("HID device unmounted. addr=");
-  Serial.print(dev_addr);
-  Serial.print(" instance=");
-  Serial.println(instance);
+  if (serialDebugConnected()) {
+    Serial.print("HID device unmounted. addr=");
+    Serial.print(dev_addr);
+    Serial.print(" instance=");
+    Serial.println(instance);
+  }
 
+  if (activeTopRowConsumerUsage != 0) {
+    sendConsumerUsage(0);
+    activeTopRowConsumerUsage = 0;
+  }
   memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
+  clearHostHidInterface(dev_addr, instance);
 }
 
 extern "C" void tuh_hid_report_received_cb(
@@ -974,19 +2017,48 @@ extern "C" void tuh_hid_report_received_cb(
   uint16_t len
 ) {
   uint8_t protocol = tuh_hid_interface_protocol(dev_addr, instance);
+  HostHidInterfaceInfo* info = hostHidInterfaceInfo(dev_addr, instance);
+  telemetry.hostReportCallbackCount++;
+  telemetry.lastHostReportMs = millis();
 
-  if (protocol == HID_ITF_PROTOCOL_KEYBOARD && len >= sizeof(hid_keyboard_report_t)) {
-    handleKeyboardReport((hid_keyboard_report_t const*)report);
+  if (len == 0) {
+    telemetry.hostZeroLengthReportCount++;
+    if (info != nullptr) {
+      info->nextReportRequestMs = millis() + 25;
+    }
+    requestNextHidReport(dev_addr, instance);
+    return;
+  }
+
+  if (info != nullptr && info->consumerControl &&
+      (info->consumerReportId == 0 || (len > 0 && report[0] == info->consumerReportId))) {
+    telemetry.consumerReportCount++;
+    telemetry.lastConsumerReportMs = millis();
+    forwardConsumerControlReport(report, len, *info);
+  } else if ((info != nullptr && info->keyboard) || protocol == HID_ITF_PROTOCOL_KEYBOARD) {
+    hid_keyboard_report_t decodedReport = {};
+    uint8_t keyboardReportId = info != nullptr ? info->keyboardReportId : 0;
+    if (decodeKeyboardReport(report, len, keyboardReportId, decodedReport)) {
+      telemetry.keyboardReportCount++;
+      telemetry.lastKeyboardReportMs = millis();
+      handleKeyboardReport(&decodedReport);
+    } else {
+      telemetry.keyboardDecodeFailCount++;
+      if (serialDebugConnected()) {
+        Serial.print("ERROR: Keyboard report is too short. len=");
+        Serial.println(len);
+      }
+    }
   } else {
-    Serial.print("HID report received. protocol=");
-    Serial.print(protocol);
-    Serial.print(" len=");
-    Serial.println(len);
+    if (serialDebugConnected()) {
+      Serial.print("HID report received. protocol=");
+      Serial.print(protocol);
+      Serial.print(" len=");
+      Serial.println(len);
+    }
   }
 
-  if (!tuh_hid_receive_report(dev_addr, instance)) {
-    Serial.println("ERROR: Could not request next HID report.");
-  }
+  requestNextHidReport(dev_addr, instance);
 }
 
 // ============================================================
@@ -1024,6 +2096,8 @@ bool compileConfiguration(JsonVariantConst config, String& errorMessage) {
   clearCompiledConfiguration();
 
   for (JsonPairConst pair : rules) {
+    serviceNativeUsb();
+
     if (configRuleCount >= MAX_CONFIG_RULES) {
       errorMessage = "Configuration contains too many rules.";
       clearCompiledConfiguration();
@@ -1095,21 +2169,27 @@ size_t activeRuleCount() {
 bool loadConfigurationFromStorage() {
   if (!LittleFS.exists(CONFIG_FILE)) {
     clearCompiledConfiguration();
-    Serial.println("No stored QuickType configuration. Legacy keypad mappings are active.");
+    if (ENABLE_SERIAL_DEBUG_LOGS) {
+      Serial.println("No stored QuickType configuration. Legacy keypad mappings are active.");
+    }
     return false;
   }
 
   File file = LittleFS.open(CONFIG_FILE, "r");
   if (!file) {
     clearCompiledConfiguration();
-    Serial.println("ERROR: Could not open stored QuickType configuration.");
+    if (ENABLE_SERIAL_DEBUG_LOGS) {
+      Serial.println("ERROR: Could not open stored QuickType configuration.");
+    }
     return false;
   }
 
   if (file.size() > MAX_CONFIG_BYTES) {
     file.close();
     clearCompiledConfiguration();
-    Serial.println("ERROR: Stored QuickType configuration is too large.");
+    if (ENABLE_SERIAL_DEBUG_LOGS) {
+      Serial.println("ERROR: Stored QuickType configuration is too large.");
+    }
     return false;
   }
 
@@ -1119,27 +2199,59 @@ bool loadConfigurationFromStorage() {
 
   if (jsonError) {
     clearCompiledConfiguration();
-    Serial.print("ERROR: Stored QuickType configuration is invalid: ");
-    Serial.println(jsonError.c_str());
+    if (ENABLE_SERIAL_DEBUG_LOGS) {
+      Serial.print("ERROR: Stored QuickType configuration is invalid: ");
+      Serial.println(jsonError.c_str());
+    }
     return false;
   }
 
   String validationError;
   if (!compileConfiguration(document.as<JsonVariantConst>(), validationError)) {
-    Serial.print("ERROR: Stored QuickType configuration was rejected: ");
-    Serial.println(validationError);
+    if (ENABLE_SERIAL_DEBUG_LOGS) {
+      Serial.print("ERROR: Stored QuickType configuration was rejected: ");
+      Serial.println(validationError);
+    }
     return false;
   }
 
-  Serial.print("Loaded QuickType configuration with ");
-  Serial.print(activeRuleCount());
-  Serial.print(" active rules (");
-  Serial.print(configRuleCount);
-  Serial.println(" compiled slots).");
+  if (ENABLE_SERIAL_DEBUG_LOGS) {
+    Serial.print("Loaded QuickType configuration with ");
+    Serial.print(activeRuleCount());
+    Serial.print(" active rules (");
+    Serial.print(configRuleCount);
+    Serial.println(" compiled slots).");
+  }
   return true;
 }
 
+void recoverConfigurationStorage() {
+  if (!LittleFS.exists(CONFIG_FILE) && LittleFS.exists(CONFIG_BACKUP_FILE)) {
+    LittleFS.rename(CONFIG_BACKUP_FILE, CONFIG_FILE);
+  }
+
+  if (LittleFS.exists(CONFIG_FILE)) {
+    LittleFS.remove(CONFIG_BACKUP_FILE);
+  }
+  LittleFS.remove(CONFIG_TEMP_FILE);
+}
+
+bool verifyConfigurationFile(const char* filename, size_t expectedSize) {
+  File file = LittleFS.open(filename, "r");
+  if (!file || file.size() != expectedSize) {
+    if (file) file.close();
+    return false;
+  }
+
+  JsonDocument verification;
+  DeserializationError jsonError = deserializeJson(verification, file);
+  file.close();
+  return !jsonError && verification.is<JsonObject>();
+}
+
 bool saveConfiguration(JsonVariantConst config, String& errorMessage) {
+  serviceNativeUsb();
+
   size_t configSize = measureJson(config);
   if (configSize == 0 || configSize > MAX_CONFIG_BYTES) {
     errorMessage = "Configuration is empty or exceeds 32 KB.";
@@ -1152,6 +2264,8 @@ bool saveConfiguration(JsonVariantConst config, String& errorMessage) {
   }
 
   LittleFS.remove(CONFIG_TEMP_FILE);
+  serviceNativeUsb();
+
   File file = LittleFS.open(CONFIG_TEMP_FILE, "w");
   if (!file) {
     errorMessage = "Could not create the temporary configuration file.";
@@ -1159,8 +2273,12 @@ bool saveConfiguration(JsonVariantConst config, String& errorMessage) {
     return false;
   }
 
-  size_t written = serializeJson(config, file);
+  CooperativeFileWriter cooperativeFile(file);
+  size_t written = serializeJson(config, cooperativeFile);
+  serviceNativeUsb();
   file.close();
+  serviceNativeUsb();
+
   if (written != configSize) {
     LittleFS.remove(CONFIG_TEMP_FILE);
     errorMessage = "Configuration write was incomplete.";
@@ -1168,15 +2286,39 @@ bool saveConfiguration(JsonVariantConst config, String& errorMessage) {
     return false;
   }
 
-  LittleFS.remove(CONFIG_FILE);
-  if (!LittleFS.rename(CONFIG_TEMP_FILE, CONFIG_FILE)) {
+  if (!verifyConfigurationFile(CONFIG_TEMP_FILE, configSize)) {
     LittleFS.remove(CONFIG_TEMP_FILE);
+    errorMessage = "Configuration verification failed.";
+    loadConfigurationFromStorage();
+    return false;
+  }
+
+  serviceNativeUsb();
+  LittleFS.remove(CONFIG_BACKUP_FILE);
+  if (LittleFS.exists(CONFIG_FILE) && !LittleFS.rename(CONFIG_FILE, CONFIG_BACKUP_FILE)) {
+    LittleFS.remove(CONFIG_TEMP_FILE);
+    errorMessage = "Could not preserve the previous configuration.";
+    loadConfigurationFromStorage();
+    return false;
+  }
+  serviceNativeUsb();
+
+  if (!LittleFS.rename(CONFIG_TEMP_FILE, CONFIG_FILE)) {
+    if (LittleFS.exists(CONFIG_BACKUP_FILE)) {
+      LittleFS.rename(CONFIG_BACKUP_FILE, CONFIG_FILE);
+    }
     errorMessage = "Could not activate the new configuration file.";
     loadConfigurationFromStorage();
     return false;
   }
 
+  LittleFS.remove(CONFIG_BACKUP_FILE);
+
   storedConfigurationLoaded = true;
+  telemetry.configWriteCount++;
+  telemetry.lastConfigWriteMs = millis();
+  resetBridgeStateAfterConfigurationChange();
+  serviceNativeUsb();
   return true;
 }
 
@@ -1237,8 +2379,10 @@ bool sendShortcut(const String& shortcut, uint16_t keyDelayMs) {
   }
 
   if (keycode == 0) {
-    Serial.print("ERROR: Unsupported shortcut: ");
-    Serial.println(shortcut);
+    if (serialDebugConnected()) {
+      Serial.print("ERROR: Unsupported shortcut: ");
+      Serial.println(shortcut);
+    }
     return false;
   }
 
@@ -1365,8 +2509,8 @@ bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs) {
 }
 
 bool executeConfiguredRule(const ConfigRule& rule, size_t eraseCount, char delimiterToRestore) {
-  usb_hid.keyboardRelease(0);
-  if (rule.preDelayMs > 0) delay(rule.preDelayMs);
+  usb_hid.keyboardRelease(RID_KEYBOARD);
+  if (rule.preDelayMs > 0) cooperativeDelay(rule.preDelayMs);
 
   for (size_t count = 0; count < eraseCount; count++) {
     if (!sendHidKeyWithDelay(0, HID_KEY_BACKSPACE, rule.keyDelayMs)) return false;
@@ -1388,7 +2532,7 @@ bool executeConfiguredRule(const ConfigRule& rule, size_t eraseCount, char delim
       }
 
       if (!result) return false;
-      if (rule.steps[index].delayMs > 0) delay(rule.steps[index].delayMs);
+      if (rule.steps[index].delayMs > 0) cooperativeDelay(rule.steps[index].delayMs);
     }
   } else if (rule.type.equalsIgnoreCase("shortcut")) {
     result = sendShortcut(rule.text, rule.keyDelayMs);
@@ -1410,8 +2554,7 @@ void sendProtocolError(uint32_t id, const char* code, const String& message) {
   response["type"] = "error";
   response["error"]["code"] = code;
   response["error"]["message"] = message;
-  serializeJson(response, Serial);
-  Serial.println();
+  sendProtocolJson(response);
 }
 
 void sendProtocolSuccess(uint32_t id, const char* type) {
@@ -1420,8 +2563,7 @@ void sendProtocolSuccess(uint32_t id, const char* type) {
   response["id"] = id;
   response["ok"] = true;
   response["type"] = type;
-  serializeJson(response, Serial);
-  Serial.println();
+  sendProtocolJson(response);
 }
 
 void sendProtocolInfo(uint32_t id) {
@@ -1435,8 +2577,7 @@ void sendProtocolInfo(uint32_t id) {
   response["data"]["configSchema"] = CONFIG_SCHEMA_VERSION;
   response["data"]["hasConfiguration"] = storedConfigurationLoaded;
   response["data"]["ruleCount"] = activeRuleCount();
-  serializeJson(response, Serial);
-  Serial.println();
+  sendProtocolJson(response);
 }
 
 void sendStoredConfiguration(uint32_t id) {
@@ -1451,14 +2592,21 @@ void sendStoredConfiguration(uint32_t id) {
     return;
   }
 
-  Serial.print("{\"qt\":1,\"id\":");
-  Serial.print(id);
-  Serial.print(",\"ok\":true,\"type\":\"config\",\"data\":");
+  if (!serialWriteText("{\"qt\":1,\"id\":") ||
+      !serialWriteUInt(id) ||
+      !serialWriteText(",\"ok\":true,\"type\":\"config\",\"data\":")) {
+    file.close();
+    return;
+  }
   while (file.available()) {
-    Serial.write((uint8_t)file.read());
+    uint8_t value = (uint8_t)file.read();
+    if (!serialWriteBytes(&value, 1)) {
+      file.close();
+      return;
+    }
   }
   file.close();
-  Serial.println("}");
+  serialWriteText("}\n");
 }
 
 void sendProtocolClock(uint32_t id) {
@@ -1489,8 +2637,17 @@ void sendProtocolClock(uint32_t id) {
   response["data"]["clock"]["timezoneOffsetMinutes"] = clockTimezoneOffsetMinutes;
   response["data"]["clock"]["timezoneOffset"] = formatTimezoneOffset(clockTimezoneOffsetMinutes);
   response["data"]["oscillatorStop"] = rtcOscillatorStopFlagSet();
-  serializeJson(response, Serial);
-  Serial.println();
+  sendProtocolJson(response);
+}
+
+void sendProtocolTelemetry(uint32_t id) {
+  JsonDocument response;
+  response["qt"] = CONFIG_SCHEMA_VERSION;
+  response["id"] = id;
+  response["ok"] = true;
+  response["type"] = "telemetry";
+  addTelemetryToJson(response["data"].to<JsonObject>());
+  sendProtocolJson(response);
 }
 
 void handleProtocolLine(const String& line) {
@@ -1504,6 +2661,8 @@ void handleProtocolLine(const String& line) {
   uint32_t id = request["id"] | 0;
   int protocolVersion = request["qt"] | 0;
   const char* command = request["command"] | "";
+  telemetry.protocolCommandCount++;
+  telemetry.lastProtocolCommandMs = millis();
   if (protocolVersion != CONFIG_SCHEMA_VERSION) {
     sendProtocolError(id, "BAD_PROTOCOL", "Unsupported protocol version.");
     return;
@@ -1524,10 +2683,16 @@ void handleProtocolLine(const String& line) {
     return;
   }
 
+  if (strcmp(command, "get-telemetry") == 0) {
+    sendProtocolTelemetry(id);
+    return;
+  }
+
   if (strcmp(command, "set-config") == 0) {
     JsonVariantConst config = request["config"];
     String errorMessage;
     if (!saveConfiguration(config, errorMessage)) {
+      telemetry.configWriteFailCount++;
       sendProtocolError(id, "INVALID_CONFIG", errorMessage);
       return;
     }
@@ -1538,8 +2703,7 @@ void handleProtocolLine(const String& line) {
     response["ok"] = true;
     response["type"] = "config-saved";
     response["data"]["ruleCount"] = activeRuleCount();
-    serializeJson(response, Serial);
-    Serial.println();
+    sendProtocolJson(response);
     return;
   }
 
@@ -1569,7 +2733,9 @@ void handleProtocolLine(const String& line) {
   if (strcmp(command, "factory-reset") == 0) {
     LittleFS.remove(CONFIG_FILE);
     LittleFS.remove(CONFIG_TEMP_FILE);
+    LittleFS.remove(CONFIG_BACKUP_FILE);
     clearCompiledConfiguration();
+    resetBridgeStateAfterConfigurationChange();
     sendProtocolSuccess(id, "factory-reset");
     return;
   }
@@ -1578,7 +2744,35 @@ void handleProtocolLine(const String& line) {
 }
 
 void processSerialProtocol() {
+  uint32_t now = millis();
+  bool shouldPollConnection =
+    telemetry.serialWasConnected ||
+    lastSerialStatePollMs == 0 ||
+    now - lastSerialStatePollMs >= SERIAL_STATE_POLL_MS;
+
+  if (shouldPollConnection) {
+    lastSerialStatePollMs = now;
+    if (!serialProtocolConnected()) {
+      if (telemetry.serialWasConnected) {
+        telemetry.serialDisconnectCount++;
+      }
+      telemetry.serialWasConnected = false;
+      resetSerialProtocolInput();
+      return;
+    }
+    telemetry.serialWasConnected = true;
+  } else if (!telemetry.serialWasConnected) {
+    return;
+  }
+
   while (Serial.available()) {
+    if (!serialProtocolConnected()) {
+      resetSerialProtocolInput();
+      return;
+    }
+
+    serviceNativeUsb();
+
     char value = (char)Serial.read();
     if (value == '\r') continue;
 
@@ -1599,6 +2793,10 @@ void processSerialProtocol() {
       continue;
     }
     serialInputLine += value;
+
+    if ((serialInputLine.length() & 0x3F) == 0) {
+      serviceNativeUsb();
+    }
   }
 }
 
@@ -1773,8 +2971,9 @@ const char* weekdayNameShort(int dow) {
 
 String formatTimezoneOffset(int offsetMinutes) {
   char buffer[8];
-  char sign = offsetMinutes >= 0 ? '+' : '-';
-  int absolute = abs(offsetMinutes);
+  int boundedOffset = constrain(offsetMinutes, -1439, 1439);
+  char sign = boundedOffset >= 0 ? '+' : '-';
+  int absolute = abs(boundedOffset);
   snprintf(buffer, sizeof(buffer), "%c%02d:%02d", sign, absolute / 60, absolute % 60);
   return String(buffer);
 }
@@ -1788,7 +2987,7 @@ String formatCustomDateTime(const String& pattern, const RtcDateTime& dt) {
   int hour12 = dt.hour % 12;
   if (hour12 == 0) hour12 = 12;
 
-  for (int index = 0; index < pattern.length();) {
+  for (unsigned int index = 0; index < pattern.length();) {
     if (pattern.startsWith("YYYY", index)) { output += String(dt.year); index += 4; }
     else if (pattern.startsWith("YY", index)) { if (dt.year % 100 < 10) output += "0"; output += String(dt.year % 100); index += 2; }
     else if (pattern.startsWith("MMMM", index)) { output += monthNameFull(dt.month); index += 4; }
@@ -1906,7 +3105,9 @@ bool parseTimestampFile(const char* filename, RtcDateTime& out) {
   String line = readFirstUsefulLine(filename);
 
   if (line.length() == 0) {
-    Serial.println("Timestamp file is empty or only contains comments.");
+    if (ENABLE_SERIAL_DEBUG_LOGS) {
+      Serial.println("Timestamp file is empty or only contains comments.");
+    }
     return false;
   }
 
@@ -1939,8 +3140,10 @@ bool parseTimestampFile(const char* filename, RtcDateTime& out) {
   } else if (matched == 5) {
     second = 0;
   } else if (matched != 6) {
-    Serial.print("Could not parse timestamp line: ");
-    Serial.println(line);
+    if (ENABLE_SERIAL_DEBUG_LOGS) {
+      Serial.print("Could not parse timestamp line: ");
+      Serial.println(line);
+    }
     return false;
   }
 
@@ -1953,8 +3156,10 @@ bool parseTimestampFile(const char* filename, RtcDateTime& out) {
   out.dow = weekdayMonday1(year, month, day);
 
   if (!validateDateTime(out)) {
-    Serial.print("Parsed timestamp is invalid: ");
-    Serial.println(line);
+    if (ENABLE_SERIAL_DEBUG_LOGS) {
+      Serial.print("Parsed timestamp is invalid: ");
+      Serial.println(line);
+    }
     return false;
   }
 
@@ -2047,6 +3252,10 @@ RtcDateTime rtcGetDateTime() {
 }
 
 void printDateTime(const char* label, const RtcDateTime& dt) {
+  if (!ENABLE_SERIAL_DEBUG_LOGS) {
+    return;
+  }
+
   Serial.print(label);
   Serial.print(": ");
 
@@ -2070,16 +3279,22 @@ void printDateTime(const char* label, const RtcDateTime& dt) {
 
 void handleTimestampFile() {
   if (!LittleFS.exists(TIMESTAMP_FILE)) {
-    Serial.println("Timestamp.txt not found. RTC was not changed.");
+    if (ENABLE_SERIAL_DEBUG_LOGS) {
+      Serial.println("Timestamp.txt not found. RTC was not changed.");
+    }
     return;
   }
 
-  Serial.println("Found Timestamp.txt");
+  if (ENABLE_SERIAL_DEBUG_LOGS) {
+    Serial.println("Found Timestamp.txt");
+  }
 
   RtcDateTime dt = {};
 
   if (!parseTimestampFile(TIMESTAMP_FILE, dt)) {
-    Serial.println("ERROR: Timestamp.txt was found but could not be parsed.");
+    if (ENABLE_SERIAL_DEBUG_LOGS) {
+      Serial.println("ERROR: Timestamp.txt was found but could not be parsed.");
+    }
     return;
   }
 
@@ -2092,9 +3307,13 @@ void handleTimestampFile() {
     LittleFS.remove("/Timestamp.set");
 
     if (LittleFS.rename(TIMESTAMP_FILE, "/Timestamp.set")) {
-      Serial.println("Timestamp.txt renamed to Timestamp.set");
+      if (ENABLE_SERIAL_DEBUG_LOGS) {
+        Serial.println("Timestamp.txt renamed to Timestamp.set");
+      }
     } else {
-      Serial.println("WARNING: Could not rename Timestamp.txt");
+      if (ENABLE_SERIAL_DEBUG_LOGS) {
+        Serial.println("WARNING: Could not rename Timestamp.txt");
+      }
     }
   }
 }
@@ -2114,19 +3333,23 @@ void setup() {
   typedBuffer.reserve(MAX_TRIGGER_BUFFER);
   typedSources.reserve(MAX_TRIGGER_BUFFER);
 
-  delay(1500);
+  cooperativeDelay(1500);
 
-  Serial.println();
-  Serial.println("Booting...");
-  Serial.println("Native USB HID keyboard configured.");
+  if (ENABLE_SERIAL_DEBUG_LOGS) {
+    Serial.println();
+    Serial.println("Booting...");
+    Serial.println("Native USB HID keyboard configured.");
+  }
 
   uint32_t mountStart = millis();
   while (!TinyUSBDevice.mounted() && millis() - mountStart < 5000) {
-    delay(10);
+    cooperativeDelay(10);
   }
 
-  Serial.print("TinyUSB mounted: ");
-  Serial.println(TinyUSBDevice.mounted() ? "yes" : "no");
+  if (ENABLE_SERIAL_DEBUG_LOGS) {
+    Serial.print("TinyUSB mounted: ");
+    Serial.println(TinyUSBDevice.mounted() ? "yes" : "no");
+  }
 
   configureUsbHost();
 
@@ -2135,23 +3358,34 @@ void setup() {
   Wire.begin();
 
   if (!LittleFS.begin()) {
-    Serial.println("ERROR: LittleFS mount failed.");
+    if (ENABLE_SERIAL_DEBUG_LOGS) {
+      Serial.println("ERROR: LittleFS mount failed.");
+    }
     return;
   }
 
-  Serial.println("LittleFS mounted.");
+  if (ENABLE_SERIAL_DEBUG_LOGS) {
+    Serial.println("LittleFS mounted.");
+  }
+  recoverConfigurationStorage();
   loadConfigurationFromStorage();
   loadClockMetadata();
 
   if (!rtcPresent()) {
-    Serial.println("ERROR: RTC not found at I2C address 0x68.");
+    if (ENABLE_SERIAL_DEBUG_LOGS) {
+      Serial.println("ERROR: RTC not found at I2C address 0x68.");
+    }
     return;
   }
 
-  Serial.println("RTC found at 0x68.");
+  if (ENABLE_SERIAL_DEBUG_LOGS) {
+    Serial.println("RTC found at 0x68.");
+  }
 
   if (rtcOscillatorStopFlagSet()) {
-    Serial.println("WARNING: RTC oscillator stop flag is set. Time may be invalid.");
+    if (ENABLE_SERIAL_DEBUG_LOGS) {
+      Serial.println("WARNING: RTC oscillator stop flag is set. Time may be invalid.");
+    }
   }
 
   handleTimestampFile();
@@ -2159,10 +3393,26 @@ void setup() {
   RtcDateTime now = rtcGetDateTime();
   printDateTime("RTC time", now);
 
-  Serial.println("Ready. Open Notepad and test keypad macros.");
+  if (ENABLE_SERIAL_DEBUG_LOGS) {
+    Serial.println("Ready. Open Notepad and test keypad macros.");
+  }
+
+  watchdog_enable(WATCHDOG_TIMEOUT_MS, true);
+  watchdogStarted = true;
 }
 
 void loop() {
-  USBHost.task();
+  uint32_t now = millis();
+  if (telemetry.lastLoopMs != 0) {
+    uint32_t gap = now - telemetry.lastLoopMs;
+    if (gap > telemetry.maxLoopGapMs) {
+      telemetry.maxLoopGapMs = gap;
+    }
+  }
+  telemetry.lastLoopMs = now;
+  telemetry.loopCount++;
+
+  serviceUsbBridge();
   processSerialProtocol();
+  emitTelemetryHeartbeat();
 }
