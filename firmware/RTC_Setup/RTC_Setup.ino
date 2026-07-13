@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.26
+// QuickType firmware version: 0.2.41
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -44,7 +44,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.26";
+static constexpr char FIRMWARE_VERSION[] = "0.2.41"; // v0.2.41: Added endpoint readiness checks for raw HID reports
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 24;
@@ -52,7 +52,7 @@ static constexpr size_t MAX_RULE_STEPS = 8;
 static constexpr size_t MAX_TRIGGER_BUFFER = 64;
 static constexpr size_t MAX_HOST_HID_INTERFACES = 8;
 static constexpr size_t MAX_CONSUMER_BIT_USAGES = 32;
-static constexpr bool ENABLE_SERIAL_DEBUG_LOGS = false;
+static constexpr bool ENABLE_SERIAL_DEBUG_LOGS = true;
 static constexpr uint32_t SERIAL_STATE_POLL_MS = 250;
 static constexpr uint32_t WATCHDOG_TIMEOUT_MS = 8000;
 
@@ -72,6 +72,9 @@ uint8_t const hidReportDescriptor[] = {
 
 // Native USB-C HID keyboard device.
 Adafruit_USBD_HID usb_hid;
+
+// Track the active host keyboard LED report status (Num Lock, Caps Lock, etc.)
+static uint8_t hostLedsState = 0xFF;
 
 // PIO USB host object for the external keypad.
 Adafruit_USBH_Host USBHost;
@@ -318,6 +321,7 @@ char hidKeycodeToAscii(uint8_t keycode, uint8_t modifier, bool& isNumpad);
 bool processPhysicalKeyRule(uint8_t keycode);
 void recordTypedCharacter(char value, bool isNumpad);
 bool outputExpansionListTable();
+bool outputDiagnosticInformation();
 bool processTypedTriggerRules(char currentCharacter);
 bool executeConfiguredRule(const ConfigRule& rule, size_t eraseCount, char delimiterToRestore);
 bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs);
@@ -354,6 +358,41 @@ void resetBridgeStateAfterConfigurationChange();
 // Native USB HID keyboard device setup
 // ============================================================
 
+void hid_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize) {
+  (void) bufsize;
+
+  if (report_type != HID_REPORT_TYPE_OUTPUT) return;
+
+  if (report_id == RID_KEYBOARD || report_id == 0) {
+    uint8_t leds = buffer[0];
+
+    if (leds != hostLedsState) {
+      hostLedsState = leds;
+
+      if (serialDebugConnected()) {
+        Serial.print("Received keyboard LED report from PC: 0x");
+        Serial.println(hostLedsState, HEX);
+      }
+
+      // Forward this LED state to all physical keyboards connected to our USB Host.
+      for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
+        HostHidInterfaceInfo const& info = hostHidInterfaces[index];
+        if (info.mounted && info.keyboard) {
+          if (serialDebugConnected()) {
+            Serial.print("Forwarding LEDs 0x");
+            Serial.print(hostLedsState, HEX);
+            Serial.print(" to host device at addr=");
+            Serial.print(info.devAddr);
+            Serial.print(" instance=");
+            Serial.println(info.instance);
+          }
+          tuh_hid_set_report(info.devAddr, info.instance, 0, HID_REPORT_TYPE_OUTPUT, &hostLedsState, sizeof(hostLedsState));
+        }
+      }
+    }
+  }
+}
+
 void configureUsbDeviceKeyboard() {
   // IMPORTANT:
   // This must be called before Serial.begin() and before delay(),
@@ -362,6 +401,7 @@ void configureUsbDeviceKeyboard() {
   usb_hid.setPollInterval(2);
   usb_hid.setReportDescriptor(hidReportDescriptor, sizeof(hidReportDescriptor));
   usb_hid.setStringDescriptor("XIAO Timestamp Keyboard");
+  usb_hid.setReportCallback(NULL, hid_report_callback);
   usb_hid.begin();
 }
 
@@ -614,10 +654,10 @@ bool typeAsciiCharWithDelay(char c, uint16_t delayMs) {
   if (c == '\t') return sendHidKeyWithDelay(0, HID_KEY_TAB, delayMs);
   if ((uint8_t)c < 0x20 || (uint8_t)c > 0x7E) {
     if (serialDebugConnected()) {
-      Serial.print("ERROR: Unsupported non-ASCII character for HID typing: 0x");
+      Serial.print("WARNING: Skipping unsupported non-ASCII character for HID typing: 0x");
       Serial.println((uint8_t)c, HEX);
     }
-    return false;
+    return true; // Skip character instead of failing the expansion
   }
 
   if (!waitForUsbHidReady(1000)) return false;
@@ -640,8 +680,61 @@ bool typeAsciiString(const char* text) {
   return true;
 }
 
+bool sendRawKeyboardReport(uint8_t modifier, uint8_t keycode, uint16_t delayMs) {
+  if (!waitForUsbHidReady(1000)) return false;
+  uint8_t keys[6] = {keycode, 0, 0, 0, 0, 0};
+  if (!usb_hid.keyboardReport(RID_KEYBOARD, modifier, keys)) return false;
+  cooperativeDelay(delayMs);
+  return true;
+}
+
 bool typeAsciiStringWithDelay(const String& text, uint16_t delayMs) {
   for (size_t index = 0; index < text.length(); index++) {
+    // Check for UTF-8 sequence for bullet point: U+2022 is 0xE2 0x80 0xA2
+    if (index + 2 < text.length() && 
+        (uint8_t)text[index] == 0xE2 && 
+        (uint8_t)text[index+1] == 0x80 && 
+        (uint8_t)text[index+2] == 0xA2) {
+        
+      // Determine if Num Lock is currently OFF (bit 0 of hostLedsState is 0)
+      bool toggleNumLock = (hostLedsState != 0xFF) && ((hostLedsState & 0x01) == 0);
+      uint16_t altDelay = max((uint16_t)20, delayMs);
+
+      if (toggleNumLock) {
+        if (!sendRawKeyboardReport(0, HID_KEY_NUM_LOCK, altDelay)) return false;
+        if (!sendRawKeyboardReport(0, 0, altDelay)) return false;
+      }
+
+      // Hold ALT
+      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, 0, altDelay)) return false;
+      
+      // Numpad 0149
+      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, HID_KEY_KEYPAD_0, altDelay)) return false;
+      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, 0, altDelay)) return false;
+      
+      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, HID_KEY_KEYPAD_1, altDelay)) return false;
+      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, 0, altDelay)) return false;
+      
+      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, HID_KEY_KEYPAD_4, altDelay)) return false;
+      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, 0, altDelay)) return false;
+      
+      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, HID_KEY_KEYPAD_9, altDelay)) return false;
+      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, 0, altDelay)) return false;
+
+      // Release ALT
+      if (!waitForUsbHidReady(1000)) return false;
+      if (!usb_hid.keyboardRelease(RID_KEYBOARD)) return false;
+      cooperativeDelay(altDelay);
+
+      if (toggleNumLock) {
+        if (!sendRawKeyboardReport(0, HID_KEY_NUM_LOCK, altDelay)) return false;
+        if (!sendRawKeyboardReport(0, 0, altDelay)) return false;
+      }
+
+      index += 2; // Skip UTF-8 sequence bytes
+      continue;
+    }
+
     if (!typeAsciiCharWithDelay(text[index], delayMs)) {
       return false;
     }
@@ -924,10 +1017,10 @@ void configureUsbHost() {
   pio_usb_configuration_t pioConfig = PIO_USB_DEFAULT_CONFIG;
   pioConfig.pin_dp = USB_HOST_DP_GPIO;
 
-  // Keep keyboard interfaces in boot protocol so passthrough always receives
-  // the standard 8-byte modifier/key-array report. Consumer/media reports are
-  // handled separately when the source device exposes them.
-  tuh_hid_set_default_protocol(HID_PROTOCOL_BOOT);
+  // Initialize to report protocol so that composite interfaces can negotiate
+  // report mode to pass consumer control keys, and keyboard-only interfaces
+  // will be switched to boot protocol in tuh_hid_mount_cb.
+  tuh_hid_set_default_protocol(HID_PROTOCOL_REPORT);
   USBHost.configure_pio_usb(1, &pioConfig);
   USBHost.begin(1);
 
@@ -1071,9 +1164,21 @@ bool sendConsumerUsageNow(uint16_t usage) {
     return false;
   }
 
+  if (serialDebugConnected()) {
+    Serial.print("Device sending consumer usage: 0x");
+    Serial.print(usage, HEX);
+  }
+
   if (!usb_hid.sendReport16(RID_CONSUMER_CONTROL, usage)) {
     telemetry.consumerSendFailCount++;
+    if (serialDebugConnected()) {
+      Serial.println(" -> FAILED");
+    }
     return false;
+  }
+
+  if (serialDebugConnected()) {
+    Serial.println(" -> SUCCESS");
   }
 
   telemetry.forwardedConsumerCount++;
@@ -1436,6 +1541,13 @@ bool forwardConsumerControlReport(uint8_t const* report, uint16_t len, const Hos
     return false;
   }
 
+  if (serialDebugConnected()) {
+    Serial.print("forwardConsumerControlReport: len=");
+    Serial.print(len);
+    Serial.print(" expectedReportId=");
+    Serial.println(info.consumerReportId);
+  }
+
   uint8_t const* payload = report;
   uint16_t payloadLen = len;
 
@@ -1463,18 +1575,34 @@ bool forwardConsumerControlReport(uint8_t const* report, uint16_t len, const Hos
       }
     }
 
+    if (serialDebugConnected()) {
+      Serial.print(" -> parsed bitmask usage: 0x");
+      Serial.println(usage, HEX);
+    }
+
     return sendConsumerUsage(usage);
   }
 
-  if (payloadLen < 2) {
+  if (payloadLen < 1) {
     if (serialDebugConnected()) {
-      Serial.print("ERROR: Consumer Control report is too short. len=");
+      Serial.print("ERROR: Consumer Control report is empty. len=");
       Serial.println(len);
     }
     return false;
   }
 
-  uint16_t usage = (uint16_t)payload[0] | ((uint16_t)payload[1] << 8);
+  uint16_t usage = 0;
+  if (payloadLen >= 2) {
+    usage = (uint16_t)payload[0] | ((uint16_t)payload[1] << 8);
+  } else {
+    usage = payload[0];
+  }
+
+  if (serialDebugConnected()) {
+    Serial.print(" -> parsed standard usage: 0x");
+    Serial.println(usage, HEX);
+  }
+
   return sendConsumerUsage(usage);
 }
 
@@ -1648,6 +1776,105 @@ bool outputExpansionListTable() {
   return true;
 }
 
+const char* getManufacturerName(uint16_t vid) {
+  switch (vid) {
+    case 0x046D: return "Logitech";
+    case 0x05AC: return "Apple";
+    case 0x045E: return "Microsoft";
+    case 0x1532: return "Razer";
+    case 0x1B1C: return "Corsair";
+    case 0x1038: return "SteelSeries";
+    case 0x3434: return "Keychron";
+    case 0x288A: return "Seeed Studio";
+    case 0x2E8A: return "Raspberry Pi / Pico";
+    default: return "Unknown Device";
+  }
+}
+
+bool outputDiagnosticInformation() {
+  const uint16_t keyDelayMs = 5;
+
+  // Erase the trigger ";;!" (3 characters, but "!" is intercepted and not forwarded, so backspace the two ";")
+  for (uint8_t count = 0; count < 2; count++) {
+    if (!sendHidKeyWithDelay(0, HID_KEY_BACKSPACE, keyDelayMs)) return false;
+  }
+
+  if (!typeAsciiStringWithDelay("\n--- QUICKTYPE DIAGNOSTIC REPORT ---\n", keyDelayMs)) return false;
+  
+  if (!typeAsciiStringWithDelay("Firmware Version: ", keyDelayMs)) return false;
+  if (!typeAsciiStringWithDelay(FIRMWARE_VERSION, keyDelayMs)) return false;
+  if (!typeAsciiStringWithDelay("\n", keyDelayMs)) return false;
+
+  if (!typeAsciiStringWithDelay("RTC Present: ", keyDelayMs)) return false;
+  if (!typeAsciiStringWithDelay(rtcPresent() ? "YES" : "NO", keyDelayMs)) return false;
+  if (!typeAsciiStringWithDelay("\n", keyDelayMs)) return false;
+
+  if (rtcPresent()) {
+    if (!typeAsciiStringWithDelay("RTC Oscillator Stop Flag: ", keyDelayMs)) return false;
+    if (!typeAsciiStringWithDelay(rtcOscillatorStopFlagSet() ? "SET (Time invalid/lost power)" : "CLEAR (Valid)", keyDelayMs)) return false;
+    if (!typeAsciiStringWithDelay("\n", keyDelayMs)) return false;
+
+    RtcDateTime dt = rtcGetDateTime();
+    const char* dowNames[] = {"", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+    const char* dowStr = (dt.dow >= 1 && dt.dow <= 7) ? dowNames[dt.dow] : "Unknown";
+    
+    char buf[128];
+    snprintf(buf, sizeof(buf), "RTC Date/Time: %04d-%02d-%02d %02d:%02d:%02d (%s)\n",
+             dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dowStr);
+    if (!typeAsciiStringWithDelay(buf, keyDelayMs)) return false;
+  }
+
+  if (!typeAsciiStringWithDelay("USB Host Status:\n", keyDelayMs)) return false;
+  size_t mountedCount = 0;
+  for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
+    HostHidInterfaceInfo const& info = hostHidInterfaces[index];
+    if (info.mounted) {
+      uint16_t vid = 0, pid = 0;
+      tuh_vid_pid_get(info.devAddr, &vid, &pid);
+      
+      char bufDev[256];
+      const char* mfg = getManufacturerName(vid);
+      
+      if (info.keyboard) {
+        snprintf(bufDev, sizeof(bufDev), "* Keyboard Interface (Device Addr %u, Instance %u, %s [VID: 0x%04X, PID: 0x%04X])\n", 
+                 info.devAddr, info.instance, mfg, vid, pid);
+      } else if (info.consumerControl) {
+        snprintf(bufDev, sizeof(bufDev), "* Media Keys Interface (Device Addr %u, Instance %u, Report ID %u, %s [VID: 0x%04X, PID: 0x%04X])\n", 
+                 info.devAddr, info.instance, info.consumerReportId, mfg, vid, pid);
+      } else {
+        snprintf(bufDev, sizeof(bufDev), "* Generic HID Interface (Device Addr %u, Instance %u, %s [VID: 0x%04X, PID: 0x%04X])\n", 
+                 info.devAddr, info.instance, mfg, vid, pid);
+      }
+      if (!typeAsciiStringWithDelay(bufDev, keyDelayMs)) return false;
+      mountedCount++;
+    }
+  }
+  if (mountedCount == 0) {
+    if (!typeAsciiStringWithDelay("* No USB devices mounted.\n", keyDelayMs)) return false;
+  }
+
+  if (!typeAsciiStringWithDelay("System Performance:\n", keyDelayMs)) return false;
+  char bufTel[256];
+  snprintf(bufTel, sizeof(bufTel), 
+           "* Active Rules: %u of %u\n"
+           "* Reports Received from Keyboard: %u\n"
+           "* Standard Keys Forwarded: %u\n"
+           "* Media Keys Forwarded: %u\n"
+           "* Key Parsing Errors: %u\n"
+           "* USB Transmission Failures: %u\n",
+           (unsigned int)activeRuleCount(), (unsigned int)MAX_CONFIG_RULES,
+           (unsigned int)telemetry.hostReportCallbackCount,
+           (unsigned int)telemetry.forwardedKeyboardCount,
+           (unsigned int)telemetry.forwardedConsumerCount,
+           (unsigned int)telemetry.keyboardDecodeFailCount,
+           (unsigned int)(telemetry.keyboardSendFailCount + telemetry.consumerSendFailCount));
+  if (!typeAsciiStringWithDelay(bufTel, keyDelayMs)) return false;
+
+  if (!typeAsciiStringWithDelay("------------------------------------\n", keyDelayMs)) return false;
+
+  return true;
+}
+
 bool processTypedTriggerRules(char currentCharacter) {
   if (typedBuffer.endsWith(";;;")) {
     if (serialDebugConnected()) {
@@ -1656,6 +1883,15 @@ bool processTypedTriggerRules(char currentCharacter) {
     typedBuffer = "";
     typedSources = "";
     return outputExpansionListTable();
+  }
+
+  if (typedBuffer.endsWith(";;!")) {
+    if (serialDebugConnected()) {
+      Serial.println("Matched hidden diagnostics trigger.");
+    }
+    typedBuffer = "";
+    typedSources = "";
+    return outputDiagnosticInformation();
   }
 
   for (size_t index = 0; index < configRuleCount; index++) {
@@ -1904,6 +2140,13 @@ extern "C" void tuh_hid_mount_cb(
   uint8_t consumerReportId = 0;
   bool consumerControl = false;
 
+  if (serialDebugConnected()) {
+    Serial.print("Mount callback descriptor pointer: 0x");
+    Serial.print((uint32_t)desc_report, HEX);
+    Serial.print(" len: ");
+    Serial.println(desc_len);
+  }
+
   parseHostHidDescriptor(
     desc_report,
     desc_len,
@@ -1912,12 +2155,11 @@ extern "C" void tuh_hid_mount_cb(
     consumerControl,
     consumerReportId
   );
+
   if (protocol == HID_ITF_PROTOCOL_KEYBOARD) {
     keyboard = true;
-    // Boot keyboard reports do not include a report ID, even if the report
-    // descriptor advertises one for report protocol.
-    keyboardReportId = 0;
   }
+
   rememberHostHidInterface(
     dev_addr,
     instance,
@@ -1938,35 +2180,6 @@ extern "C" void tuh_hid_mount_cb(
     Serial.print(instance);
     Serial.print(" protocol=");
     Serial.println(protocol);
-  }
-
-  if (protocol == HID_ITF_PROTOCOL_KEYBOARD) {
-    if (serialDebugConnected()) {
-      Serial.println("Boot keyboard/keypad detected.");
-    }
-    memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
-
-    uint8_t activeProtocol = tuh_hid_get_protocol(dev_addr, instance);
-    if (serialDebugConnected()) {
-      Serial.print("HID keyboard protocol: ");
-      Serial.println(activeProtocol == HID_PROTOCOL_BOOT ? "boot" : "report");
-    }
-
-    if (activeProtocol != HID_PROTOCOL_BOOT) {
-      if (serialDebugConnected()) {
-        Serial.println("Requesting HID boot protocol for reliable keyboard passthrough.");
-      }
-      if (tuh_hid_set_protocol(dev_addr, instance, HID_PROTOCOL_BOOT)) {
-        return;
-      }
-      if (serialDebugConnected()) {
-        Serial.println("ERROR: Could not request HID boot protocol; trying current protocol anyway.");
-      }
-    }
-  } else {
-    if (serialDebugConnected()) {
-      Serial.println("HID device is not a boot keyboard. Reports may need custom parsing.");
-    }
   }
 
   if (keyboard && serialDebugConnected()) {
@@ -2016,6 +2229,21 @@ extern "C" void tuh_hid_report_received_cb(
   uint8_t const* report,
   uint16_t len
 ) {
+  if (serialDebugConnected()) {
+    Serial.print("tuh_hid_report_received_cb: addr=");
+    Serial.print(dev_addr);
+    Serial.print(" instance=");
+    Serial.print(instance);
+    Serial.print(" len=");
+    Serial.print(len);
+    Serial.print(" data=");
+    for (uint16_t idx = 0; idx < len; idx++) {
+      Serial.print(report[idx], HEX);
+      Serial.print(" ");
+    }
+    Serial.println();
+  }
+
   uint8_t protocol = tuh_hid_interface_protocol(dev_addr, instance);
   HostHidInterfaceInfo* info = hostHidInterfaceInfo(dev_addr, instance);
   telemetry.hostReportCallbackCount++;
@@ -2073,6 +2301,7 @@ void clearCompiledConfiguration() {
   storedConfigurationLoaded = false;
   typedBuffer = "";
   typedSources = "";
+
 }
 
 bool compileConfiguration(JsonVariantConst config, String& errorMessage) {
@@ -2086,6 +2315,8 @@ bool compileConfiguration(JsonVariantConst config, String& errorMessage) {
     errorMessage = "Unsupported configuration schema version.";
     return false;
   }
+
+
 
   JsonObjectConst rules = config["rules"].as<JsonObjectConst>();
   if (rules.isNull()) {
