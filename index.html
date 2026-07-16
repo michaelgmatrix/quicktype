@@ -2701,6 +2701,11 @@
       const before = JSON.stringify(mapping);
       mapping.type = elements.actionType.value;
       if (appState.configMode === "keypad") {
+        const hasKeypadAction = Boolean(elements.macroName.value.trim() || elements.macroText.value.trim());
+        if (mapping.type === "disabled" && hasKeypadAction) {
+          mapping.type = "expansion";
+          elements.actionType.value = "expansion";
+        }
         mapping.trigger = "key";
         mapping.triggerScope = "numpad";
       } else {
@@ -2708,7 +2713,11 @@
         mapping.triggerPattern = elements.triggerPattern.value.trim();
         mapping.triggerScope = elements.triggerScope.value;
       }
-      mapping.label = elements.macroName.value.trim() || "Unassigned";
+      mapping.label = elements.macroName.value.trim() || (
+        appState.configMode === "keypad" && mapping.type !== "disabled"
+          ? mapping.triggerPattern
+          : "Unassigned"
+      );
       mapping.text = elements.macroText.value;
       mapping.preDelay = normalizeNumber(elements.preDelay.value, 0);
       mapping.keyDelay = normalizeNumber(elements.keyDelay.value, 15);
@@ -3093,9 +3102,17 @@
         return {};
       }
 
+      let normalizedType = normalizeActionType(mapping.type === "text" ? "expansion" : mapping.type);
+      const populatedPhysicalKey = mapping.trigger === "key" && Boolean(
+        String(mapping.text || "").trim() || mapping.steps?.length
+      );
+      if (normalizedType === "disabled" && populatedPhysicalKey) {
+        normalizedType = "expansion";
+      }
+
       return {
         ...mapping,
-        type: normalizeActionType(mapping.type === "text" ? "expansion" : mapping.type),
+        type: normalizedType,
         trigger: normalizeTriggerMode(mapping.trigger),
         triggerPattern: mapping.triggerPattern || "",
         triggerScope: mapping.triggerScope || "any"
