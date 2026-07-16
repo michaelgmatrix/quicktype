@@ -446,6 +446,110 @@
       background: var(--accent);
     }
 
+    .config-mode-switch {
+      display: inline-grid;
+      grid-template-columns: repeat(2, minmax(120px, 1fr));
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+      overflow: hidden;
+      background: var(--panel-soft);
+    }
+
+    .config-mode-switch button {
+      min-height: 36px;
+      padding: 0 14px;
+      color: var(--muted);
+      background: transparent;
+      font-weight: 800;
+    }
+
+    .config-mode-switch button + button {
+      border-left: 1px solid var(--line);
+    }
+
+    .config-mode-switch button.active {
+      color: #fff;
+      background: var(--accent);
+    }
+
+    .keypad-shell {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+      max-width: 540px;
+      margin: 0 auto;
+    }
+
+    .keypad-help {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+
+    .numeric-keypad {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(54px, 1fr));
+      grid-template-rows: repeat(5, minmax(58px, 1fr));
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #e9eef2;
+      box-shadow: inset 0 1px 2px rgba(31,43,54,0.08);
+    }
+
+    .keypad-key {
+      position: relative;
+      min-height: 58px;
+      padding: 8px 5px;
+      border: 1px solid #aeb9c3;
+      border-radius: 9px;
+      color: var(--ink);
+      background: linear-gradient(#fff, #f4f7f9);
+      box-shadow: 0 2px 0 #aeb9c3;
+      font-size: 1rem;
+      font-weight: 900;
+    }
+
+    .keypad-key:hover,
+    .keypad-key.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      box-shadow: 0 2px 0 var(--accent);
+      transform: none;
+    }
+
+    .keypad-key.assigned::after {
+      content: "";
+      position: absolute;
+      top: 7px;
+      right: 7px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .keypad-key small {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.62rem;
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .keypad-key.wide {
+      grid-column: span 2;
+    }
+
+    .keypad-key.tall {
+      grid-row: span 2;
+    }
+
     .expansion-list {
       display: grid;
       gap: 0;
@@ -1054,7 +1158,7 @@
 
       <p class="sidebar-footer">
         Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.
-        <span class="build-stamp">Build 2026-07-10 19:14:25 PDT</span>
+        <span class="build-stamp">Build 2026-07-16 08:20:24 PDT</span>
       </p>
     </aside>
 
@@ -1062,7 +1166,7 @@
       <header class="topbar">
         <div class="title-block">
           <h2>Expansion Configurator</h2>
-          <p>Configure inline keyboard interception rules that detect typed triggers and replace them with expansion text, placeholders, or clock output.</p>
+          <p>Configure typed trigger strings and direct 19-key keypad actions using expansion text, placeholders, shortcuts, or clock output.</p>
         </div>
         <div class="actions">
           <button id="connectButton" class="secondary-button" type="button">Connect</button>
@@ -1092,11 +1196,18 @@
         <div class="panel" id="keysPanel">
           <div class="panel-header">
             <div>
-              <h3>Expansions</h3>
+              <h3 id="configModeTitle">Trigger Strings</h3>
+              <p id="configModeDescription">Replace text typed on a full keyboard or keypad.</p>
             </div>
-            <button id="addExpansionButton" class="secondary-button" type="button">Add Expansion</button>
+            <div class="config-mode-switch" aria-label="Configuration mode">
+              <button class="active" type="button" data-config-mode="keyboard">Full Keyboard</button>
+              <button type="button" data-config-mode="keypad">19-Key Keypad</button>
+            </div>
           </div>
           <div class="panel-body">
+            <div class="actions" style="margin-bottom: 10px;">
+              <button id="addExpansionButton" class="secondary-button" type="button">Add Expansion</button>
+            </div>
             <div id="keyGrid" class="expansion-list" aria-label="Expansion list"></div>
           </div>
         </div>
@@ -1115,7 +1226,7 @@
           <div class="panel-body">
             <form id="mappingForm" class="form-grid editor-form" autocomplete="off">
               <div class="two-column editor-fields">
-                <div class="field">
+                <div class="field" id="triggerPatternField">
                   <label id="triggerPatternLabel" for="triggerPattern">Trigger String</label>
                   <input id="triggerPattern" name="triggerPattern" type="text" maxlength="48" autocomplete="off" spellcheck="false">
                 </div>
@@ -1179,7 +1290,7 @@
                         <option value="disabled">Disabled</option>
                       </select>
                     </div>
-                    <div class="field">
+                    <div class="field" id="triggerModeField">
                       <label for="triggerMode">Match Mode</label>
                       <select id="triggerMode" name="triggerMode">
                         <option value="suffix">After typed trigger</option>
@@ -1189,7 +1300,7 @@
                     </div>
                   </div>
 
-                  <div class="field">
+                  <div class="field" id="triggerScopeField">
                     <label for="triggerScope">Keyboard Source</label>
                     <select id="triggerScope" name="triggerScope">
                       <option value="any">Regular or numpad</option>
@@ -1283,6 +1394,27 @@
     const REQUEST_TIMEOUT_MS = 8000;
     const MAX_CONFIG_PAYLOAD_BYTES = 30000;
     const RULE_COUNT = 24;
+    const KEYPAD_KEYS = [
+      { usage: 0x53, id: "KP_NUMLOCK", label: "Num", sublabel: "Lock", row: 1, column: 1 },
+      { usage: 0x54, id: "KP_SLASH", label: "/", row: 1, column: 2 },
+      { usage: 0x55, id: "KP_ASTERISK", label: "*", row: 1, column: 3 },
+      { usage: 0x56, id: "KP_MINUS", label: "-", row: 1, column: 4 },
+      { usage: 0x67, id: "KP_EQUALS", label: "=", row: 1, column: 5 },
+      { usage: 0x5F, id: "KP_7", label: "7", sublabel: "Home", row: 2, column: 1 },
+      { usage: 0x60, id: "KP_8", label: "8", sublabel: "Up", row: 2, column: 2 },
+      { usage: 0x61, id: "KP_9", label: "9", sublabel: "PgUp", row: 2, column: 3 },
+      { usage: 0x57, id: "KP_PLUS", label: "+", row: 2, column: 4, tall: true },
+      { usage: 0x5C, id: "KP_4", label: "4", sublabel: "Left", row: 3, column: 1 },
+      { usage: 0x5D, id: "KP_5", label: "5", row: 3, column: 2 },
+      { usage: 0x5E, id: "KP_6", label: "6", sublabel: "Right", row: 3, column: 3 },
+      { usage: 0x59, id: "KP_1", label: "1", sublabel: "End", row: 4, column: 1 },
+      { usage: 0x5A, id: "KP_2", label: "2", sublabel: "Down", row: 4, column: 2 },
+      { usage: 0x5B, id: "KP_3", label: "3", sublabel: "PgDn", row: 4, column: 3 },
+      { usage: 0x58, id: "KP_ENTER", label: "Enter", row: 4, column: 4, tall: true },
+      { usage: 0x62, id: "KP_0", label: "0", sublabel: "Ins", row: 5, column: 1 },
+      { usage: 0xB0, id: "KP_00", label: "00", row: 5, column: 2 },
+      { usage: 0x63, id: "KP_PERIOD", label: ".", sublabel: "Del", row: 5, column: 3 }
+    ];
     const PLACEHOLDER_TOKENS = [
       { group: "Date/Time Fields", label: "Date", value: "{date}", example: "07/10/2026", description: "Full date" },
       { group: "Date/Time Fields", label: "Short Date", value: "{date_short}", example: "7/10/26", description: "Date without leading zeroes" },
@@ -1321,6 +1453,11 @@
 
     const appState = {
       selectedRule: "R01",
+      selectedExpansionRule: "R01",
+      selectedKeypadRule: "K_KP_NUMLOCK",
+      configMode: "keyboard",
+      keypadPollInFlight: false,
+      lastKeyPressCount: null,
       port: null,
       reader: null,
       writer: null,
@@ -1370,6 +1507,8 @@
       elements.webSerialNotice = document.getElementById("webSerialNotice");
       elements.syncClockButton = document.getElementById("syncClockButton");
       elements.addExpansionButton = document.getElementById("addExpansionButton");
+      elements.configModeTitle = document.getElementById("configModeTitle");
+      elements.configModeDescription = document.getElementById("configModeDescription");
       elements.duplicateExpansionButton = document.getElementById("duplicateExpansionButton");
       elements.deleteExpansionButton = document.getElementById("deleteExpansionButton");
       elements.placeholderName = document.getElementById("placeholderName");
@@ -1387,6 +1526,9 @@
       elements.triggerMode = document.getElementById("triggerMode");
       elements.triggerPattern = document.getElementById("triggerPattern");
       elements.triggerPatternLabel = document.getElementById("triggerPatternLabel");
+      elements.triggerPatternField = document.getElementById("triggerPatternField");
+      elements.triggerModeField = document.getElementById("triggerModeField");
+      elements.triggerScopeField = document.getElementById("triggerScopeField");
       elements.triggerScope = document.getElementById("triggerScope");
       elements.macroName = document.getElementById("macroName");
       elements.macroText = document.getElementById("macroText");
@@ -1434,11 +1576,17 @@
       elements.actionType.addEventListener("change", updateEditorHints);
       elements.triggerMode.addEventListener("change", updateEditorHints);
 
+      document.querySelectorAll("[data-config-mode]").forEach((button) => {
+        button.addEventListener("click", () => selectConfiguratorMode(button.dataset.configMode));
+      });
+
       document.querySelectorAll("[data-tab]").forEach((button) => {
         button.addEventListener("click", () => {
           showTab(button.dataset.tab);
         });
       });
+
+      window.setInterval(pollPhysicalKeySelection, 350);
     }
 
     function validateWebSerialSupport() {
@@ -1516,6 +1664,7 @@
       }
 
       appState.deviceInfo = response.data || {};
+      appState.lastKeyPressCount = null;
       updateDeviceControls();
       logActivity(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
       showToast(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
@@ -1897,20 +2046,54 @@
     function selectDefaultRuleForEditor() {
       const primaryRule = getExpansionRows()[0];
       if (primaryRule) {
-        appState.selectedRule = primaryRule.ruleId;
-        return;
+        appState.selectedExpansionRule = primaryRule.ruleId;
+      } else {
+        appState.selectedExpansionRule = findFirstAvailableRuleId();
       }
-
-      appState.selectedRule = findFirstAvailableRuleId();
+      appState.selectedRule = appState.configMode === "keypad"
+        ? appState.selectedKeypadRule
+        : appState.selectedExpansionRule;
     }
 
     function selectKey(ruleId) {
       appState.selectedRule = ruleId;
+      if (appState.configMode === "keypad") {
+        appState.selectedKeypadRule = ruleId;
+      } else {
+        appState.selectedExpansionRule = ruleId;
+      }
       renderKeyGrid();
       updateEditor();
     }
 
+    function selectConfiguratorMode(mode) {
+      if (!['keyboard', 'keypad'].includes(mode) || mode === appState.configMode) return;
+      if (!updateCurrentMappingFromForm(false)) return;
+      appState.configMode = mode;
+      appState.selectedRule = mode === "keypad"
+        ? appState.selectedKeypadRule
+        : appState.selectedExpansionRule;
+      appState.lastKeyPressCount = null;
+      renderAllConfigurationViews();
+    }
+
     function renderKeyGrid() {
+      const keypadMode = appState.configMode === "keypad";
+      document.querySelectorAll("[data-config-mode]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.configMode === appState.configMode);
+      });
+      elements.configModeTitle.textContent = keypadMode ? "Numeric Keypad" : "Trigger Strings";
+      elements.configModeDescription.textContent = keypadMode
+        ? "Click a key or press it on the connected keypad to edit its action."
+        : "Replace trigger strings typed on a full keyboard or keypad.";
+      elements.addExpansionButton.classList.toggle("hidden", keypadMode);
+
+      if (keypadMode) {
+        renderNumericKeypad();
+        return;
+      }
+
+      elements.keyGrid.className = "expansion-list";
       elements.keyGrid.innerHTML = "";
       const expansionRows = getExpansionRows();
 
@@ -1950,6 +2133,66 @@
         button.addEventListener("click", () => selectKey(ruleId));
         elements.keyGrid.appendChild(button);
       });
+    }
+
+    function renderNumericKeypad() {
+      elements.keyGrid.className = "keypad-shell";
+      elements.keyGrid.innerHTML = `
+        <p class="keypad-help">Assigned keys show a blue dot. Unassigned keys pass through normally. Physical-key selection requires current firmware and an active device connection.</p>
+        <div class="numeric-keypad" aria-label="19-key numeric keypad"></div>
+      `;
+      const keypad = elements.keyGrid.querySelector(".numeric-keypad");
+      KEYPAD_KEYS.forEach((key) => {
+        const ruleId = keypadRuleId(key.id);
+        const mapping = getMapping(ruleId);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "keypad-key";
+        button.classList.toggle("active", ruleId === appState.selectedRule);
+        button.classList.toggle("assigned", mapping.type !== "disabled");
+        button.classList.toggle("tall", Boolean(key.tall));
+        button.style.gridRow = key.tall ? `${key.row} / span 2` : String(key.row);
+        button.style.gridColumn = String(key.column);
+        button.title = mapping.type === "disabled"
+          ? `${key.id}: unassigned (passes through)`
+          : `${key.id}: ${mapping.label || mapping.type}`;
+        button.innerHTML = `${escapeHtml(key.label)}${key.sublabel ? `<small>${escapeHtml(key.sublabel)}</small>` : ""}`;
+        button.addEventListener("click", () => selectKey(ruleId));
+        keypad.appendChild(button);
+      });
+    }
+
+    function keypadRuleId(keyName) {
+      return `K_${keyName}`;
+    }
+
+    function keypadKeyForUsage(usage) {
+      return KEYPAD_KEYS.find((key) => key.usage === Number(usage));
+    }
+
+    async function pollPhysicalKeySelection() {
+      if (appState.configMode !== "keypad" || !appState.isConnected || appState.keypadPollInFlight || !appState.writer) return;
+      appState.keypadPollInFlight = true;
+      try {
+        const response = await sendDeviceCommand("get-telemetry", {}, 2000);
+        const count = Number(response.data?.counters?.keyPresses || 0);
+        if (appState.lastKeyPressCount === null) {
+          appState.lastKeyPressCount = count;
+          return;
+        }
+        if (count !== appState.lastKeyPressCount) {
+          appState.lastKeyPressCount = count;
+          const key = keypadKeyForUsage(response.data?.last?.keyUsage);
+          if (key) {
+            selectKey(keypadRuleId(key.id));
+            showToast(`Editing ${key.label}.`);
+          }
+        }
+      } catch (error) {
+        if (appState.isConnected) logActivity(`Keypad selection polling paused: ${error.message}`);
+      } finally {
+        appState.keypadPollInFlight = false;
+      }
     }
 
     function getExpansionRows() {
@@ -2029,6 +2272,7 @@
       mapping.steps = [];
       mapping.enabled = true;
       appState.selectedRule = ruleId;
+      appState.selectedExpansionRule = ruleId;
       renderAllConfigurationViews();
       elements.triggerPattern.focus();
       setConfigDirty(true);
@@ -2037,6 +2281,7 @@
     }
 
     function duplicateExpansionRule() {
+      if (appState.configMode === "keypad") return;
       const source = structuredClone(getMapping(appState.selectedRule));
       const ruleId = findFirstAvailableRuleId();
       appState.config.rules[ruleId] = {
@@ -2045,6 +2290,7 @@
         label: `${source.label || "Expansion"} copy`
       };
       appState.selectedRule = ruleId;
+      appState.selectedExpansionRule = ruleId;
       renderAllConfigurationViews();
       elements.triggerPattern.focus();
       setConfigDirty(true);
@@ -2053,16 +2299,20 @@
 
     function deleteExpansionRule() {
       const mapping = getMapping(appState.selectedRule);
-      if (!window.confirm(`Delete "${expansionDisplayName(mapping)}"?`)) {
+      const keypadMode = appState.configMode === "keypad";
+      const displayName = keypadMode ? mapping.triggerPattern : expansionDisplayName(mapping);
+      if (!window.confirm(`${keypadMode ? "Clear" : "Delete"} "${displayName}"?`)) {
         showToast("Delete cancelled.");
         return;
       }
-      appState.config.rules[appState.selectedRule] = createBlankRule();
-      selectDefaultRuleForEditor();
+      appState.config.rules[appState.selectedRule] = keypadMode
+        ? createKeypadRule(mapping.triggerPattern)
+        : createBlankRule();
+      if (!keypadMode) selectDefaultRuleForEditor();
       renderAllConfigurationViews();
       setConfigDirty(true);
-      showToast("Expansion deleted.");
-      logActivity("Expansion deleted.");
+      showToast(keypadMode ? "Key assignment cleared." : "Expansion deleted.");
+      logActivity(keypadMode ? `Cleared ${displayName}.` : "Expansion deleted.");
     }
 
     function findFirstAvailableRuleId() {
@@ -2235,15 +2485,24 @@
 
     function updateEditor() {
       const mapping = getMapping(appState.selectedRule);
-      elements.editorTitle.textContent = "Editor";
+      const keypadMode = appState.configMode === "keypad";
+      const keypadKey = KEYPAD_KEYS.find((key) => key.id === mapping.triggerPattern);
+      elements.editorTitle.textContent = keypadMode
+        ? `${keypadKey?.label || mapping.triggerPattern} Key Action`
+        : "Expansion Editor";
       elements.actionType.value = normalizeActionType(mapping.type);
-      elements.triggerMode.value = normalizeTriggerMode(mapping.trigger);
+      elements.triggerMode.value = mapping.trigger === "key" ? "suffix" : normalizeTriggerMode(mapping.trigger);
       elements.triggerPattern.value = mapping.triggerPattern;
       elements.triggerScope.value = mapping.triggerScope;
       elements.macroName.value = mapping.label === "Unassigned" ? "" : mapping.label;
       elements.macroText.value = mapping.text;
       elements.preDelay.value = mapping.preDelay;
       elements.keyDelay.value = mapping.keyDelay;
+      elements.triggerPatternField.classList.toggle("hidden", keypadMode);
+      elements.triggerModeField.classList.toggle("hidden", keypadMode);
+      elements.triggerScopeField.classList.toggle("hidden", keypadMode);
+      elements.duplicateExpansionButton.classList.toggle("hidden", keypadMode);
+      elements.deleteExpansionButton.textContent = keypadMode ? "Clear Key" : "Delete";
       renderTemplatePreview();
       updateEditorHints();
     }
@@ -2267,9 +2526,14 @@
       const mapping = getMapping(appState.selectedRule);
       const before = JSON.stringify(mapping);
       mapping.type = elements.actionType.value;
-      mapping.trigger = normalizeTriggerMode(elements.triggerMode.value);
-      mapping.triggerPattern = elements.triggerPattern.value.trim();
-      mapping.triggerScope = elements.triggerScope.value;
+      if (appState.configMode === "keypad") {
+        mapping.trigger = "key";
+        mapping.triggerScope = "numpad";
+      } else {
+        mapping.trigger = normalizeTriggerMode(elements.triggerMode.value);
+        mapping.triggerPattern = elements.triggerPattern.value.trim();
+        mapping.triggerScope = elements.triggerScope.value;
+      }
       mapping.label = elements.macroName.value.trim() || "Unassigned";
       mapping.text = elements.macroText.value;
       mapping.preDelay = normalizeNumber(elements.preDelay.value, 0);
@@ -2288,7 +2552,7 @@
       }
       if (announceSave) {
         logActivity(`Saved ${expansionDisplayName(mapping)}.`);
-        showToast("Expansion saved.");
+        showToast(appState.configMode === "keypad" ? "Key action saved." : "Expansion saved.");
       }
       return true;
     }
@@ -2297,6 +2561,7 @@
       const seen = [];
       for (const [ruleId, rule] of Object.entries(appState.config.rules)) {
         if (!rule || rule.type === "disabled" || !rule.triggerPattern) continue;
+        if (rule.trigger === "key") continue;
         const current = {
           ruleId,
           trigger: String(rule.trigger || "suffix").toLowerCase(),
@@ -2502,7 +2767,11 @@
       }
 
       appState.config = createDefaultConfig();
-      appState.selectedRule = "R01";
+      appState.selectedExpansionRule = "R01";
+      appState.selectedKeypadRule = "K_KP_NUMLOCK";
+      appState.selectedRule = appState.configMode === "keypad"
+        ? appState.selectedKeypadRule
+        : appState.selectedExpansionRule;
       renderAllConfigurationViews();
       setConfigDirty(true);
       logActivity("Blank expansion configuration restored in the editor.");
@@ -2547,8 +2816,20 @@
         const ruleId = `R${String(index).padStart(2, "0")}`;
         rules[ruleId] = createBlankRule();
       }
+      KEYPAD_KEYS.forEach((key) => {
+        rules[keypadRuleId(key.id)] = createKeypadRule(key.id);
+      });
 
       return rules;
+    }
+
+    function createKeypadRule(keyName) {
+      return {
+        ...createBlankRule(),
+        trigger: "key",
+        triggerPattern: keyName,
+        triggerScope: "numpad"
+      };
     }
 
     function normalizeImportedConfiguration(config) {
@@ -2564,10 +2845,24 @@
 
       if (config.rules) {
         Object.keys(fallback.rules).forEach((ruleId) => {
+          const imported = normalizeImportedMapping(config.rules[ruleId]);
+          if (imported.trigger === "key" && KEYPAD_KEYS.some((key) => key.id === imported.triggerPattern)) {
+            return;
+          }
           fallback.rules[ruleId] = {
             ...fallback.rules[ruleId],
-            ...normalizeImportedMapping(config.rules[ruleId])
+            ...imported
           };
+        });
+        Object.values(config.rules).forEach((mapping) => {
+          const imported = normalizeImportedMapping(mapping);
+          const keypadKey = KEYPAD_KEYS.find((key) => key.id === imported.triggerPattern);
+          if (imported.trigger === "key" && keypadKey) {
+            fallback.rules[keypadRuleId(keypadKey.id)] = {
+              ...createKeypadRule(keypadKey.id),
+              ...imported
+            };
+          }
         });
         return fallback;
       }
@@ -2595,7 +2890,16 @@
         }
         Object.values(layer.keys).forEach((mapping) => {
           if (mapping && mapping.label && mapping.label !== "Unassigned") {
-            legacyRules.push(normalizeImportedMapping(mapping));
+            const imported = normalizeImportedMapping(mapping);
+            const keypadKey = KEYPAD_KEYS.find((key) => key.id === imported.triggerPattern);
+            if (imported.trigger === "key" && keypadKey) {
+              fallback.rules[keypadRuleId(keypadKey.id)] = {
+                ...createKeypadRule(keypadKey.id),
+                ...imported
+              };
+            } else {
+              legacyRules.push(imported);
+            }
           }
         });
       });
@@ -2614,13 +2918,12 @@
       if (!mapping) {
         return {};
       }
-      const legacyPhysicalKey = mapping.trigger === "key";
 
       return {
         ...mapping,
-        type: legacyPhysicalKey ? "disabled" : normalizeActionType(mapping.type === "text" ? "expansion" : mapping.type),
+        type: normalizeActionType(mapping.type === "text" ? "expansion" : mapping.type),
         trigger: normalizeTriggerMode(mapping.trigger),
-        triggerPattern: legacyPhysicalKey ? "" : mapping.triggerPattern,
+        triggerPattern: mapping.triggerPattern || "",
         triggerScope: mapping.triggerScope || "any"
       };
     }
@@ -2630,7 +2933,7 @@
     }
 
     function normalizeTriggerMode(value) {
-      return ["suffix", "delimiter", "instant"].includes(value) ? value : "suffix";
+      return ["key", "suffix", "delimiter", "instant"].includes(value) ? value : "suffix";
     }
 
     function serializeConfiguration(config) {
