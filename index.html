@@ -3,7 +3,35 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="quicktype-build" content="2026-07-16T15:57:25-07:00">
   <title>QuickType Configurator</title>
+  <script>
+    (() => {
+      if (!/^https?:$/.test(window.location.protocol)) return;
+
+      const currentBuild = document.querySelector('meta[name="quicktype-build"]')?.content;
+      const checkUrl = new URL("index.html", window.location.href);
+      checkUrl.searchParams.set("_qt_cache_check", Date.now().toString());
+
+      fetch(checkUrl, { cache: "no-store" })
+        .then((response) => response.ok ? response.text() : Promise.reject(new Error(`HTTP ${response.status}`)))
+        .then((html) => {
+          const latestBuild = html.match(/<meta name="quicktype-build" content="([^"]+)"/)?.[1];
+          if (!latestBuild || latestBuild === currentBuild) return;
+
+          const freshUrl = new URL(window.location.href);
+          freshUrl.searchParams.delete("_qt_cache_check");
+          freshUrl.searchParams.set("v", latestBuild);
+          window.location.replace(freshUrl);
+        })
+        .catch(() => {
+          // Stay usable when offline or when a local server blocks cache checks.
+        });
+    })();
+  </script>
   <style>
     :root {
       color-scheme: light;
@@ -1298,7 +1326,7 @@
 
       <p class="sidebar-footer">
         Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.
-        <span class="build-stamp">Build 2026-07-16 15:51:07 PDT</span>
+        <span class="build-stamp">Build 2026-07-16 15:57:25 PDT</span>
       </p>
     </aside>
 
