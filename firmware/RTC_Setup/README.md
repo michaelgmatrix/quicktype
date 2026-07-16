@@ -51,3 +51,5 @@ The 19-key keypad editor supports Num Lock, `/`, `*`, Backspace, `-`, `+`, Enter
 Templates support reusable custom placeholders, clock fields such as `{date}`, `{weekday}`, `{time_24}`, `{time_12_compact}`, `{timezone_offset}`, `{iso_datetime_tz}`, and custom formats such as `{date:MM/D/YY}`. `{time_12_compact}` produces values such as `11:45am` or `3:07pm`. Custom placeholder tokens remain in the stored template and are resolved by the firmware when an expansion runs. Templates also support cursor repositioning, Tab, Enter, and Ctrl+V clipboard paste. Shortcut rules accept values such as `CTRL+B`, `CTRL+SHIFT+S`, `ALT+TAB`, `HOME`, and `ENTER`. Output steps may contain `type expansion`, `resolve placeholders`, `key:<shortcut>`, or literal template text.
 
 New rules and rules without an explicit `keyDelay` use a 5 ms key delay by default. Each configured rule can override that value.
+
+The configurator bullet buttons insert `•`, `■`, `▪`, `●`, and `◆`. Firmware converts these UTF-8 symbols to Windows Alt-key sequences when an expansion runs; application and font support can vary, so the variants are provided for compatibility testing.

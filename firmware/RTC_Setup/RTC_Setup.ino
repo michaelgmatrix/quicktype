@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.61
+// QuickType firmware version: 0.2.62
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -45,7 +45,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.61"; // v0.2.61: Add compact 12-hour time output such as 11:45am and 3:07pm
+static constexpr char FIRMWARE_VERSION[] = "0.2.62"; // v0.2.62: Add solid and square bullet variants for configurator output testing
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 48;
@@ -800,10 +800,12 @@ bool typeAsciiStringWithDelay(const String& text, uint16_t delayMs) {
 
       if (b1 == 0x80 && b2 == 0xA2) altDigits = "0149"; // •
       else if (b1 == 0x97 && b2 == 0xA6) altDigits = "9702"; // ◦
-      else if (b1 == 0x97 && b2 == 0xBE) altDigits = "9726"; // ▪
+      else if (b1 == 0x96 && b2 == 0xAA) altDigits = "9642"; // ▪
+      else if (b1 == 0x97 && b2 == 0xBE) altDigits = "9726"; // ◾
       else if (b1 == 0x99 && b2 == 0xA6) altDigits = "4";    // ♦
       else if (b1 == 0x80 && b2 == 0xA3) altDigits = "8227"; // ‣
       else if (b1 == 0x97 && b2 == 0x86) altDigits = "9670"; // ◆
+      else if (b1 == 0x97 && b2 == 0x8F) altDigits = "9679"; // ●
       else if (b1 == 0x96 && b2 == 0xA0) altDigits = "254";  // ■
 
       if (altDigits != nullptr) {
@@ -2811,10 +2813,12 @@ bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs) {
 
       if (b1 == 0x80 && b2 == 0xA2) altDigits = "0149"; // •
       else if (b1 == 0x97 && b2 == 0xA6) altDigits = "9702"; // ◦
-      else if (b1 == 0x97 && b2 == 0xBE) altDigits = "9726"; // ▪
+      else if (b1 == 0x96 && b2 == 0xAA) altDigits = "9642"; // ▪
+      else if (b1 == 0x97 && b2 == 0xBE) altDigits = "9726"; // ◾
       else if (b1 == 0x99 && b2 == 0xA6) altDigits = "4";    // ♦
       else if (b1 == 0x80 && b2 == 0xA3) altDigits = "8227"; // ‣
       else if (b1 == 0x97 && b2 == 0x86) altDigits = "9670"; // ◆
+      else if (b1 == 0x97 && b2 == 0x8F) altDigits = "9679"; // ●
       else if (b1 == 0x96 && b2 == 0xA0) altDigits = "254";  // ■
 
       if (altDigits != nullptr) {
