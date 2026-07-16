@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.41
+// QuickType firmware version: 0.2.56
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -8,6 +8,7 @@
 #include <Adafruit_TinyUSB.h>
 #include <tusb.h>
 #include <hardware/watchdog.h>
+#include <hardware/clocks.h>
 
 // ============================================================
 // Seeed XIAO RP2040 wiring
@@ -44,7 +45,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.41"; // v0.2.41: Added endpoint readiness checks for raw HID reports
+static constexpr char FIRMWARE_VERSION[] = "0.2.56"; // v0.2.56: Add startup host delay and memory barriers to secure multicore queue safety
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 24;
@@ -210,11 +211,19 @@ static HostHidInterfaceInfo hostHidInterfaces[MAX_HOST_HID_INTERFACES];
 static TelemetryState telemetry = {};
 static uint16_t activeTopRowConsumerUsage = 0;
 static uint16_t pendingConsumerUsage = 0;
-static bool pendingKeyboardReportValid = false;
+static volatile bool pendingKeyboardReportValid = false;
+static uint32_t lastWakeupAttemptMs = 0;
+static volatile bool deviceConnectionResetPending = false;
+static volatile bool hostStackSuspended = false;
+static volatile bool hostRemoteWakeupEnabled = false;
 static constexpr size_t CONSUMER_QUEUE_SIZE = 8;
-static uint16_t consumerUsageQueue[CONSUMER_QUEUE_SIZE];
-static size_t consumerQueueHead = 0;
-static size_t consumerQueueTail = 0;
+static volatile uint16_t consumerUsageQueue[CONSUMER_QUEUE_SIZE];
+static volatile size_t consumerQueueHead = 0;
+static volatile size_t consumerQueueTail = 0;
+static constexpr size_t KEYBOARD_REPORT_QUEUE_SIZE = 16;
+static hid_keyboard_report_t keyboardReportQueue[KEYBOARD_REPORT_QUEUE_SIZE];
+static volatile size_t keyboardQueueHead = 0;
+static volatile size_t keyboardQueueTail = 0;
 static ConfigRule configRules[MAX_CONFIG_RULES];
 static size_t configRuleCount = 0;
 static bool storedConfigurationLoaded = false;
@@ -488,6 +497,28 @@ void serviceNativeUsb() {
   TinyUSB_Device_Task();
 }
 
+void disableWatchdog() {
+  if (watchdogStarted) {
+    watchdog_hw->ctrl &= ~WATCHDOG_CTRL_ENABLE_BITS;
+  }
+}
+
+void enableWatchdog() {
+  if (watchdogStarted) {
+    watchdog_enable(WATCHDOG_TIMEOUT_MS, true);
+  }
+}
+
+void suspendHostStack() {
+  hostStackSuspended = true;
+  // Allow Core 1 to yield current PIO tasks and enter safe idle state
+  delay(10);
+}
+
+void resumeHostStack() {
+  hostStackSuspended = false;
+}
+
 size_t mountedHostInterfaceCount() {
   size_t count = 0;
   for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
@@ -594,7 +625,14 @@ bool waitForUsbHidReady(uint32_t timeoutMs) {
     serviceNativeUsb();
 
     if (TinyUSBDevice.suspended()) {
-      TinyUSBDevice.remoteWakeup();
+      uint32_t now = millis();
+      if (now - lastWakeupAttemptMs >= 2000) {
+        lastWakeupAttemptMs = now;
+        if (serialDebugConnected()) {
+          Serial.println("Triggering USB remote wakeup...");
+        }
+        TinyUSBDevice.remoteWakeup();
+      }
     }
 
     if (millis() - started >= timeoutMs) {
@@ -688,56 +726,78 @@ bool sendRawKeyboardReport(uint8_t modifier, uint8_t keycode, uint16_t delayMs) 
   return true;
 }
 
+bool typeAltCode(const char* digits, uint16_t delayMs) {
+  bool toggleNumLock = (hostLedsState != 0xFF) && ((hostLedsState & 0x01) == 0);
+  uint16_t altDelay = max((uint16_t)20, delayMs);
+
+  if (toggleNumLock) {
+    if (!sendRawKeyboardReport(0, HID_KEY_NUM_LOCK, altDelay)) return false;
+    if (!sendRawKeyboardReport(0, 0, altDelay)) return false;
+  }
+
+  // Hold ALT
+  if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, 0, altDelay)) return false;
+
+  while (*digits) {
+    uint8_t keycode = 0;
+    switch (*digits) {
+      case '0': keycode = HID_KEY_KEYPAD_0; break;
+      case '1': keycode = HID_KEY_KEYPAD_1; break;
+      case '2': keycode = HID_KEY_KEYPAD_2; break;
+      case '3': keycode = HID_KEY_KEYPAD_3; break;
+      case '4': keycode = HID_KEY_KEYPAD_4; break;
+      case '5': keycode = HID_KEY_KEYPAD_5; break;
+      case '6': keycode = HID_KEY_KEYPAD_6; break;
+      case '7': keycode = HID_KEY_KEYPAD_7; break;
+      case '8': keycode = HID_KEY_KEYPAD_8; break;
+      case '9': keycode = HID_KEY_KEYPAD_9; break;
+    }
+    if (keycode != 0) {
+      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, keycode, altDelay)) return false;
+      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, 0, altDelay)) return false;
+    }
+    digits++;
+  }
+
+  // Release ALT
+  if (!waitForUsbHidReady(1000)) return false;
+  if (!usb_hid.keyboardRelease(RID_KEYBOARD)) return false;
+  cooperativeDelay(altDelay);
+
+  if (toggleNumLock) {
+    if (!sendRawKeyboardReport(0, HID_KEY_NUM_LOCK, altDelay)) return false;
+    if (!sendRawKeyboardReport(0, 0, altDelay)) return false;
+  }
+
+  return true;
+}
+
 bool typeAsciiStringWithDelay(const String& text, uint16_t delayMs) {
-  for (size_t index = 0; index < text.length(); index++) {
-    // Check for UTF-8 sequence for bullet point: U+2022 is 0xE2 0x80 0xA2
-    if (index + 2 < text.length() && 
-        (uint8_t)text[index] == 0xE2 && 
-        (uint8_t)text[index+1] == 0x80 && 
-        (uint8_t)text[index+2] == 0xA2) {
-        
-      // Determine if Num Lock is currently OFF (bit 0 of hostLedsState is 0)
-      bool toggleNumLock = (hostLedsState != 0xFF) && ((hostLedsState & 0x01) == 0);
-      uint16_t altDelay = max((uint16_t)20, delayMs);
+  for (size_t index = 0; index < text.length();) {
+    if (index + 2 < text.length() && (uint8_t)text[index] == 0xE2) {
+      uint8_t b1 = (uint8_t)text[index+1];
+      uint8_t b2 = (uint8_t)text[index+2];
+      const char* altDigits = nullptr;
 
-      if (toggleNumLock) {
-        if (!sendRawKeyboardReport(0, HID_KEY_NUM_LOCK, altDelay)) return false;
-        if (!sendRawKeyboardReport(0, 0, altDelay)) return false;
+      if (b1 == 0x80 && b2 == 0xA2) altDigits = "0149"; // •
+      else if (b1 == 0x97 && b2 == 0xA6) altDigits = "9702"; // ◦
+      else if (b1 == 0x97 && b2 == 0xBE) altDigits = "9726"; // ▪
+      else if (b1 == 0x99 && b2 == 0xA6) altDigits = "4";    // ♦
+      else if (b1 == 0x80 && b2 == 0xA3) altDigits = "8227"; // ‣
+      else if (b1 == 0x97 && b2 == 0x86) altDigits = "9670"; // ◆
+      else if (b1 == 0x96 && b2 == 0xA0) altDigits = "254";  // ■
+
+      if (altDigits != nullptr) {
+        if (!typeAltCode(altDigits, delayMs)) return false;
+        index += 3;
+        continue;
       }
-
-      // Hold ALT
-      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, 0, altDelay)) return false;
-      
-      // Numpad 0149
-      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, HID_KEY_KEYPAD_0, altDelay)) return false;
-      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, 0, altDelay)) return false;
-      
-      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, HID_KEY_KEYPAD_1, altDelay)) return false;
-      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, 0, altDelay)) return false;
-      
-      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, HID_KEY_KEYPAD_4, altDelay)) return false;
-      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, 0, altDelay)) return false;
-      
-      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, HID_KEY_KEYPAD_9, altDelay)) return false;
-      if (!sendRawKeyboardReport(KEYBOARD_MODIFIER_LEFTALT, 0, altDelay)) return false;
-
-      // Release ALT
-      if (!waitForUsbHidReady(1000)) return false;
-      if (!usb_hid.keyboardRelease(RID_KEYBOARD)) return false;
-      cooperativeDelay(altDelay);
-
-      if (toggleNumLock) {
-        if (!sendRawKeyboardReport(0, HID_KEY_NUM_LOCK, altDelay)) return false;
-        if (!sendRawKeyboardReport(0, 0, altDelay)) return false;
-      }
-
-      index += 2; // Skip UTF-8 sequence bytes
-      continue;
     }
 
     if (!typeAsciiCharWithDelay(text[index], delayMs)) {
       return false;
     }
+    index++;
   }
 
   return true;
@@ -1010,10 +1070,7 @@ void outputDateFormatForKey(uint8_t keycode) {
 // ============================================================
 
 void configureUsbHost() {
-  if (ENABLE_SERIAL_DEBUG_LOGS) {
-    Serial.println("Configuring PIO USB host...");
-  }
-
+  delay(1000); // Wait 1 second for power and keyboard boot stabilization
   pio_usb_configuration_t pioConfig = PIO_USB_DEFAULT_CONFIG;
   pioConfig.pin_dp = USB_HOST_DP_GPIO;
 
@@ -1023,16 +1080,6 @@ void configureUsbHost() {
   tuh_hid_set_default_protocol(HID_PROTOCOL_REPORT);
   USBHost.configure_pio_usb(1, &pioConfig);
   USBHost.begin(1);
-
-  if (ENABLE_SERIAL_DEBUG_LOGS) {
-    Serial.print("USB host D+ GPIO: ");
-    Serial.println(USB_HOST_DP_GPIO);
-
-    Serial.print("USB host D- GPIO: ");
-    Serial.println(USB_HOST_DM_GPIO);
-
-    Serial.println("PIO USB host ready.");
-  }
 }
 
 const char* keypadUsageName(uint8_t usage) {
@@ -1127,10 +1174,6 @@ bool decodeKeyboardReport(
 }
 
 bool usbHidReadyNow() {
-  if (TinyUSBDevice.suspended()) {
-    TinyUSBDevice.remoteWakeup();
-  }
-
   return usb_hid.ready();
 }
 
@@ -1188,11 +1231,26 @@ bool sendConsumerUsageNow(uint16_t usage) {
 }
 
 void servicePendingHidReports() {
+  if (TinyUSBDevice.suspended()) {
+    if (pendingKeyboardReportValid || consumerQueueTail != consumerQueueHead) {
+      uint32_t now = millis();
+      if (now - lastWakeupAttemptMs >= 2000) {
+        lastWakeupAttemptMs = now;
+        if (serialDebugConnected()) {
+          Serial.println("Triggering USB remote wakeup...");
+        }
+        TinyUSBDevice.remoteWakeup();
+      }
+    }
+    return;
+  }
+
   if (!usbHidReadyNow()) {
     return;
   }
 
   if (consumerQueueTail != consumerQueueHead) {
+    __asm__ volatile("dmb" : : : "memory");
     if (!sendConsumerUsageNow(consumerUsageQueue[consumerQueueTail])) {
       return;
     }
@@ -1397,9 +1455,7 @@ void rememberHostHidInterface(
     }
   }
 
-  if (serialDebugConnected()) {
-    Serial.println("ERROR: No room to track another HID interface.");
-  }
+  // No Serial logging on Core 1
 }
 
 void parseConsumerBitmaskDescriptor(uint8_t const* desc_report, uint16_t desc_len, HostHidInterfaceInfo& info) {
@@ -1526,12 +1582,10 @@ void parseConsumerBitmaskDescriptor(uint8_t const* desc_report, uint16_t desc_le
 bool sendConsumerUsage(uint16_t usage) {
   size_t nextHead = (consumerQueueHead + 1) % CONSUMER_QUEUE_SIZE;
   if (nextHead == consumerQueueTail) {
-    if (serialDebugConnected()) {
-      Serial.println("ERROR: Consumer usage queue is full! Dropping report.");
-    }
     return false;
   }
   consumerUsageQueue[consumerQueueHead] = usage;
+  __asm__ volatile("dmb" : : : "memory");
   consumerQueueHead = nextHead;
   return true;
 }
@@ -1541,21 +1595,11 @@ bool forwardConsumerControlReport(uint8_t const* report, uint16_t len, const Hos
     return false;
   }
 
-  if (serialDebugConnected()) {
-    Serial.print("forwardConsumerControlReport: len=");
-    Serial.print(len);
-    Serial.print(" expectedReportId=");
-    Serial.println(info.consumerReportId);
-  }
-
   uint8_t const* payload = report;
   uint16_t payloadLen = len;
 
   if (info.consumerReportId != 0) {
     if (len < 1 || report[0] != info.consumerReportId) {
-      if (serialDebugConnected()) {
-        Serial.println("ERROR: Consumer Control report ID did not match descriptor.");
-      }
       return false;
     }
 
@@ -1575,19 +1619,10 @@ bool forwardConsumerControlReport(uint8_t const* report, uint16_t len, const Hos
       }
     }
 
-    if (serialDebugConnected()) {
-      Serial.print(" -> parsed bitmask usage: 0x");
-      Serial.println(usage, HEX);
-    }
-
     return sendConsumerUsage(usage);
   }
 
   if (payloadLen < 1) {
-    if (serialDebugConnected()) {
-      Serial.print("ERROR: Consumer Control report is empty. len=");
-      Serial.println(len);
-    }
     return false;
   }
 
@@ -1596,11 +1631,6 @@ bool forwardConsumerControlReport(uint8_t const* report, uint16_t len, const Hos
     usage = (uint16_t)payload[0] | ((uint16_t)payload[1] << 8);
   } else {
     usage = payload[0];
-  }
-
-  if (serialDebugConnected()) {
-    Serial.print(" -> parsed standard usage: 0x");
-    Serial.println(usage, HEX);
   }
 
   return sendConsumerUsage(usage);
@@ -1817,7 +1847,7 @@ bool outputDiagnosticInformation() {
     RtcDateTime dt = rtcGetDateTime();
     const char* dowNames[] = {"", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
     const char* dowStr = (dt.dow >= 1 && dt.dow <= 7) ? dowNames[dt.dow] : "Unknown";
-    
+
     char buf[128];
     snprintf(buf, sizeof(buf), "RTC Date/Time: %04d-%02d-%02d %02d:%02d:%02d (%s)\n",
              dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dowStr);
@@ -2076,9 +2106,6 @@ void requestNextHidReport(uint8_t dev_addr, uint8_t instance) {
 
   if (!tuh_hid_receive_report(dev_addr, instance)) {
     telemetry.hostReportRequestFailCount++;
-    if (serialDebugConnected()) {
-      Serial.println("ERROR: Could not request HID report.");
-    }
     if (info != nullptr) {
       info->nextReportRequestMs = millis() + 25;
     }
@@ -2101,9 +2128,58 @@ void pollMountedHidReports() {
 void serviceUsbBridge() {
   telemetry.bridgeServiceCount++;
   serviceNativeUsb();
-  USBHost.task(0);
+  // USB Host tasks are run entirely on Core 1 in loop1()
   serviceNativeUsb();
-  pollMountedHidReports();
+
+  if (deviceConnectionResetPending) {
+    deviceConnectionResetPending = false;
+    if (serialDebugConnected()) {
+      Serial.println("USB Device connection state changed. Resetting bridge state.");
+    }
+    // Safely clear reports, queues, buffers and LEDs on Core 0 thread
+    memset(&pendingKeyboardReport, 0, sizeof(pendingKeyboardReport));
+    if (TinyUSBDevice.mounted()) {
+      pendingKeyboardReportValid = true; // Send release report
+    } else {
+      pendingKeyboardReportValid = false;
+    }
+    memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
+    activeTopRowConsumerUsage = 0;
+    consumerQueueTail = 0;
+    consumerQueueHead = 0;
+    keyboardQueueTail = 0;
+    keyboardQueueHead = 0;
+    typedBuffer = "";
+    typedSources = "";
+    hostLedsState = 0xFF;
+  }
+
+  // If the PC has suspended the USB connection, do NOT write to endpoints or process keyboard reports!
+  // Instead, queue the reports and trigger a spec-compliant remote wakeup if enabled by the host.
+  if (TinyUSBDevice.suspended()) {
+    if (hostRemoteWakeupEnabled && (keyboardQueueTail != keyboardQueueHead || consumerQueueTail != consumerQueueHead)) {
+      uint32_t now = millis();
+      if (now - lastWakeupAttemptMs >= 2000) {
+        lastWakeupAttemptMs = now;
+        if (serialDebugConnected()) {
+          Serial.println("USB Device suspended. Triggering remote wakeup...");
+        }
+        TinyUSBDevice.remoteWakeup();
+      }
+    }
+    return;
+  }
+
+  // Process keyboard reports queue on Core 0
+  while (keyboardQueueTail != keyboardQueueHead) {
+    __asm__ volatile("dmb" : : : "memory");
+    hid_keyboard_report_t report = keyboardReportQueue[keyboardQueueTail];
+    keyboardQueueTail = (keyboardQueueTail + 1) % KEYBOARD_REPORT_QUEUE_SIZE;
+    telemetry.keyboardReportCount++;
+    telemetry.lastKeyboardReportMs = millis();
+    handleKeyboardReport(&report);
+  }
+
   servicePendingHidReports();
 }
 
@@ -2140,13 +2216,6 @@ extern "C" void tuh_hid_mount_cb(
   uint8_t consumerReportId = 0;
   bool consumerControl = false;
 
-  if (serialDebugConnected()) {
-    Serial.print("Mount callback descriptor pointer: 0x");
-    Serial.print((uint32_t)desc_report, HEX);
-    Serial.print(" len: ");
-    Serial.println(desc_len);
-  }
-
   parseHostHidDescriptor(
     desc_report,
     desc_len,
@@ -2173,48 +2242,14 @@ extern "C" void tuh_hid_mount_cb(
     parseConsumerBitmaskDescriptor(desc_report, desc_len, *mountedInfo);
   }
 
-  if (serialDebugConnected()) {
-    Serial.print("HID device mounted. addr=");
-    Serial.print(dev_addr);
-    Serial.print(" instance=");
-    Serial.print(instance);
-    Serial.print(" protocol=");
-    Serial.println(protocol);
-  }
-
-  if (keyboard && serialDebugConnected()) {
-    Serial.print("Keyboard report detected. report_id=");
-    Serial.println(keyboardReportId);
-  }
-
-  if (consumerControl && serialDebugConnected()) {
-    Serial.print("Consumer Control report detected. report_id=");
-    Serial.println(consumerReportId);
-    if (mountedInfo != nullptr && mountedInfo->consumerBitmask) {
-      Serial.print("Consumer Control bitmask usages detected. count=");
-      Serial.println(mountedInfo->consumerBitCount);
-    }
-  }
-
   requestNextHidReport(dev_addr, instance);
 }
 
 extern "C" void tuh_hid_set_protocol_complete_cb(uint8_t dev_addr, uint8_t instance, uint8_t protocol) {
-  if (serialDebugConnected()) {
-    Serial.print("HID set protocol complete: ");
-    Serial.println(protocol == HID_PROTOCOL_BOOT ? "boot" : "report");
-  }
   requestNextHidReport(dev_addr, instance);
 }
 
 extern "C" void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
-  if (serialDebugConnected()) {
-    Serial.print("HID device unmounted. addr=");
-    Serial.print(dev_addr);
-    Serial.print(" instance=");
-    Serial.println(instance);
-  }
-
   if (activeTopRowConsumerUsage != 0) {
     sendConsumerUsage(0);
     activeTopRowConsumerUsage = 0;
@@ -2223,27 +2258,31 @@ extern "C" void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
   clearHostHidInterface(dev_addr, instance);
 }
 
+// TinyUSB Device stack callbacks to handle KVM switching / PC host disconnects
+extern "C" void tud_mount_cb(void) {
+  deviceConnectionResetPending = true;
+}
+
+extern "C" void tud_umount_cb(void) {
+  deviceConnectionResetPending = true;
+}
+
+extern "C" void tud_suspend_cb(bool remote_wakeup_en) {
+  hostRemoteWakeupEnabled = remote_wakeup_en;
+  deviceConnectionResetPending = true;
+}
+
+extern "C" void tud_resume_cb(void) {
+  hostRemoteWakeupEnabled = false;
+  deviceConnectionResetPending = true;
+}
+
 extern "C" void tuh_hid_report_received_cb(
   uint8_t dev_addr,
   uint8_t instance,
   uint8_t const* report,
   uint16_t len
 ) {
-  if (serialDebugConnected()) {
-    Serial.print("tuh_hid_report_received_cb: addr=");
-    Serial.print(dev_addr);
-    Serial.print(" instance=");
-    Serial.print(instance);
-    Serial.print(" len=");
-    Serial.print(len);
-    Serial.print(" data=");
-    for (uint16_t idx = 0; idx < len; idx++) {
-      Serial.print(report[idx], HEX);
-      Serial.print(" ");
-    }
-    Serial.println();
-  }
-
   uint8_t protocol = tuh_hid_interface_protocol(dev_addr, instance);
   HostHidInterfaceInfo* info = hostHidInterfaceInfo(dev_addr, instance);
   telemetry.hostReportCallbackCount++;
@@ -2267,22 +2306,15 @@ extern "C" void tuh_hid_report_received_cb(
     hid_keyboard_report_t decodedReport = {};
     uint8_t keyboardReportId = info != nullptr ? info->keyboardReportId : 0;
     if (decodeKeyboardReport(report, len, keyboardReportId, decodedReport)) {
-      telemetry.keyboardReportCount++;
-      telemetry.lastKeyboardReportMs = millis();
-      handleKeyboardReport(&decodedReport);
+      // Queue the report to be processed by Core 0
+      size_t nextHead = (keyboardQueueHead + 1) % KEYBOARD_REPORT_QUEUE_SIZE;
+      if (nextHead != keyboardQueueTail) {
+        keyboardReportQueue[keyboardQueueHead] = decodedReport;
+        __asm__ volatile("dmb" : : : "memory");
+        keyboardQueueHead = nextHead;
+      }
     } else {
       telemetry.keyboardDecodeFailCount++;
-      if (serialDebugConnected()) {
-        Serial.print("ERROR: Keyboard report is too short. len=");
-        Serial.println(len);
-      }
-    }
-  } else {
-    if (serialDebugConnected()) {
-      Serial.print("HID report received. protocol=");
-      Serial.print(protocol);
-      Serial.print(" len=");
-      Serial.println(len);
     }
   }
 
@@ -2494,12 +2526,18 @@ bool saveConfiguration(JsonVariantConst config, String& errorMessage) {
     return false;
   }
 
+  // Suspend Core 1 and disable watchdog during blocking LittleFS compaction/writes
+  suspendHostStack();
+  disableWatchdog();
+
   LittleFS.remove(CONFIG_TEMP_FILE);
   serviceNativeUsb();
 
   File file = LittleFS.open(CONFIG_TEMP_FILE, "w");
   if (!file) {
     errorMessage = "Could not create the temporary configuration file.";
+    enableWatchdog();
+    resumeHostStack();
     loadConfigurationFromStorage();
     return false;
   }
@@ -2513,6 +2551,8 @@ bool saveConfiguration(JsonVariantConst config, String& errorMessage) {
   if (written != configSize) {
     LittleFS.remove(CONFIG_TEMP_FILE);
     errorMessage = "Configuration write was incomplete.";
+    enableWatchdog();
+    resumeHostStack();
     loadConfigurationFromStorage();
     return false;
   }
@@ -2520,6 +2560,8 @@ bool saveConfiguration(JsonVariantConst config, String& errorMessage) {
   if (!verifyConfigurationFile(CONFIG_TEMP_FILE, configSize)) {
     LittleFS.remove(CONFIG_TEMP_FILE);
     errorMessage = "Configuration verification failed.";
+    enableWatchdog();
+    resumeHostStack();
     loadConfigurationFromStorage();
     return false;
   }
@@ -2529,6 +2571,8 @@ bool saveConfiguration(JsonVariantConst config, String& errorMessage) {
   if (LittleFS.exists(CONFIG_FILE) && !LittleFS.rename(CONFIG_FILE, CONFIG_BACKUP_FILE)) {
     LittleFS.remove(CONFIG_TEMP_FILE);
     errorMessage = "Could not preserve the previous configuration.";
+    enableWatchdog();
+    resumeHostStack();
     loadConfigurationFromStorage();
     return false;
   }
@@ -2539,9 +2583,15 @@ bool saveConfiguration(JsonVariantConst config, String& errorMessage) {
       LittleFS.rename(CONFIG_BACKUP_FILE, CONFIG_FILE);
     }
     errorMessage = "Could not activate the new configuration file.";
+    enableWatchdog();
+    resumeHostStack();
     loadConfigurationFromStorage();
     return false;
   }
+
+  // Re-enable watchdog and resume Core 1 after LittleFS compaction/writes complete
+  enableWatchdog();
+  resumeHostStack();
 
   LittleFS.remove(CONFIG_BACKUP_FILE);
 
@@ -2693,6 +2743,27 @@ bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs) {
   size_t charactersAfterCursor = 0;
 
   for (size_t index = 0; index < text.length();) {
+    if (index + 2 < text.length() && (uint8_t)text[index] == 0xE2) {
+      uint8_t b1 = (uint8_t)text[index+1];
+      uint8_t b2 = (uint8_t)text[index+2];
+      const char* altDigits = nullptr;
+
+      if (b1 == 0x80 && b2 == 0xA2) altDigits = "0149"; // •
+      else if (b1 == 0x97 && b2 == 0xA6) altDigits = "9702"; // ◦
+      else if (b1 == 0x97 && b2 == 0xBE) altDigits = "9726"; // ▪
+      else if (b1 == 0x99 && b2 == 0xA6) altDigits = "4";    // ♦
+      else if (b1 == 0x80 && b2 == 0xA3) altDigits = "8227"; // ‣
+      else if (b1 == 0x97 && b2 == 0x86) altDigits = "9670"; // ◆
+      else if (b1 == 0x96 && b2 == 0xA0) altDigits = "254";  // ■
+
+      if (altDigits != nullptr) {
+        if (!typeAltCode(altDigits, keyDelayMs)) return false;
+        if (cursorSeen) charactersAfterCursor++;
+        index += 3;
+        continue;
+      }
+    }
+
     if (text[index] != '{') {
       if (!typeAsciiCharWithDelay(text[index], keyDelayMs)) return false;
       if (cursorSeen) charactersAfterCursor++;
@@ -2968,6 +3039,16 @@ void handleProtocolLine(const String& line) {
     clearCompiledConfiguration();
     resetBridgeStateAfterConfigurationChange();
     sendProtocolSuccess(id, "factory-reset");
+    return;
+  }
+
+  if (strcmp(command, "reset-usb") == 0) {
+    sendProtocolSuccess(id, "usb-resetting");
+    Serial.flush();
+    delay(50);
+    tud_disconnect();
+    delay(1000);
+    tud_connect();
     return;
   }
 
@@ -3274,16 +3355,27 @@ bool saveClockMetadata(const String& timezoneName, int offsetMinutes) {
   doc["timezoneName"] = clockTimezoneName;
   doc["timezoneOffsetMinutes"] = clockTimezoneOffsetMinutes;
 
+  // Suspend Core 1 and disable watchdog during blocking LittleFS compaction/writes
+  suspendHostStack();
+  disableWatchdog();
+
   LittleFS.remove(CLOCK_META_TEMP_FILE);
   File file = LittleFS.open(CLOCK_META_TEMP_FILE, "w");
   if (!file) {
+    enableWatchdog();
+    resumeHostStack();
     return false;
   }
 
   serializeJson(doc, file);
   file.close();
   LittleFS.remove(CLOCK_META_FILE);
-  return LittleFS.rename(CLOCK_META_TEMP_FILE, CLOCK_META_FILE);
+  bool success = LittleFS.rename(CLOCK_META_TEMP_FILE, CLOCK_META_FILE);
+
+  // Re-enable watchdog and resume Core 1 after LittleFS compaction/writes complete
+  enableWatchdog();
+  resumeHostStack();
+  return success;
 }
 
 bool validateDateTime(const RtcDateTime& dt) {
@@ -3582,7 +3674,7 @@ void setup() {
     Serial.println(TinyUSBDevice.mounted() ? "yes" : "no");
   }
 
-  configureUsbHost();
+  // USB Host is configured on Core 1 in setup1()
 
   Wire.setSDA(SDA_PIN);
   Wire.setSCL(SCL_PIN);
@@ -3646,4 +3738,21 @@ void loop() {
   serviceUsbBridge();
   processSerialProtocol();
   emitTelemetryHeartbeat();
+}
+
+// ============================================================
+// Core 1 Execution (Dedicated to USB Host / Pico PIO USB)
+// ============================================================
+
+void setup1() {
+  configureUsbHost();
+}
+
+void loop1() {
+  if (hostStackSuspended) {
+    delay(1);
+    return;
+  }
+  USBHost.task();
+  pollMountedHidReports();
 }

@@ -1136,7 +1136,13 @@
                     </div>
                     <button id="insertFieldButton" class="secondary-button" type="button">Insert</button>
                   </div>
-                  <button id="insertBulletButton" class="secondary-button" type="button" style="width: 100%; min-height: 40px;">Insert Bullet Point (•)</button>
+                  <div class="bullet-buttons-row" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; width: 100%;">
+                    <button class="secondary-button insert-bullet-btn" type="button" data-bullet="•" title="Insert Solid Bullet (•)" style="font-size: 1.2rem; min-height: 40px; padding: 0;">•</button>
+                    <button class="secondary-button insert-bullet-btn" type="button" data-bullet="◦" title="Insert Hollow Bullet (◦)" style="font-size: 1.2rem; min-height: 40px; padding: 0;">◦</button>
+                    <button class="secondary-button insert-bullet-btn" type="button" data-bullet="▪" title="Insert Square Bullet (▪)" style="font-size: 1.2rem; min-height: 40px; padding: 0;">▪</button>
+                    <button class="secondary-button insert-bullet-btn" type="button" data-bullet="♦" title="Insert Diamond Bullet (♦)" style="font-size: 1.2rem; min-height: 40px; padding: 0;">♦</button>
+                    <button class="secondary-button insert-bullet-btn" type="button" data-bullet="‣" title="Insert Triangle Bullet (‣)" style="font-size: 1.2rem; min-height: 40px; padding: 0;">‣</button>
+                  </div>
                 </div>
                 <textarea id="macroText" name="macroText" maxlength="1024" autocomplete="off" spellcheck="false"></textarea>
                 <p id="templateHelp" class="helper-text">Date/time fields use the device clock. Reusable placeholders are saved text values like {initials}. Special fields handle cursor placement and formatting.</p>
@@ -1397,7 +1403,6 @@
       elements.modalTitle = document.getElementById("modalTitle");
       elements.modalBody = document.getElementById("modalBody");
       elements.modalCloseButton = document.getElementById("modalCloseButton");
-      elements.insertBulletButton = document.getElementById("insertBulletButton");
     }
 
     function bindEvents() {
@@ -1417,7 +1422,9 @@
       elements.addPlaceholderButton.addEventListener("click", addPlaceholder);
       elements.addPlaceholderButtonTab.addEventListener("click", addPlaceholderFromTab);
       elements.insertFieldButton.addEventListener("click", insertSelectedField);
-      elements.insertBulletButton.addEventListener("click", () => insertToken("•"));
+      document.querySelectorAll(".insert-bullet-btn").forEach((btn) => {
+        btn.addEventListener("click", () => insertToken(btn.dataset.bullet));
+      });
       elements.syncClockButton.addEventListener("click", syncDeviceClock);
       elements.modalCloseButton.addEventListener("click", hideModal);
       elements.mappingForm.addEventListener("submit", saveCurrentMapping);
