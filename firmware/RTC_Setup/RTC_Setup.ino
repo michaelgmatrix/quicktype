@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.60
+// QuickType firmware version: 0.2.61
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -45,7 +45,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.60"; // v0.2.60: Resolve custom placeholders at runtime and default missing key delays to 5 ms
+static constexpr char FIRMWARE_VERSION[] = "0.2.61"; // v0.2.61: Add compact 12-hour time output such as 11:45am and 3:07pm
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 48;
@@ -2723,7 +2723,7 @@ bool sendShortcut(const String& shortcut, uint16_t keyDelayMs) {
 
 String rtcTokenValue(const String& token) {
   bool isClockToken = token == "date" || token == "date_short" || token == "iso_date" ||
-                      token == "time" || token == "time_seconds" || token == "time_24" ||
+                      token == "time" || token == "time_12_compact" || token == "time_seconds" || token == "time_24" ||
                       token == "time_24_seconds" || token == "datetime" || token == "iso_datetime" ||
                       token == "iso_datetime_tz" || token == "tomorrow_short" || token == "weekday" ||
                       token == "weekday_short" || token == "weekday_number" || token == "month" ||
@@ -2757,6 +2757,7 @@ String rtcTokenValue(const String& token) {
   else if (token == "date_short") snprintf(buffer, sizeof(buffer), "%d/%d/%02d", now.month, now.day, now.year % 100);
   else if (token == "iso_date") snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d", now.year, now.month, now.day);
   else if (token == "time") snprintf(buffer, sizeof(buffer), "%d:%02d %s", hour12, now.minute, now.hour >= 12 ? "PM" : "AM");
+  else if (token == "time_12_compact") snprintf(buffer, sizeof(buffer), "%d:%02d%s", hour12, now.minute, now.hour >= 12 ? "pm" : "am");
   else if (token == "time_seconds") snprintf(buffer, sizeof(buffer), "%d:%02d:%02d %s", hour12, now.minute, now.second, now.hour >= 12 ? "PM" : "AM");
   else if (token == "time_24") snprintf(buffer, sizeof(buffer), "%02d:%02d", now.hour, now.minute);
   else if (token == "time_24_seconds") snprintf(buffer, sizeof(buffer), "%02d:%02d:%02d", now.hour, now.minute, now.second);
