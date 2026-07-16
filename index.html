@@ -595,7 +595,7 @@
 
     .numeric-keypad {
       display: grid;
-      grid-template-columns: repeat(5, minmax(54px, 1fr));
+      grid-template-columns: repeat(4, minmax(54px, 1fr));
       grid-template-rows: repeat(5, minmax(58px, 1fr));
       gap: 8px;
       padding: 12px;
@@ -1459,7 +1459,7 @@
                     </div>
                     <div class="field">
                       <label for="keyDelay">Key Delay (ms)</label>
-                      <input id="keyDelay" name="keyDelay" type="number" min="0" max="1000" step="5" value="15">
+                      <input id="keyDelay" name="keyDelay" type="number" min="0" max="1000" step="5" value="5">
                     </div>
                   </div>
 
@@ -1541,15 +1541,15 @@
       { usage: 0x53, id: "KP_NUMLOCK", label: "Num", sublabel: "Lock", row: 1, column: 1 },
       { usage: 0x54, id: "KP_SLASH", label: "/", row: 1, column: 2 },
       { usage: 0x55, id: "KP_ASTERISK", label: "*", row: 1, column: 3 },
-      { usage: 0x56, id: "KP_MINUS", label: "-", row: 1, column: 4 },
-      { usage: 0x67, id: "KP_EQUALS", label: "=", row: 1, column: 5 },
+      { usage: 0x2A, id: "BACKSPACE", label: "Backspace", row: 1, column: 4 },
       { usage: 0x5F, id: "KP_7", label: "7", sublabel: "Home", row: 2, column: 1 },
       { usage: 0x60, id: "KP_8", label: "8", sublabel: "Up", row: 2, column: 2 },
       { usage: 0x61, id: "KP_9", label: "9", sublabel: "PgUp", row: 2, column: 3 },
-      { usage: 0x57, id: "KP_PLUS", label: "+", row: 2, column: 4, tall: true },
+      { usage: 0x56, id: "KP_MINUS", label: "-", row: 2, column: 4 },
       { usage: 0x5C, id: "KP_4", label: "4", sublabel: "Left", row: 3, column: 1 },
       { usage: 0x5D, id: "KP_5", label: "5", row: 3, column: 2 },
       { usage: 0x5E, id: "KP_6", label: "6", sublabel: "Right", row: 3, column: 3 },
+      { usage: 0x57, id: "KP_PLUS", label: "+", row: 3, column: 4 },
       { usage: 0x59, id: "KP_1", label: "1", sublabel: "End", row: 4, column: 1 },
       { usage: 0x5A, id: "KP_2", label: "2", sublabel: "Down", row: 4, column: 2 },
       { usage: 0x5B, id: "KP_3", label: "3", sublabel: "PgDn", row: 4, column: 3 },
@@ -2442,7 +2442,7 @@
       mapping.label = "New expansion";
       mapping.text = "";
       mapping.preDelay = 0;
-      mapping.keyDelay = 15;
+      mapping.keyDelay = 5;
       mapping.steps = [];
       mapping.enabled = true;
       appState.selectedRule = ruleId;
@@ -2509,7 +2509,7 @@
         label: "Unassigned",
         text: "",
         preDelay: 0,
-        keyDelay: 15,
+        keyDelay: 5,
         steps: [],
         replacementStrategy: "erase-trigger-then-type"
       };
@@ -2720,7 +2720,7 @@
       );
       mapping.text = elements.macroText.value;
       mapping.preDelay = normalizeNumber(elements.preDelay.value, 0);
-      mapping.keyDelay = normalizeNumber(elements.keyDelay.value, 15);
+      mapping.keyDelay = normalizeNumber(elements.keyDelay.value, 5);
       mapping.steps = [];
       const conflictMessage = validateNoTriggerConflicts();
       if (conflictMessage) {
@@ -3106,6 +3106,8 @@
       const populatedPhysicalKey = mapping.trigger === "key" && Boolean(
         String(mapping.text || "").trim() || mapping.steps?.length
       );
+      const blankUnassignedRule = normalizedType === "disabled" && !String(mapping.text || "").trim() &&
+        !mapping.steps?.length && (!mapping.label || mapping.label === "Unassigned");
       if (normalizedType === "disabled" && populatedPhysicalKey) {
         normalizedType = "expansion";
       }
@@ -3113,6 +3115,7 @@
       return {
         ...mapping,
         type: normalizedType,
+        keyDelay: blankUnassignedRule ? 5 : normalizeNumber(mapping.keyDelay, 5),
         trigger: normalizeTriggerMode(mapping.trigger),
         triggerPattern: mapping.triggerPattern || "",
         triggerScope: mapping.triggerScope || "any"
