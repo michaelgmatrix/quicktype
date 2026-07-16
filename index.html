@@ -66,6 +66,7 @@
       height: 100vh;
       display: grid;
       grid-template-columns: 272px minmax(0, 1fr);
+      transition: grid-template-columns 180ms ease;
     }
 
     .sidebar {
@@ -76,6 +77,8 @@
       flex-direction: column;
       gap: 22px;
       border-right: 1px solid rgba(255,255,255,0.08);
+      overflow: hidden;
+      transition: padding 180ms ease;
     }
 
     .brand {
@@ -88,6 +91,7 @@
     .brand-mark {
       width: 38px;
       height: 38px;
+      flex: 0 0 38px;
       border-radius: 8px;
       display: grid;
       place-items: center;
@@ -246,11 +250,76 @@
     .sidebar-list button {
       width: 100%;
       justify-content: flex-start;
+      display: flex;
+      align-items: center;
+      gap: 10px;
       background: transparent;
       color: #d9e4ea;
       padding: 10px 11px;
       border-radius: var(--radius-small);
       text-align: left;
+    }
+
+    .nav-icon {
+      flex: 0 0 30px;
+      min-width: 30px;
+      height: 30px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 6px;
+      color: #7ed3d2;
+      background: rgba(255,255,255,0.06);
+      font-size: 0.72rem;
+      font-weight: 900;
+    }
+
+    .nav-label,
+    .brand-copy,
+    #connectionStatus {
+      min-width: 0;
+      white-space: nowrap;
+    }
+
+    body.nav-collapsed .app-shell {
+      grid-template-columns: 76px minmax(0, 1fr);
+    }
+
+    body.nav-collapsed .sidebar {
+      padding: 18px 10px;
+      align-items: center;
+      gap: 18px;
+    }
+
+    body.nav-collapsed .brand {
+      padding: 0;
+    }
+
+    body.nav-collapsed .brand-copy,
+    body.nav-collapsed #connectionStatus,
+    body.nav-collapsed .sidebar-section h2,
+    body.nav-collapsed .nav-label,
+    body.nav-collapsed .sidebar-footer {
+      display: none;
+    }
+
+    body.nav-collapsed .device-card {
+      width: 48px;
+      padding: 14px 0;
+    }
+
+    body.nav-collapsed .status-line {
+      justify-content: center;
+      margin: 0;
+    }
+
+    body.nav-collapsed .sidebar-section,
+    body.nav-collapsed .sidebar-list {
+      width: 100%;
+    }
+
+    body.nav-collapsed .sidebar-list button {
+      justify-content: center;
+      padding: 7px;
     }
 
     .sidebar-list button.active,
@@ -287,9 +356,23 @@
 
     .topbar {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 18px;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+    }
+
+    .topbar-controls {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .nav-toggle {
+      flex: 0 0 42px;
+      width: 42px;
+      padding: 0;
+      font-size: 1.1rem;
     }
 
     .title-block h2 {
@@ -312,8 +395,14 @@
       justify-content: flex-end;
     }
 
+    .topbar .actions {
+      flex: 1 1 auto;
+      min-width: 0;
+      justify-content: flex-start;
+    }
+
     .danger-disclosure {
-      flex-basis: 100%;
+      flex: 0 0 auto;
       display: flex;
       justify-content: flex-end;
       margin-top: 2px;
@@ -401,6 +490,17 @@
       gap: 14px;
     }
 
+    #keysPanel .panel-header,
+    #editorPanel .panel-header {
+      flex-wrap: wrap;
+    }
+
+    #keysPanel .panel-header > div:first-child,
+    #editorPanel .panel-header > div:first-child {
+      min-width: 180px;
+      flex: 1 1 220px;
+    }
+
     .panel-header h3 {
       margin: 0;
       font-size: 1rem;
@@ -446,6 +546,10 @@
       background: var(--accent);
     }
 
+    .topbar .danger-disclosure {
+      margin-left: auto;
+    }
+
     .config-mode-switch {
       display: inline-grid;
       grid-template-columns: repeat(2, minmax(120px, 1fr));
@@ -453,6 +557,8 @@
       border-radius: var(--radius-small);
       overflow: hidden;
       background: var(--panel-soft);
+      flex: 1 1 260px;
+      max-width: 360px;
     }
 
     .config-mode-switch button {
@@ -1081,37 +1187,71 @@
       gap: 12px;
     }
 
-    @media (max-width: 1040px) {
-      .app-shell {
+    @media (max-width: 1180px) {
+      .workspace,
+      .workspace.primary {
         grid-template-columns: 1fr;
       }
 
-      .sidebar {
-        position: static;
+      .workspace.primary {
+        height: auto;
+        align-items: start;
+        grid-auto-rows: minmax(440px, auto);
       }
 
-      .workspace {
-        grid-template-columns: 1fr;
+      .tab-panel {
+        overflow: auto;
+      }
+
+      #editorPanel {
+        min-height: 620px;
       }
     }
 
     @media (max-width: 720px) {
       .main {
-        padding: 18px;
+        padding: 12px;
       }
 
-      .topbar {
+      .topbar-controls {
+        align-items: center;
+      }
+
+      .topbar .actions {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        justify-content: flex-start;
+        padding-bottom: 4px;
+        scrollbar-width: thin;
+      }
+
+      .topbar .actions button,
+      .topbar .actions label {
+        flex: 0 0 auto;
+        white-space: nowrap;
+      }
+
+      .topbar .danger-disclosure {
+        display: none;
+      }
+
+      .title-block h2 {
+        font-size: 1.3rem;
+      }
+
+      .title-block p {
+        font-size: 0.88rem;
+      }
+
+      #keysPanel .panel-header,
+      #editorPanel .panel-header {
         align-items: stretch;
         flex-direction: column;
       }
 
-      .actions {
-        justify-content: stretch;
-      }
-
-      .actions button,
-      .actions label {
-        flex: 1 1 150px;
+      .config-mode-switch {
+        width: 100%;
+        max-width: none;
       }
 
       .expansion-list {
@@ -1133,7 +1273,7 @@
     <aside class="sidebar" aria-label="QuickType navigation">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">QT</div>
-        <div>
+        <div class="brand-copy">
           <h1>QuickType</h1>
           <p>USB Text Expansion Device</p>
         </div>
@@ -1149,42 +1289,45 @@
       <nav class="sidebar-section" aria-label="Configurator sections">
         <h2>Workspace</h2>
         <ul class="sidebar-list">
-          <li><button class="active" type="button" data-tab="expansionsTab">Expansions</button></li>
-          <li><button type="button" data-tab="placeholdersTab">Placeholders</button></li>
-          <li><button type="button" data-tab="rtcTab">Date/Time Functions</button></li>
-          <li><button type="button" data-tab="activityTab">Device Activity</button></li>
+          <li><button class="active" type="button" data-tab="expansionsTab" title="Expansions"><span class="nav-icon" aria-hidden="true">Aa</span><span class="nav-label">Expansions</span></button></li>
+          <li><button type="button" data-tab="placeholdersTab" title="Placeholders"><span class="nav-icon" aria-hidden="true">{ }</span><span class="nav-label">Placeholders</span></button></li>
+          <li><button type="button" data-tab="rtcTab" title="Date/Time Functions"><span class="nav-icon" aria-hidden="true">DT</span><span class="nav-label">Date/Time Functions</span></button></li>
+          <li><button type="button" data-tab="activityTab" title="Device Activity"><span class="nav-icon" aria-hidden="true">Log</span><span class="nav-label">Device Activity</span></button></li>
         </ul>
       </nav>
 
       <p class="sidebar-footer">
         Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.
-        <span class="build-stamp">Build 2026-07-16 08:20:24 PDT</span>
+        <span class="build-stamp">Build 2026-07-16 08:48:11 PDT</span>
       </p>
     </aside>
 
     <main class="main">
       <header class="topbar">
-        <div class="title-block">
-          <h2>Expansion Configurator</h2>
-          <p>Configure typed trigger strings and direct 19-key keypad actions using expansion text, placeholders, shortcuts, or clock output.</p>
-        </div>
-        <div class="actions">
-          <button id="connectButton" class="secondary-button" type="button">Connect</button>
-          <button id="readButton" class="secondary-button" type="button">Read</button>
-          <button id="writeButton" class="secondary-button" type="button">Write</button>
-          <button id="telemetryButton" class="secondary-button" type="button">Telemetry</button>
-          <button id="readClockButton" class="secondary-button" type="button">Read Clock</button>
-          <button id="syncClockButton" class="secondary-button" type="button">Sync Clock</button>
-          <button id="disconnectButton" class="secondary-button" type="button">Disconnect</button>
-          <button id="exportButton" class="secondary-button" type="button">Export</button>
-          <label class="secondary-button" for="importFile">Import</label>
-          <input id="importFile" class="hidden" type="file" accept="application/json,.json">
+        <div class="topbar-controls">
+          <button id="navToggleButton" class="secondary-button nav-toggle" type="button" aria-label="Collapse navigation" aria-expanded="true" title="Collapse navigation">☰</button>
+          <div class="actions" aria-label="Device and configuration controls">
+            <button id="connectButton" class="secondary-button" type="button">Connect</button>
+            <button id="readButton" class="secondary-button" type="button">Read</button>
+            <button id="writeButton" class="secondary-button" type="button">Write</button>
+            <button id="telemetryButton" class="secondary-button" type="button">Telemetry</button>
+            <button id="readClockButton" class="secondary-button" type="button">Read Clock</button>
+            <button id="syncClockButton" class="secondary-button" type="button">Sync Clock</button>
+            <button id="disconnectButton" class="secondary-button" type="button">Disconnect</button>
+            <button id="exportButton" class="secondary-button" type="button">Export</button>
+            <label class="secondary-button" for="importFile">Import</label>
+            <input id="importFile" class="hidden" type="file" accept="application/json,.json">
+          </div>
           <div class="danger-disclosure">
             <details>
               <summary>danger actions</summary>
               <button id="factoryResetButton" class="danger-button" type="button">Factory Reset</button>
             </details>
           </div>
+        </div>
+        <div class="title-block">
+          <h2>Expansion Configurator</h2>
+          <p>Configure typed trigger strings and direct 19-key keypad actions using expansion text, placeholders, shortcuts, or clock output.</p>
         </div>
       </header>
 
@@ -1478,6 +1621,7 @@
 
     function initApp() {
       cacheElements();
+      initializeNavigation();
       bindEvents();
       validateWebSerialSupport();
       selectDefaultRuleForEditor();
@@ -1493,6 +1637,7 @@
 
     function cacheElements() {
       elements.statusDot = document.getElementById("statusDot");
+      elements.navToggleButton = document.getElementById("navToggleButton");
       elements.connectionStatus = document.getElementById("connectionStatus");
       elements.connectButton = document.getElementById("connectButton");
       elements.disconnectButton = document.getElementById("disconnectButton");
@@ -1548,6 +1693,7 @@
     }
 
     function bindEvents() {
+      elements.navToggleButton.addEventListener("click", toggleNavigation);
       elements.connectButton.addEventListener("click", requestDeviceConnection);
       elements.disconnectButton.addEventListener("click", disconnectDevice);
       elements.readButton.addEventListener("click", readDeviceConfiguration);
@@ -1587,6 +1733,33 @@
       });
 
       window.setInterval(pollPhysicalKeySelection, 350);
+    }
+
+    function initializeNavigation() {
+      let savedPreference = null;
+      try {
+        savedPreference = window.localStorage.getItem("quicktype-nav-collapsed");
+      } catch {}
+      const shouldCollapse = savedPreference === null
+        ? window.innerWidth <= 1280
+        : savedPreference === "true";
+      setNavigationCollapsed(shouldCollapse, false);
+    }
+
+    function toggleNavigation() {
+      setNavigationCollapsed(!document.body.classList.contains("nav-collapsed"));
+    }
+
+    function setNavigationCollapsed(collapsed, persist = true) {
+      document.body.classList.toggle("nav-collapsed", collapsed);
+      elements.navToggleButton.setAttribute("aria-expanded", String(!collapsed));
+      elements.navToggleButton.setAttribute("aria-label", collapsed ? "Expand navigation" : "Collapse navigation");
+      elements.navToggleButton.title = collapsed ? "Expand navigation" : "Collapse navigation";
+      if (persist) {
+        try {
+          window.localStorage.setItem("quicktype-nav-collapsed", String(collapsed));
+        } catch {}
+      }
     }
 
     function validateWebSerialSupport() {
@@ -2175,7 +2348,8 @@
       appState.keypadPollInFlight = true;
       try {
         const response = await sendDeviceCommand("get-telemetry", {}, 2000);
-        const count = Number(response.data?.counters?.keyPresses || 0);
+        const counters = response.data?.counters || {};
+        const count = Number(counters.keyPresses ?? counters.keyboardReports ?? 0);
         if (appState.lastKeyPressCount === null) {
           appState.lastKeyPressCount = count;
           return;
