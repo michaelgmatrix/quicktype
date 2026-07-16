@@ -27,7 +27,7 @@ The DS3231 uses `GPIO6`/`GPIO7` for RTC tokens. A build with **2 MB (no FS)** ca
 3. Choose **Connect Device** and select the XIAO/RP2040 serial port.
 4. Use **Read Configuration**, **Write Configuration**, or **Sync Clock to This Computer**.
 
-Until the first website configuration is written, the original hard-coded keypad mappings remain active. After a configuration is saved, unmatched keys pass through and configured physical-key or typed-trigger rules run from `/quicktype-config.json` in LittleFS.
+Until the first website configuration is written, the original hard-coded keypad mappings remain active. After a configuration is saved, unmatched keys pass through and configured physical-key or typed-trigger rules run from `/quicktype-config.json` in LittleFS. The configurator keeps up to 24 typed-trigger rules and 19 dedicated numeric-keypad assignments active together.
 
 ## Serial protocol
 
@@ -45,5 +45,7 @@ Supported commands are `ping`, `get-config`, `set-config`, `get-clock`, `set-clo
 - `suffix` / `instant`: replaces a typed trigger as soon as it matches.
 - `delimiter`: replaces a trigger when followed by space, tab, or Enter and restores that delimiter after the expansion.
 - `keyboard`, `numpad`, and `any` scopes restrict the source of typed triggers.
+
+The 19-key keypad editor supports Num Lock, `/`, `*`, `-`, `+`, Enter, `0` through `9`, `00`, `.`, and `=`. Assigned keys run their configured action; unassigned keys continue to the computer normally. While the web configurator is connected, pressing a physical keypad key selects its editor through telemetry polling.
 
 Templates support clock fields such as `{date}`, `{weekday}`, `{time_24}`, `{timezone_offset}`, `{iso_datetime_tz}`, and custom formats such as `{date:MM/D/YY}`. They also support cursor repositioning, Tab, Enter, and Ctrl+V clipboard paste. Shortcut rules accept values such as `CTRL+B`, `CTRL+SHIFT+S`, `ALT+TAB`, `HOME`, and `ENTER`. Output steps may contain `type expansion`, `resolve placeholders`, `key:<shortcut>`, or literal template text.

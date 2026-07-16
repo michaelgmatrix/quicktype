@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.56
+// QuickType firmware version: 0.2.58
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -45,10 +45,10 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.56"; // v0.2.56: Add startup host delay and memory barriers to secure multicore queue safety
+static constexpr char FIRMWARE_VERSION[] = "0.2.58"; // v0.2.58: Add PIO USB host mount/dropout diagnostics for wiring stability tests
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
-static constexpr size_t MAX_CONFIG_RULES = 24;
+static constexpr size_t MAX_CONFIG_RULES = 48;
 static constexpr size_t MAX_RULE_STEPS = 8;
 static constexpr size_t MAX_TRIGGER_BUFFER = 64;
 static constexpr size_t MAX_HOST_HID_INTERFACES = 8;
@@ -148,6 +148,9 @@ struct TelemetryState {
   uint32_t configWriteFailCount;
   uint32_t protocolCommandCount;
   uint32_t serialDisconnectCount;
+  uint32_t keyPressCount;
+  uint32_t hostMountCount;
+  uint32_t hostUnmountCount;
   uint32_t lastLoopMs;
   uint32_t maxLoopGapMs;
   uint32_t lastHostReportMs;
@@ -159,6 +162,8 @@ struct TelemetryState {
   uint32_t lastHostRecoverMs;
   uint32_t lastConfigWriteMs;
   uint32_t lastProtocolCommandMs;
+  uint32_t lastHostMountMs;
+  uint32_t lastHostUnmountMs;
   uint32_t lastHeartbeatMs;
   uint16_t lastConsumerUsage;
   uint8_t lastKeyUsage;
@@ -583,6 +588,9 @@ void addTelemetryToJson(JsonObject target) {
   counters["configWriteFails"] = telemetry.configWriteFailCount;
   counters["protocolCommands"] = telemetry.protocolCommandCount;
   counters["serialDisconnects"] = telemetry.serialDisconnectCount;
+  counters["keyPresses"] = telemetry.keyPressCount;
+  counters["hostMounts"] = telemetry.hostMountCount;
+  counters["hostUnmounts"] = telemetry.hostUnmountCount;
 
   JsonObject last = target["last"].to<JsonObject>();
   last["loopMs"] = telemetry.lastLoopMs;
@@ -599,6 +607,8 @@ void addTelemetryToJson(JsonObject target) {
   last["keyUsage"] = telemetry.lastKeyUsage;
   last["modifier"] = telemetry.lastModifier;
   last["consumerUsage"] = telemetry.lastConsumerUsage;
+  last["hostMountMs"] = telemetry.lastHostMountMs;
+  last["hostUnmountMs"] = telemetry.lastHostUnmountMs;
 }
 
 void emitTelemetryHeartbeat() {
@@ -1990,6 +2000,7 @@ void handleKeyboardReport(hid_keyboard_report_t const* report) {
 
     telemetry.lastKeyUsage = keycode;
     telemetry.lastModifier = report->modifier;
+    telemetry.keyPressCount++;
 
     if (serialDebugConnected()) {
       const char* name = keypadUsageName(keycode);
@@ -2210,6 +2221,8 @@ extern "C" void tuh_hid_mount_cb(
   uint8_t const* desc_report,
   uint16_t desc_len
 ) {
+  telemetry.hostMountCount++;
+  telemetry.lastHostMountMs = millis();
   uint8_t protocol = tuh_hid_interface_protocol(dev_addr, instance);
   bool keyboard = protocol == HID_ITF_PROTOCOL_KEYBOARD;
   uint8_t keyboardReportId = 0;
@@ -2250,6 +2263,8 @@ extern "C" void tuh_hid_set_protocol_complete_cb(uint8_t dev_addr, uint8_t insta
 }
 
 extern "C" void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
+  telemetry.hostUnmountCount++;
+  telemetry.lastHostUnmountMs = millis();
   if (activeTopRowConsumerUsage != 0) {
     sendConsumerUsage(0);
     activeTopRowConsumerUsage = 0;
