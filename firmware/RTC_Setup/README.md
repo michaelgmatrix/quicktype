@@ -46,6 +46,8 @@ Supported commands are `ping`, `get-config`, `set-config`, `get-clock`, `set-clo
 - `delimiter`: replaces a trigger when followed by space, tab, or Enter and restores that delimiter after the expansion.
 - `keyboard`, `numpad`, and `any` scopes restrict the source of typed triggers.
 
-The 19-key keypad editor supports Num Lock, `/`, `*`, `-`, `+`, Enter, `0` through `9`, `00`, `.`, and `=`. Assigned keys run their configured action; unassigned keys continue to the computer normally. While the web configurator is connected, pressing a physical keypad key selects its editor through telemetry polling.
+The 19-key keypad editor supports Num Lock, `/`, `*`, Backspace, `-`, `+`, Enter, `0` through `9`, `00`, and `.`. Assigned keys run their configured action; unassigned keys continue to the computer normally. While the web configurator is connected, pressing a physical keypad key selects its editor through telemetry polling.
 
-Templates support clock fields such as `{date}`, `{weekday}`, `{time_24}`, `{timezone_offset}`, `{iso_datetime_tz}`, and custom formats such as `{date:MM/D/YY}`. They also support cursor repositioning, Tab, Enter, and Ctrl+V clipboard paste. Shortcut rules accept values such as `CTRL+B`, `CTRL+SHIFT+S`, `ALT+TAB`, `HOME`, and `ENTER`. Output steps may contain `type expansion`, `resolve placeholders`, `key:<shortcut>`, or literal template text.
+Templates support reusable custom placeholders, clock fields such as `{date}`, `{weekday}`, `{time_24}`, `{timezone_offset}`, `{iso_datetime_tz}`, and custom formats such as `{date:MM/D/YY}`. Custom placeholder tokens remain in the stored template and are resolved by the firmware when an expansion runs. Templates also support cursor repositioning, Tab, Enter, and Ctrl+V clipboard paste. Shortcut rules accept values such as `CTRL+B`, `CTRL+SHIFT+S`, `ALT+TAB`, `HOME`, and `ENTER`. Output steps may contain `type expansion`, `resolve placeholders`, `key:<shortcut>`, or literal template text.
+
+New rules and rules without an explicit `keyDelay` use a 5 ms key delay by default. Each configured rule can override that value.

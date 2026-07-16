@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.58
+// QuickType firmware version: 0.2.60
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -45,11 +45,12 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.58"; // v0.2.58: Add PIO USB host mount/dropout diagnostics for wiring stability tests
+static constexpr char FIRMWARE_VERSION[] = "0.2.60"; // v0.2.60: Resolve custom placeholders at runtime and default missing key delays to 5 ms
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 48;
 static constexpr size_t MAX_RULE_STEPS = 8;
+static constexpr size_t MAX_CONFIG_PLACEHOLDERS = 32;
 static constexpr size_t MAX_TRIGGER_BUFFER = 64;
 static constexpr size_t MAX_HOST_HID_INTERFACES = 8;
 static constexpr size_t MAX_CONSUMER_BIT_USAGES = 32;
@@ -93,6 +94,11 @@ struct RtcDateTime {
 struct MacroStep {
   String value;
   uint16_t delayMs;
+};
+
+struct ConfigPlaceholder {
+  String name;
+  String value;
 };
 
 struct ConfigRule {
@@ -231,6 +237,8 @@ static volatile size_t keyboardQueueHead = 0;
 static volatile size_t keyboardQueueTail = 0;
 static ConfigRule configRules[MAX_CONFIG_RULES];
 static size_t configRuleCount = 0;
+static ConfigPlaceholder configPlaceholders[MAX_CONFIG_PLACEHOLDERS];
+static size_t configPlaceholderCount = 0;
 static bool storedConfigurationLoaded = false;
 static String serialInputLine;
 static bool serialInputOverflow = false;
@@ -339,6 +347,7 @@ bool outputDiagnosticInformation();
 bool processTypedTriggerRules(char currentCharacter);
 bool executeConfiguredRule(const ConfigRule& rule, size_t eraseCount, char delimiterToRestore);
 bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs);
+String customPlaceholderValue(const String& name);
 bool sendShortcut(const String& shortcut, uint16_t keyDelayMs);
 uint8_t shortcutKeycode(const String& token);
 void handleKeyboardReport(hid_keyboard_report_t const* report);
@@ -2345,6 +2354,10 @@ void clearCompiledConfiguration() {
     configRules[index] = ConfigRule();
   }
   configRuleCount = 0;
+  for (size_t index = 0; index < MAX_CONFIG_PLACEHOLDERS; index++) {
+    configPlaceholders[index] = ConfigPlaceholder();
+  }
+  configPlaceholderCount = 0;
   storedConfigurationLoaded = false;
   typedBuffer = "";
   typedSources = "";
@@ -2373,6 +2386,29 @@ bool compileConfiguration(JsonVariantConst config, String& errorMessage) {
 
   clearCompiledConfiguration();
 
+  JsonObjectConst placeholders = config["placeholders"].as<JsonObjectConst>();
+  if (!placeholders.isNull()) {
+    for (JsonPairConst pair : placeholders) {
+      if (configPlaceholderCount >= MAX_CONFIG_PLACEHOLDERS) {
+        errorMessage = "Configuration contains too many placeholders.";
+        clearCompiledConfiguration();
+        return false;
+      }
+
+      String name = pair.key().c_str();
+      String value = String(pair.value() | "");
+      if (name.length() == 0 || name.length() > 24 || value.length() == 0 || value.length() > 80) {
+        errorMessage = "A placeholder name or value is outside the supported length.";
+        clearCompiledConfiguration();
+        return false;
+      }
+
+      configPlaceholders[configPlaceholderCount].name = name;
+      configPlaceholders[configPlaceholderCount].value = value;
+      configPlaceholderCount++;
+    }
+  }
+
   for (JsonPairConst pair : rules) {
     serviceNativeUsb();
 
@@ -2397,7 +2433,7 @@ bool compileConfiguration(JsonVariantConst config, String& errorMessage) {
     rule.text = String(object["text"] | "");
 
     long preDelay = object["preDelay"] | 0;
-    long keyDelay = object["keyDelay"] | 15;
+    long keyDelay = object["keyDelay"] | 5;
     rule.preDelayMs = (uint16_t)constrain(preDelay, 0L, 5000L);
     rule.keyDelayMs = (uint16_t)constrain(keyDelay, 0L, 1000L);
     rule.enabled = !rule.type.equalsIgnoreCase("disabled") && rule.triggerPattern.length() > 0;
@@ -2753,6 +2789,15 @@ String rtcTokenValue(const String& token) {
   return String(buffer);
 }
 
+String customPlaceholderValue(const String& name) {
+  for (size_t index = 0; index < configPlaceholderCount; index++) {
+    if (configPlaceholders[index].name == name) {
+      return configPlaceholders[index].value;
+    }
+  }
+  return "";
+}
+
 bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs) {
   bool cursorSeen = false;
   size_t charactersAfterCursor = 0;
@@ -2796,9 +2841,13 @@ bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs) {
 
     String token = text.substring(index + 1, tokenEnd);
     String rtcValue = rtcTokenValue(token);
+    String customValue = customPlaceholderValue(token);
     if (rtcValue.length() > 0) {
       if (!typeAsciiStringWithDelay(rtcValue, keyDelayMs)) return false;
       if (cursorSeen) charactersAfterCursor += rtcValue.length();
+    } else if (customValue.length() > 0) {
+      if (!typeAsciiStringWithDelay(customValue, keyDelayMs)) return false;
+      if (cursorSeen) charactersAfterCursor += customValue.length();
     } else if (token == "cursor") {
       cursorSeen = true;
       charactersAfterCursor = 0;

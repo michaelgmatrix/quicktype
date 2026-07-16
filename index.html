@@ -3136,17 +3136,7 @@
     }
 
     function buildDeviceConfiguration() {
-      const deviceConfig = structuredClone(appState.config);
-      Object.values(deviceConfig.rules).forEach((rule) => {
-        rule.text = resolveCustomPlaceholders(rule.text);
-        if (Array.isArray(rule.steps)) {
-          rule.steps = rule.steps.map((step) => ({
-            ...step,
-            value: resolveCustomPlaceholders(step.value)
-          }));
-        }
-      });
-      return deviceConfig;
+      return structuredClone(appState.config);
     }
 
     function getMapping(ruleId) {
