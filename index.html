@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="quicktype-build" content="2026-07-16T15:57:25-07:00">
+  <meta name="quicktype-build" content="2026-07-16T16:20:32-07:00">
   <title>QuickType Configurator</title>
   <script>
     (() => {
@@ -1326,7 +1326,7 @@
 
       <p class="sidebar-footer">
         Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.
-        <span class="build-stamp">Build 2026-07-16 15:57:25 PDT</span>
+        <span class="build-stamp">Build 2026-07-16 16:20:32 PDT</span>
       </p>
     </aside>
 
@@ -1411,12 +1411,11 @@
               <div class="field editor-template-field">
                 <label for="macroText">Expansion Template</label>
                 <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;">
-                  <div class="template-insert-row" aria-label="Template insertion tools" style="grid-template-columns: 1fr auto;">
+                  <div class="template-insert-row" aria-label="Template insertion tools" style="grid-template-columns: 1fr;">
                     <div class="field">
                       <label for="insertFieldSelect">Insert Field</label>
                       <select id="insertFieldSelect"></select>
                     </div>
-                    <button id="insertFieldButton" class="secondary-button" type="button">Insert</button>
                   </div>
                   <div class="bullet-buttons-row" style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; width: 100%;">
                     <button class="secondary-button insert-bullet-btn" type="button" data-bullet="•" title="Insert Solid Bullet (•)" style="font-size: 1.2rem; min-height: 40px; padding: 0;">•</button>
@@ -1677,7 +1676,6 @@
       elements.macroText = document.getElementById("macroText");
       elements.templateHelp = document.getElementById("templateHelp");
       elements.insertFieldSelect = document.getElementById("insertFieldSelect");
-      elements.insertFieldButton = document.getElementById("insertFieldButton");
       elements.preDelay = document.getElementById("preDelay");
       elements.keyDelay = document.getElementById("keyDelay");
       elements.rtcFunctionList = document.getElementById("rtcFunctionList");
@@ -1705,7 +1703,7 @@
       elements.duplicateExpansionButton.addEventListener("click", duplicateExpansionRule);
       elements.deleteExpansionButton.addEventListener("click", deleteExpansionRule);
       elements.addPlaceholderButtonTab.addEventListener("click", addPlaceholderFromTab);
-      elements.insertFieldButton.addEventListener("click", insertSelectedField);
+      elements.insertFieldSelect.addEventListener("change", insertSelectedField);
       document.querySelectorAll(".insert-bullet-btn").forEach((btn) => {
         btn.addEventListener("click", () => insertToken(btn.dataset.bullet));
       });
@@ -2592,7 +2590,9 @@
         return result;
       }, {});
 
-      elements.insertFieldSelect.innerHTML = Object.entries(groups).map(([groupName, tokens]) => `
+      elements.insertFieldSelect.innerHTML = `
+        <option value="" selected>Select a field…</option>
+      ` + Object.entries(groups).map(([groupName, tokens]) => `
         <optgroup label="${escapeAttribute(groupName)}">
           ${tokens.map((token) => `
             <option value="${escapeAttribute(token.value)}">${escapeHtml(formatInsertFieldOption(token))}</option>
@@ -2620,11 +2620,9 @@
 
     function insertSelectedField() {
       const value = elements.insertFieldSelect.value;
-      if (!value) {
-        showToast("Choose a field to insert.", "error");
-        return;
-      }
+      if (!value) return;
       insertToken(value);
+      elements.insertFieldSelect.value = "";
     }
 
 
