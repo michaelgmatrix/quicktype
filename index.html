@@ -1298,7 +1298,7 @@
 
       <p class="sidebar-footer">
         Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.
-        <span class="build-stamp">Build 2026-07-16 12:27:15 PDT</span>
+        <span class="build-stamp">Build 2026-07-16 12:41:53 PDT</span>
       </p>
     </aside>
 
@@ -1399,7 +1399,7 @@
                   </div>
                 </div>
                 <textarea id="macroText" name="macroText" maxlength="1024" autocomplete="off" spellcheck="false"></textarea>
-                <p id="templateHelp" class="helper-text">Date/time fields use the device clock. Reusable placeholders are saved text values like {initials}. Special fields handle cursor placement and formatting.</p>
+                <p id="templateHelp" class="helper-text">Mix text, fields such as {date}, and keystrokes such as {{ENTER}} or {{WIN+ALT+K}} in one template.</p>
                 <details class="inline-tools-panel">
                   <summary>Manage reusable placeholders</summary>
                   <div id="placeholdersPanel" class="field">
@@ -1423,24 +1423,13 @@
               <details class="advanced-panel">
                 <summary>Advanced options</summary>
                 <div class="form-grid">
-                  <div class="two-column">
-                    <div class="field">
-                      <label for="actionType">Action Type</label>
-                      <select id="actionType" name="actionType">
-                        <option value="expansion">Text Expansion</option>
-                        <option value="rtc">Date/Time Insert</option>
-                        <option value="shortcut">Keyboard Shortcut</option>
-                        <option value="disabled">Disabled</option>
-                      </select>
-                    </div>
-                    <div class="field" id="triggerModeField">
-                      <label for="triggerMode">Match Mode</label>
-                      <select id="triggerMode" name="triggerMode">
-                        <option value="suffix">After typed trigger</option>
-                        <option value="delimiter">After delimiter</option>
-                        <option value="instant">Immediately</option>
-                      </select>
-                    </div>
+                  <div class="field" id="triggerModeField">
+                    <label for="triggerMode">Match Mode</label>
+                    <select id="triggerMode" name="triggerMode">
+                      <option value="suffix">After typed trigger</option>
+                      <option value="delimiter">After delimiter</option>
+                      <option value="instant">Immediately</option>
+                    </select>
                   </div>
 
                   <div class="field" id="triggerScopeField">
@@ -1591,6 +1580,13 @@
       { group: "Date/Time Fields", label: "Time zone offset", value: "{timezone_offset}", example: "-07:00", description: "UTC offset saved during clock sync" },
       { group: "Special Fields", label: "Cursor", value: "{cursor}", description: "Move caret here after typing" },
       { group: "Special Fields", label: "Clipboard", value: "{clipboard}", description: "Paste captured clipboard text" },
+      { group: "Keystrokes", label: "Windows key", value: "{{WIN}}", description: "Tap the left Windows/GUI key" },
+      { group: "Keystrokes", label: "Control key", value: "{{CTRL}}", description: "Tap the left Control key" },
+      { group: "Keystrokes", label: "Alt key", value: "{{ALT}}", description: "Tap the left Alt key" },
+      { group: "Keystrokes", label: "Shift key", value: "{{SHIFT}}", description: "Tap the left Shift key" },
+      { group: "Keystrokes", label: "Enter key", value: "{{ENTER}}", description: "Press Enter" },
+      { group: "Keystrokes", label: "Tab key", value: "{{TAB}}", description: "Press Tab" },
+      { group: "Keystrokes", label: "Escape key", value: "{{ESC}}", description: "Press Escape" },
       { group: "Formatting", label: "Tab", value: "{tab}", description: "Insert a tab key" },
       { group: "Formatting", label: "Enter", value: "{enter}", description: "Insert an enter key" }
     ];
@@ -1668,7 +1664,6 @@
       elements.keyGrid = document.getElementById("keyGrid");
       elements.mappingForm = document.getElementById("mappingForm");
       elements.editorTitle = document.getElementById("editorTitle");
-      elements.actionType = document.getElementById("actionType");
       elements.triggerMode = document.getElementById("triggerMode");
       elements.triggerPattern = document.getElementById("triggerPattern");
       elements.triggerPatternLabel = document.getElementById("triggerPatternLabel");
@@ -1720,7 +1715,6 @@
       elements.mappingForm.addEventListener("input", () => setConfigDirty(true));
       elements.mappingForm.addEventListener("change", () => setConfigDirty(true));
       elements.macroText.addEventListener("input", renderTemplatePreview);
-      elements.actionType.addEventListener("change", updateEditorHints);
       elements.triggerMode.addEventListener("change", updateEditorHints);
 
       document.querySelectorAll("[data-config-mode]").forEach((button) => {
@@ -2665,12 +2659,13 @@
       elements.editorTitle.textContent = keypadMode
         ? `${keypadKey?.label || mapping.triggerPattern} Key Action`
         : "Expansion Editor";
-      elements.actionType.value = normalizeActionType(mapping.type);
       elements.triggerMode.value = mapping.trigger === "key" ? "suffix" : normalizeTriggerMode(mapping.trigger);
       elements.triggerPattern.value = mapping.triggerPattern;
       elements.triggerScope.value = mapping.triggerScope;
       elements.macroName.value = mapping.label === "Unassigned" ? "" : mapping.label;
-      elements.macroText.value = mapping.text;
+      elements.macroText.value = normalizeActionType(mapping.type) === "shortcut"
+        ? `{{${mapping.text}}}`
+        : mapping.text;
       elements.preDelay.value = mapping.preDelay;
       elements.keyDelay.value = mapping.keyDelay;
       elements.triggerPatternField.classList.toggle("hidden", keypadMode);
@@ -2684,12 +2679,7 @@
 
     function updateEditorHints() {
       elements.triggerPatternLabel.textContent = "Trigger String";
-
-      if (elements.actionType.value === "shortcut") {
-        elements.templateHelp.textContent = "Enter a shortcut such as CTRL+B, CTRL+SHIFT+S, ALT+TAB, HOME, or ENTER.";
-      } else {
-        elements.templateHelp.textContent = "Date/time fields use the device clock. Reusable placeholders are saved text values like {initials}. Special fields handle cursor placement and formatting.";
-      }
+      elements.templateHelp.textContent = "Mix text, fields such as {date}, and keystrokes such as {{ENTER}} or {{WIN+ALT+K}}. Modifiers may be combined with + inside double braces.";
     }
 
     function saveCurrentMapping(event) {
@@ -2700,13 +2690,9 @@
     function updateCurrentMappingFromForm(announceSave) {
       const mapping = getMapping(appState.selectedRule);
       const before = JSON.stringify(mapping);
-      mapping.type = elements.actionType.value;
+      const hasAction = Boolean(elements.macroText.value.trim());
+      mapping.type = hasAction ? "expansion" : "disabled";
       if (appState.configMode === "keypad") {
-        const hasKeypadAction = Boolean(elements.macroName.value.trim() || elements.macroText.value.trim());
-        if (mapping.type === "disabled" && hasKeypadAction) {
-          mapping.type = "expansion";
-          elements.actionType.value = "expansion";
-        }
         mapping.trigger = "key";
         mapping.triggerScope = "numpad";
       } else {
@@ -2835,6 +2821,7 @@
       };
 
       let preview = elements.macroText.value || "";
+      preview = preview.replaceAll(/\{\{([^{}]+)\}\}/g, (_, chord) => `[key: ${chord}]`);
       Object.entries(tokenSamples).forEach(([token, sample]) => {
         preview = preview.replaceAll(token, sample);
       });

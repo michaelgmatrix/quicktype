@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.63
+// QuickType firmware version: 0.2.64
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -45,7 +45,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.63"; // v0.2.63: Use Unicode Alt codes for solid and outline square bullets
+static constexpr char FIRMWARE_VERSION[] = "0.2.64"; // v0.2.64: Support inline double-brace keystrokes and left/right modifier chords
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 48;
@@ -2696,6 +2696,7 @@ bool sendShortcut(const String& shortcut, uint16_t keyDelayMs) {
   input.toUpperCase();
   uint8_t modifier = 0;
   uint8_t keycode = 0;
+  bool invalidToken = false;
   int start = 0;
 
   while (start <= (int)input.length()) {
@@ -2703,17 +2704,25 @@ bool sendShortcut(const String& shortcut, uint16_t keyDelayMs) {
     String token = separator >= 0 ? input.substring(start, separator) : input.substring(start);
     token.trim();
 
-    if (token == "CTRL" || token == "CONTROL") modifier |= KEYBOARD_MODIFIER_LEFTCTRL;
-    else if (token == "SHIFT") modifier |= KEYBOARD_MODIFIER_LEFTSHIFT;
-    else if (token == "ALT") modifier |= KEYBOARD_MODIFIER_LEFTALT;
-    else if (token == "GUI" || token == "WIN" || token == "WINDOWS" || token == "CMD") modifier |= KEYBOARD_MODIFIER_LEFTGUI;
-    else keycode = shortcutKeycode(token);
+    if (token == "CTRL" || token == "CONTROL" || token == "LCTRL" || token == "LCONTROL") modifier |= KEYBOARD_MODIFIER_LEFTCTRL;
+    else if (token == "RCTRL" || token == "RCONTROL") modifier |= KEYBOARD_MODIFIER_RIGHTCTRL;
+    else if (token == "SHIFT" || token == "LSHIFT") modifier |= KEYBOARD_MODIFIER_LEFTSHIFT;
+    else if (token == "RSHIFT") modifier |= KEYBOARD_MODIFIER_RIGHTSHIFT;
+    else if (token == "ALT" || token == "LALT") modifier |= KEYBOARD_MODIFIER_LEFTALT;
+    else if (token == "RALT" || token == "ALTGR") modifier |= KEYBOARD_MODIFIER_RIGHTALT;
+    else if (token == "GUI" || token == "WIN" || token == "WINDOWS" || token == "CMD" || token == "COMMAND" || token == "META" || token == "LGUI" || token == "LWIN" || token == "LCMD" || token == "LMETA") modifier |= KEYBOARD_MODIFIER_LEFTGUI;
+    else if (token == "RGUI" || token == "RWIN" || token == "RCMD" || token == "RMETA") modifier |= KEYBOARD_MODIFIER_RIGHTGUI;
+    else {
+      uint8_t parsedKeycode = shortcutKeycode(token);
+      if (parsedKeycode == 0 || keycode != 0) invalidToken = true;
+      else keycode = parsedKeycode;
+    }
 
     if (separator < 0) break;
     start = separator + 1;
   }
 
-  if (keycode == 0) {
+  if (invalidToken || (keycode == 0 && modifier == 0)) {
     if (serialDebugConnected()) {
       Serial.print("ERROR: Unsupported shortcut: ");
       Serial.println(shortcut);
@@ -2807,6 +2816,16 @@ bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs) {
   size_t charactersAfterCursor = 0;
 
   for (size_t index = 0; index < text.length();) {
+    if (index + 1 < text.length() && text[index] == '{' && text[index + 1] == '{') {
+      int chordEnd = text.indexOf("}}", index + 2);
+      if (chordEnd >= 0) {
+        String chord = text.substring(index + 2, chordEnd);
+        if (!sendShortcut(chord, keyDelayMs)) return false;
+        index = chordEnd + 2;
+        continue;
+      }
+    }
+
     if (index + 2 < text.length() && (uint8_t)text[index] == 0xE2) {
       uint8_t b1 = (uint8_t)text[index+1];
       uint8_t b2 = (uint8_t)text[index+2];
