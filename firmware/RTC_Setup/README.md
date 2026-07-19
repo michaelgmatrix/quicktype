@@ -55,3 +55,5 @@ Double braces send inline keystrokes, allowing text and HID keys in the same tem
 New rules and rules without an explicit `keyDelay` use a 5 ms key delay by default. Each configured rule can override that value.
 
 The configurator bullet buttons insert `•`, `■`, `□`, `●`, and `◆`. Firmware converts these UTF-8 symbols to Windows Alt-key sequences when an expansion runs; application and font support can vary, so the variants are provided for compatibility testing.
+
+Typing the hidden `;;;` trigger outputs the active typed expansions followed by the configured keypad actions. Each keypad action is shown as its key and label.

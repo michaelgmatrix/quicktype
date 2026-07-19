@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.64
+// QuickType firmware version: 0.2.66
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -45,7 +45,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.65"; // v0.2.65: Runtime pause/resume control for configured expansions
+static constexpr char FIRMWARE_VERSION[] = "0.2.66"; // v0.2.66: Include configured keypad actions in the hidden expansion list
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 48;
@@ -1825,6 +1825,47 @@ bool outputExpansionListTable() {
 
   if (listedCount == 0) {
     if (!typeAsciiStringWithDelay("(No active typed expansions saved.)\n", keyDelayMs)) return false;
+  }
+
+  if (!typeAsciiStringWithDelay("\nKeypad actions\n", keyDelayMs)) return false;
+
+  size_t keypadListedCount = 0;
+  for (size_t index = 0; index < configRuleCount; index++) {
+    const ConfigRule& rule = configRules[index];
+    if (!rule.enabled || !rule.trigger.equalsIgnoreCase("key")) {
+      continue;
+    }
+
+    const char* keyLabel = rule.triggerPattern.c_str();
+    if (rule.triggerPattern.equalsIgnoreCase("KP_NUMLOCK")) keyLabel = "Num Lock";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_SLASH")) keyLabel = "/";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_ASTERISK")) keyLabel = "*";
+    else if (rule.triggerPattern.equalsIgnoreCase("BACKSPACE")) keyLabel = "Backspace";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_MINUS")) keyLabel = "-";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_PLUS")) keyLabel = "+";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_ENTER")) keyLabel = "Enter";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_0")) keyLabel = "0";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_00")) keyLabel = "00";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_1")) keyLabel = "1";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_2")) keyLabel = "2";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_3")) keyLabel = "3";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_4")) keyLabel = "4";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_5")) keyLabel = "5";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_6")) keyLabel = "6";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_7")) keyLabel = "7";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_8")) keyLabel = "8";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_9")) keyLabel = "9";
+    else if (rule.triggerPattern.equalsIgnoreCase("KP_PERIOD")) keyLabel = ".";
+
+    if (!typeAsciiStringWithDelay(keyLabel, keyDelayMs)) return false;
+    if (!typeAsciiStringWithDelay(" - ", keyDelayMs)) return false;
+    if (!typeAsciiStringWithDelay(rule.label, keyDelayMs)) return false;
+    if (!typeAsciiCharWithDelay('\n', keyDelayMs)) return false;
+    keypadListedCount++;
+  }
+
+  if (keypadListedCount == 0) {
+    if (!typeAsciiStringWithDelay("(No active keypad actions saved.)\n", keyDelayMs)) return false;
   }
 
   return true;
