@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.66
+// QuickType firmware version: 0.2.67
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -45,7 +45,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.66"; // v0.2.66: Include configured keypad actions in the hidden expansion list
+static constexpr char FIRMWARE_VERSION[] = "0.2.67"; // v0.2.67: Re-arm USB host receives after typed expansions
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 48;
@@ -226,6 +226,7 @@ static volatile bool pendingKeyboardReportValid = false;
 static uint32_t lastWakeupAttemptMs = 0;
 static volatile bool deviceConnectionResetPending = false;
 static volatile bool hostStackSuspended = false;
+static volatile bool hostReceiveRecoveryRequested = false;
 static volatile bool hostRemoteWakeupEnabled = false;
 static constexpr size_t CONSUMER_QUEUE_SIZE = 8;
 static volatile uint16_t consumerUsageQueue[CONSUMER_QUEUE_SIZE];
@@ -375,6 +376,7 @@ size_t mountedKeyboardInterfaceCount();
 size_t mountedConsumerInterfaceCount();
 void requestNextHidReport(uint8_t dev_addr, uint8_t instance);
 void pollMountedHidReports();
+void recoverHostReceiveTransfers();
 void serviceUsbBridge();
 void resetBridgeStateAfterConfigurationChange();
 
@@ -2028,6 +2030,11 @@ bool processTypedTriggerRules(char currentCharacter) {
     pendingKeyboardReportValid = false;
     size_t eraseCount = suffixLength > 0 ? suffixLength - 1 : 0;
     bool result = executeConfiguredRule(rule, eraseCount, delimiterMode ? currentCharacter : 0);
+    // A typed expansion blocks Core 0 while Core 1 continues servicing the
+    // physical keyboard. Re-arm any host IN transfers that became stale while
+    // the expansion was emitted so the inline keyboard cannot stop passing
+    // input after a successful macro.
+    hostReceiveRecoveryRequested = true;
     typedBuffer = "";
     typedSources = "";
     return result;
@@ -2852,6 +2859,27 @@ String customPlaceholderValue(const String& name) {
     }
   }
   return "";
+}
+
+void recoverHostReceiveTransfers() {
+  telemetry.hostQuiesceCount++;
+  telemetry.lastHostQuiesceMs = millis();
+
+  for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
+    HostHidInterfaceInfo& info = hostHidInterfaces[index];
+    if (!info.mounted) continue;
+
+    if (!tuh_hid_receive_ready(info.devAddr, info.instance)) {
+      telemetry.hostReceiveAbortCount++;
+      if (!tuh_hid_receive_abort(info.devAddr, info.instance)) {
+        telemetry.hostReceiveAbortFailCount++;
+      }
+    }
+    info.nextReportRequestMs = millis() + 5;
+  }
+
+  telemetry.hostRecoverCount++;
+  telemetry.lastHostRecoverMs = millis();
 }
 
 bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs) {
@@ -3906,5 +3934,10 @@ void loop1() {
     return;
   }
   USBHost.task();
+  if (hostReceiveRecoveryRequested) {
+    hostReceiveRecoveryRequested = false;
+    recoverHostReceiveTransfers();
+    USBHost.task();
+  }
   pollMountedHidReports();
 }
