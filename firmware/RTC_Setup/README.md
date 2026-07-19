@@ -37,7 +37,7 @@ The site and firmware exchange one minified JSON object per line at 115200 baud.
 {"qt":1,"id":1,"command":"ping"}
 ```
 
-Supported commands are `ping`, `get-config`, `set-config`, `get-clock`, `set-clock`, `set-expansions-enabled`, and `factory-reset`. `set-expansions-enabled` temporarily pauses or resumes configured rules without changing the saved configuration; expansions return to enabled after a device restart. Responses repeat `qt` and `id`, set `ok`, and contain either `data` or an `error` object. The maximum request/configuration size is 32 KB.
+Supported commands are `ping`, `get-config`, `set-config`, `get-clock`, `set-clock`, `set-expansions-enabled`, `set-keypad-expansions-enabled`, and `factory-reset`. `set-expansions-enabled` temporarily pauses or resumes all configured rules. `set-keypad-expansions-enabled` independently disables or enables configured physical keypad actions while typed full-keyboard expansions remain active. Both runtime states return to enabled after a device restart and do not change the saved configuration. Responses repeat `qt` and `id`, set `ok`, and contain either `data` or an `error` object. The maximum request/configuration size is 32 KB.
 
 ## Rule behavior
 

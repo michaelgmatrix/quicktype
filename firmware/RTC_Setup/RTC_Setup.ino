@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.67
+// QuickType firmware version: 0.2.68
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -45,7 +45,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.67"; // v0.2.67: Re-arm USB host receives after typed expansions
+static constexpr char FIRMWARE_VERSION[] = "0.2.68"; // v0.2.68: Independent runtime control for configured numpad actions
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 48;
@@ -242,6 +242,7 @@ static ConfigPlaceholder configPlaceholders[MAX_CONFIG_PLACEHOLDERS];
 static size_t configPlaceholderCount = 0;
 static bool storedConfigurationLoaded = false;
 static bool expansionsEnabled = true;
+static bool keypadExpansionsEnabled = true;
 static String serialInputLine;
 static bool serialInputOverflow = false;
 static String typedBuffer;
@@ -569,6 +570,7 @@ void addTelemetryToJson(JsonObject target) {
   target["nativeHidReady"] = usb_hid.ready();
   target["storedConfig"] = storedConfigurationLoaded;
   target["expansionsEnabled"] = expansionsEnabled;
+  target["keypadExpansionsEnabled"] = keypadExpansionsEnabled;
   target["activeRules"] = activeRuleCount();
   target["compiledRules"] = configRuleCount;
   target["hostInterfaces"] = mountedHostInterfaceCount();
@@ -2090,7 +2092,7 @@ void handleKeyboardReport(hid_keyboard_report_t const* report) {
       continue;
     }
 
-    if (storedConfigurationLoaded && expansionsEnabled) {
+    if (storedConfigurationLoaded && expansionsEnabled && keypadExpansionsEnabled) {
       if (processPhysicalKeyRule(keycode)) {
         interceptedPhysicalKey = true;
         break;
@@ -3041,6 +3043,7 @@ void sendProtocolInfo(uint32_t id) {
   response["data"]["hasConfiguration"] = storedConfigurationLoaded;
   response["data"]["ruleCount"] = activeRuleCount();
   response["data"]["expansionsEnabled"] = expansionsEnabled;
+  response["data"]["keypadExpansionsEnabled"] = keypadExpansionsEnabled;
   sendProtocolJson(response);
 }
 
@@ -3166,6 +3169,22 @@ void handleProtocolLine(const String& line) {
     response["ok"] = true;
     response["type"] = "expansions-state";
     response["data"]["expansionsEnabled"] = expansionsEnabled;
+    sendProtocolJson(response);
+    return;
+  }
+
+  if (strcmp(command, "set-keypad-expansions-enabled") == 0) {
+    if (!request["enabled"].is<bool>()) {
+      sendProtocolError(id, "INVALID_STATE", "The enabled value must be true or false.");
+      return;
+    }
+    keypadExpansionsEnabled = request["enabled"].as<bool>();
+    JsonDocument response;
+    response["qt"] = CONFIG_SCHEMA_VERSION;
+    response["id"] = id;
+    response["ok"] = true;
+    response["type"] = "keypad-expansions-state";
+    response["data"]["keypadExpansionsEnabled"] = keypadExpansionsEnabled;
     sendProtocolJson(response);
     return;
   }

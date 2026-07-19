@@ -1341,7 +1341,7 @@
 
       <p class="sidebar-footer">
         Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.
-        <span class="build-stamp">Build 2026-07-19 09:38:49 PDT</span>
+        <span class="build-stamp">Build 2026-07-19 09:46:02 PDT</span>
       </p>
     </aside>
 
@@ -1354,6 +1354,7 @@
             <button id="readButton" class="secondary-button" type="button">Read</button>
             <button id="writeButton" class="secondary-button" type="button">Write</button>
             <button id="toggleExpansionsButton" class="secondary-button" type="button">Pause Expansions</button>
+            <button id="toggleKeypadExpansionsButton" class="secondary-button" type="button">Disable Numpad Expansions</button>
             <button id="telemetryButton" class="secondary-button" type="button">Telemetry</button>
             <button id="readClockButton" class="secondary-button" type="button">Read Clock</button>
             <button id="syncClockButton" class="secondary-button" type="button">Sync Clock</button>
@@ -1630,6 +1631,7 @@
       isConnected: false,
       configDirty: false,
       expansionsEnabled: true,
+      keypadExpansionsEnabled: true,
       expansionSort: { key: null, direction: "asc" },
       config: createDefaultConfig()
     };
@@ -1663,6 +1665,7 @@
       elements.readButton = document.getElementById("readButton");
       elements.writeButton = document.getElementById("writeButton");
       elements.toggleExpansionsButton = document.getElementById("toggleExpansionsButton");
+      elements.toggleKeypadExpansionsButton = document.getElementById("toggleKeypadExpansionsButton");
       elements.telemetryButton = document.getElementById("telemetryButton");
       elements.readClockButton = document.getElementById("readClockButton");
       elements.exportButton = document.getElementById("exportButton");
@@ -1712,6 +1715,7 @@
       elements.readButton.addEventListener("click", readDeviceConfiguration);
       elements.writeButton.addEventListener("click", writeDeviceConfiguration);
       elements.toggleExpansionsButton.addEventListener("click", toggleDeviceExpansions);
+      elements.toggleKeypadExpansionsButton.addEventListener("click", toggleDeviceKeypadExpansions);
       elements.telemetryButton.addEventListener("click", readDeviceTelemetry);
       elements.readClockButton.addEventListener("click", readDeviceClock);
       elements.exportButton.addEventListener("click", exportConfiguration);
@@ -1849,6 +1853,7 @@
 
       appState.deviceInfo = response.data || {};
       appState.expansionsEnabled = appState.deviceInfo.expansionsEnabled !== false;
+      appState.keypadExpansionsEnabled = appState.deviceInfo.keypadExpansionsEnabled !== false;
       appState.lastKeyPressCount = null;
       updateDeviceControls();
       logActivity(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
@@ -2007,6 +2012,23 @@
       } catch (error) {
         logActivity(`Could not change expansion state: ${error.message}`);
         showToast("This device firmware does not support pausing expansions yet.", "error");
+      }
+    }
+
+    async function toggleDeviceKeypadExpansions() {
+      if (!ensureConnected("change numpad expansion state")) return;
+
+      const enabled = !appState.keypadExpansionsEnabled;
+      try {
+        const response = await sendDeviceCommand("set-keypad-expansions-enabled", { enabled });
+        appState.keypadExpansionsEnabled = response.data?.keypadExpansionsEnabled ?? enabled;
+        updateDeviceControls();
+        const state = appState.keypadExpansionsEnabled ? "enabled" : "disabled";
+        logActivity(`Numpad expansions ${state}.`);
+        showToast(`Numpad expansions ${state}.`);
+      } catch (error) {
+        logActivity(`Could not change numpad expansion state: ${error.message}`);
+        showToast("This device firmware does not support independent numpad control yet.", "error");
       }
     }
 
@@ -2228,6 +2250,15 @@
       elements.toggleExpansionsButton.title = appState.expansionsEnabled
         ? "Temporarily stop QuickType from converting triggers. Saved rules are unchanged."
         : "Expansion triggers are paused; click to resume them.";
+      elements.toggleKeypadExpansionsButton.disabled = !appState.isConnected;
+      elements.toggleKeypadExpansionsButton.textContent = appState.keypadExpansionsEnabled
+        ? "Disable Numpad Expansions"
+        : "Enable Numpad Expansions";
+      elements.toggleKeypadExpansionsButton.classList.toggle("expansions-paused", !appState.keypadExpansionsEnabled);
+      elements.toggleKeypadExpansionsButton.setAttribute("aria-pressed", String(!appState.keypadExpansionsEnabled));
+      elements.toggleKeypadExpansionsButton.title = appState.keypadExpansionsEnabled
+        ? "Let numpad keys pass through without running configured actions."
+        : "Numpad keys currently pass through normally; click to restore configured actions.";
       elements.telemetryButton.disabled = !appState.isConnected;
       elements.readClockButton.disabled = !appState.isConnected;
       elements.syncClockButton.disabled = !appState.isConnected;
