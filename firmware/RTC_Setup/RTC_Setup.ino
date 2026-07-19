@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.68
+// QuickType firmware version: 0.2.81
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -11,7 +11,7 @@
 #include <hardware/clocks.h>
 
 // ============================================================
-// Seeed XIAO RP2040 wiring
+// RP2040-Zero wiring
 // ============================================================
 //
 // Native USB-C port:
@@ -19,12 +19,12 @@
 //   Also keeps USB Serial available for testing/debug.
 //
 // RTC DS3231 I2C:
-//   XIAO pad D4 / label "4" = GPIO6 = SDA
-//   XIAO pad D5 / label "5" = GPIO7 = SCL
+//   GPIO6 = SDA
+//   GPIO7 = SCL
 //
 // USB keypad host port using Pico-PIO-USB:
-//   USB GREEN wire = D+ = XIAO pad D6 / label "6" = GPIO0
-//   USB WHITE wire = D- = XIAO pad D7 / label "7" = GPIO1
+//   USB GREEN wire = D+ = GPIO0
+//   USB WHITE wire = D- = GPIO1
 //   USB RED wire   = +5V / VBUS
 //   USB BLACK wire = GND
 //
@@ -35,8 +35,8 @@
 static constexpr int SDA_PIN = 6;
 static constexpr int SCL_PIN = 7;
 
-static constexpr int USB_HOST_DP_GPIO = 0; // XIAO pad D6 / label "6" / GPIO0 / USB green D+
-static constexpr int USB_HOST_DM_GPIO = 1; // XIAO pad D7 / label "7" / GPIO1 / USB white D-
+static constexpr int USB_HOST_DP_GPIO = 0; // GPIO0 / USB green D+
+static constexpr int USB_HOST_DM_GPIO = 1; // GPIO1 / USB white D-
 
 static constexpr uint8_t RTC_ADDR = 0x68;
 static constexpr char TIMESTAMP_FILE[] = "/Timestamp.txt";
@@ -45,7 +45,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.68"; // v0.2.68: Independent runtime control for configured numpad actions
+static constexpr char FIRMWARE_VERSION[] = "0.2.81"; // v0.2.81: Preserve working v0.2.68 host timing and recover an idle stall
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 48;
@@ -54,9 +54,11 @@ static constexpr size_t MAX_CONFIG_PLACEHOLDERS = 32;
 static constexpr size_t MAX_TRIGGER_BUFFER = 64;
 static constexpr size_t MAX_HOST_HID_INTERFACES = 8;
 static constexpr size_t MAX_CONSUMER_BIT_USAGES = 32;
-static constexpr bool ENABLE_SERIAL_DEBUG_LOGS = true;
+static constexpr bool ENABLE_SERIAL_DEBUG_LOGS = false;
 static constexpr uint32_t SERIAL_STATE_POLL_MS = 250;
 static constexpr uint32_t WATCHDOG_TIMEOUT_MS = 8000;
+static constexpr uint32_t HOST_KEYBOARD_RECEIVE_TIMEOUT_MS = 5000;
+static constexpr uint32_t HOST_KEYBOARD_REARM_DELAY_MS = 10;
 
 enum HidReportId : uint8_t {
   RID_KEYBOARD = 1,
@@ -122,6 +124,9 @@ struct HostHidInterfaceInfo {
   uint8_t keyboardReportId;
   uint8_t consumerReportId;
   uint32_t nextReportRequestMs;
+  uint32_t lastReportMs;
+  uint32_t lastRecoveryMs;
+  uint32_t rearmAtMs;
   uint16_t consumerBitOffset;
   uint16_t consumerBitUsages[MAX_CONSUMER_BIT_USAGES];
   uint8_t consumerBitCount;
@@ -226,7 +231,6 @@ static volatile bool pendingKeyboardReportValid = false;
 static uint32_t lastWakeupAttemptMs = 0;
 static volatile bool deviceConnectionResetPending = false;
 static volatile bool hostStackSuspended = false;
-static volatile bool hostReceiveRecoveryRequested = false;
 static volatile bool hostRemoteWakeupEnabled = false;
 static constexpr size_t CONSUMER_QUEUE_SIZE = 8;
 static volatile uint16_t consumerUsageQueue[CONSUMER_QUEUE_SIZE];
@@ -251,6 +255,8 @@ static String clockTimezoneName = "Local";
 static int clockTimezoneOffsetMinutes = 0;
 static uint32_t lastSerialStatePollMs = 0;
 static bool watchdogStarted = false;
+static uint32_t watchdogHostFrame = 0;
+static uint32_t watchdogHostProgressMs = 0;
 
 // Forward declarations
 uint8_t decToBcd(int value);
@@ -377,7 +383,6 @@ size_t mountedKeyboardInterfaceCount();
 size_t mountedConsumerInterfaceCount();
 void requestNextHidReport(uint8_t dev_addr, uint8_t instance);
 void pollMountedHidReports();
-void recoverHostReceiveTransfers();
 void serviceUsbBridge();
 void resetBridgeStateAfterConfigurationChange();
 
@@ -386,9 +391,7 @@ void resetBridgeStateAfterConfigurationChange();
 // ============================================================
 
 void hid_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize) {
-  (void) bufsize;
-
-  if (report_type != HID_REPORT_TYPE_OUTPUT) return;
+  if (report_type != HID_REPORT_TYPE_OUTPUT || buffer == nullptr || bufsize == 0) return;
 
   if (report_id == RID_KEYBOARD || report_id == 0) {
     uint8_t leds = buffer[0];
@@ -400,22 +403,9 @@ void hid_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8
         Serial.print("Received keyboard LED report from PC: 0x");
         Serial.println(hostLedsState, HEX);
       }
-
-      // Forward this LED state to all physical keyboards connected to our USB Host.
-      for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
-        HostHidInterfaceInfo const& info = hostHidInterfaces[index];
-        if (info.mounted && info.keyboard) {
-          if (serialDebugConnected()) {
-            Serial.print("Forwarding LEDs 0x");
-            Serial.print(hostLedsState, HEX);
-            Serial.print(" to host device at addr=");
-            Serial.print(info.devAddr);
-            Serial.print(" instance=");
-            Serial.println(info.instance);
-          }
-          tuh_hid_set_report(info.devAddr, info.instance, 0, HID_REPORT_TYPE_OUTPUT, &hostLedsState, sizeof(hostLedsState));
-        }
-      }
+      // Keep the PC's LED state for Alt-code handling, but do not send a host
+      // control transfer to the Logitech receiver. Its keyboard input path is
+      // intentionally interrupt-IN only for PIO USB stability.
     }
   }
 }
@@ -427,7 +417,7 @@ void configureUsbDeviceKeyboard() {
 
   usb_hid.setPollInterval(2);
   usb_hid.setReportDescriptor(hidReportDescriptor, sizeof(hidReportDescriptor));
-  usb_hid.setStringDescriptor("XIAO Timestamp Keyboard");
+  usb_hid.setStringDescriptor("QuickType Keyboard");
   usb_hid.setReportCallback(NULL, hid_report_callback);
   usb_hid.begin();
 }
@@ -511,6 +501,20 @@ bool sendProtocolJson(JsonDocument& response) {
 void serviceNativeUsb() {
   if (watchdogStarted) {
     watchdog_update();
+    uint32_t const frame = pio_usb_host_get_frame_number();
+    uint32_t const now = millis();
+    if (frame != watchdogHostFrame) {
+      watchdogHostFrame = frame;
+      watchdogHostProgressMs = now;
+    }
+    // The working v0.2.68 host can permanently stop producing frames after
+    // several idle minutes. Reboot only after a keyboard has mounted and the
+    // native laptop-facing USB device is already stable.
+    if (now >= 15000 && TinyUSBDevice.mounted() &&
+        telemetry.hostMountCount > telemetry.hostUnmountCount &&
+        now - watchdogHostProgressMs >= 2000) {
+      watchdog_reboot(0, 0, 10);
+    }
   }
   TinyUSB_Device_Task();
 }
@@ -529,7 +533,7 @@ void enableWatchdog() {
 
 void suspendHostStack() {
   hostStackSuspended = true;
-  // Allow Core 1 to yield current PIO tasks and enter safe idle state
+  // Allow Core 1 to finish its current PIO USB task before storage writes.
   delay(10);
 }
 
@@ -1102,9 +1106,7 @@ void configureUsbHost() {
   pio_usb_configuration_t pioConfig = PIO_USB_DEFAULT_CONFIG;
   pioConfig.pin_dp = USB_HOST_DP_GPIO;
 
-  // Initialize to report protocol so that composite interfaces can negotiate
-  // report mode to pass consumer control keys, and keyboard-only interfaces
-  // will be switched to boot protocol in tuh_hid_mount_cb.
+  // Match the known-working v0.2.68 receiver initialization exactly.
   tuh_hid_set_default_protocol(HID_PROTOCOL_REPORT);
   USBHost.configure_pio_usb(1, &pioConfig);
   USBHost.begin(1);
@@ -1476,6 +1478,8 @@ void rememberHostHidInterface(
       info.instance = instance;
       info.keyboardReportId = keyboardReportId;
       info.consumerReportId = consumerReportId;
+      info.lastReportMs = millis();
+      info.lastRecoveryMs = millis();
       info.keyboard = keyboard;
       info.consumerControl = consumerControl;
       info.mounted = true;
@@ -2032,11 +2036,6 @@ bool processTypedTriggerRules(char currentCharacter) {
     pendingKeyboardReportValid = false;
     size_t eraseCount = suffixLength > 0 ? suffixLength - 1 : 0;
     bool result = executeConfiguredRule(rule, eraseCount, delimiterMode ? currentCharacter : 0);
-    // A typed expansion blocks Core 0 while Core 1 continues servicing the
-    // physical keyboard. Re-arm any host IN transfers that became stale while
-    // the expansion was emitted so the inline keyboard cannot stop passing
-    // input after a successful macro.
-    hostReceiveRecoveryRequested = true;
     typedBuffer = "";
     typedSources = "";
     return result;
@@ -2171,21 +2170,31 @@ void handleKeyboardReport(hid_keyboard_report_t const* report) {
 
 void requestNextHidReport(uint8_t dev_addr, uint8_t instance) {
   HostHidInterfaceInfo* info = hostHidInterfaceInfo(dev_addr, instance);
-  if (info != nullptr && millis() < info->nextReportRequestMs) {
+  uint32_t now = millis();
+  if (info != nullptr && now < info->nextReportRequestMs) {
+    return;
+  }
+  if (info != nullptr && info->rearmAtMs != 0 && (int32_t)(now - info->rearmAtMs) < 0) {
     return;
   }
 
   if (!tuh_hid_receive_ready(dev_addr, instance)) {
+    // An interrupt-IN transfer remaining pending while a keyboard is idle is
+    // normal USB behavior. Aborting it on a timer can strand wireless receivers.
     return;
   }
 
   if (!tuh_hid_receive_report(dev_addr, instance)) {
     telemetry.hostReportRequestFailCount++;
     if (info != nullptr) {
-      info->nextReportRequestMs = millis() + 25;
+      info->nextReportRequestMs = now + 25;
     }
   } else {
     telemetry.hostReportRequestCount++;
+    if (info != nullptr) {
+      info->nextReportRequestMs = 0;
+      info->rearmAtMs = 0;
+    }
   }
 }
 
@@ -2203,7 +2212,8 @@ void pollMountedHidReports() {
 void serviceUsbBridge() {
   telemetry.bridgeServiceCount++;
   serviceNativeUsb();
-  // USB Host tasks are run entirely on Core 1 in loop1()
+  // USB Host tasks run continuously on Core 1, including while Core 0 emits
+  // an expansion to the computer.
   serviceNativeUsb();
 
   if (deviceConnectionResetPending) {
@@ -2245,8 +2255,10 @@ void serviceUsbBridge() {
     return;
   }
 
-  // Process keyboard reports queue on Core 0
-  while (keyboardQueueTail != keyboardQueueHead) {
+  // Preserve key-down/key-up ordering. Do not consume another host report
+  // until the prior transformed report has been accepted by the laptop-facing
+  // HID endpoint; otherwise a fast release overwrites its pending key press.
+  if (!pendingKeyboardReportValid && keyboardQueueTail != keyboardQueueHead) {
     __asm__ volatile("dmb" : : : "memory");
     hid_keyboard_report_t report = keyboardReportQueue[keyboardQueueTail];
     keyboardQueueTail = (keyboardQueueTail + 1) % KEYBOARD_REPORT_QUEUE_SIZE;
@@ -2304,6 +2316,9 @@ extern "C" void tuh_hid_mount_cb(
 
   if (protocol == HID_ITF_PROTOCOL_KEYBOARD) {
     keyboard = true;
+    // Boot keyboard reports use the standard 8-byte modifier/key array and do
+    // not include a report ID, even when report protocol advertises one.
+    keyboardReportId = 0;
   }
 
   rememberHostHidInterface(
@@ -2317,6 +2332,14 @@ extern "C" void tuh_hid_mount_cb(
   HostHidInterfaceInfo* mountedInfo = hostHidInterfaceInfo(dev_addr, instance);
   if (mountedInfo != nullptr) {
     parseConsumerBitmaskDescriptor(desc_report, desc_len, *mountedInfo);
+  }
+
+  if (protocol == HID_ITF_PROTOCOL_KEYBOARD &&
+      tuh_hid_get_protocol(dev_addr, instance) != HID_PROTOCOL_BOOT) {
+    memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
+    if (tuh_hid_set_protocol(dev_addr, instance, HID_PROTOCOL_BOOT)) {
+      return;
+    }
   }
 
   requestNextHidReport(dev_addr, instance);
@@ -2366,6 +2389,10 @@ extern "C" void tuh_hid_report_received_cb(
   HostHidInterfaceInfo* info = hostHidInterfaceInfo(dev_addr, instance);
   telemetry.hostReportCallbackCount++;
   telemetry.lastHostReportMs = millis();
+  if (info != nullptr) {
+    info->lastReportMs = millis();
+    info->rearmAtMs = 0;
+  }
 
   if (len == 0) {
     telemetry.hostZeroLengthReportCount++;
@@ -2376,16 +2403,31 @@ extern "C" void tuh_hid_report_received_cb(
     return;
   }
 
-  if (info != nullptr && info->consumerControl &&
-      (info->consumerReportId == 0 || (len > 0 && report[0] == info->consumerReportId))) {
+  // A Logitech receiver can advertise keyboard and consumer-control reports on
+  // the same boot-capable interface. Once that interface is in boot protocol,
+  // every 8-byte report is a standard keyboard report and must be decoded as
+  // such before considering consumer-control descriptor metadata.
+  if (protocol == HID_ITF_PROTOCOL_KEYBOARD) {
+    hid_keyboard_report_t decodedReport = {};
+    if (decodeKeyboardReport(report, len, 0, decodedReport)) {
+      // Queue the report to be processed by Core 0
+      size_t nextHead = (keyboardQueueHead + 1) % KEYBOARD_REPORT_QUEUE_SIZE;
+      if (nextHead != keyboardQueueTail) {
+        keyboardReportQueue[keyboardQueueHead] = decodedReport;
+        __asm__ volatile("dmb" : : : "memory");
+        keyboardQueueHead = nextHead;
+      }
+    } else {
+      telemetry.keyboardDecodeFailCount++;
+    }
+  } else if (info != nullptr && info->consumerControl &&
+             (info->consumerReportId == 0 || report[0] == info->consumerReportId)) {
     telemetry.consumerReportCount++;
     telemetry.lastConsumerReportMs = millis();
     forwardConsumerControlReport(report, len, *info);
-  } else if ((info != nullptr && info->keyboard) || protocol == HID_ITF_PROTOCOL_KEYBOARD) {
+  } else if (info != nullptr && info->keyboard) {
     hid_keyboard_report_t decodedReport = {};
-    uint8_t keyboardReportId = info != nullptr ? info->keyboardReportId : 0;
-    if (decodeKeyboardReport(report, len, keyboardReportId, decodedReport)) {
-      // Queue the report to be processed by Core 0
+    if (decodeKeyboardReport(report, len, info->keyboardReportId, decodedReport)) {
       size_t nextHead = (keyboardQueueHead + 1) % KEYBOARD_REPORT_QUEUE_SIZE;
       if (nextHead != keyboardQueueTail) {
         keyboardReportQueue[keyboardQueueHead] = decodedReport;
@@ -2863,27 +2905,6 @@ String customPlaceholderValue(const String& name) {
   return "";
 }
 
-void recoverHostReceiveTransfers() {
-  telemetry.hostQuiesceCount++;
-  telemetry.lastHostQuiesceMs = millis();
-
-  for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
-    HostHidInterfaceInfo& info = hostHidInterfaces[index];
-    if (!info.mounted) continue;
-
-    if (!tuh_hid_receive_ready(info.devAddr, info.instance)) {
-      telemetry.hostReceiveAbortCount++;
-      if (!tuh_hid_receive_abort(info.devAddr, info.instance)) {
-        telemetry.hostReceiveAbortFailCount++;
-      }
-    }
-    info.nextReportRequestMs = millis() + 5;
-  }
-
-  telemetry.hostRecoverCount++;
-  telemetry.lastHostRecoverMs = millis();
-}
-
 bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs) {
   bool cursorSeen = false;
   size_t charactersAfterCursor = 0;
@@ -3037,7 +3058,7 @@ void sendProtocolInfo(uint32_t id) {
   response["id"] = id;
   response["ok"] = true;
   response["type"] = "hello";
-  response["data"]["device"] = "QuickType XIAO RP2040";
+  response["data"]["device"] = "QuickType RP2040 Zero";
   response["data"]["firmwareVersion"] = FIRMWARE_VERSION;
   response["data"]["configSchema"] = CONFIG_SCHEMA_VERSION;
   response["data"]["hasConfiguration"] = storedConfigurationLoaded;
@@ -3873,7 +3894,7 @@ void setup() {
     Serial.println(TinyUSBDevice.mounted() ? "yes" : "no");
   }
 
-  // USB Host is configured on Core 1 in setup1()
+  // USB Host is configured on Core 1 in setup1().
 
   Wire.setSDA(SDA_PIN);
   Wire.setSCL(SCL_PIN);
@@ -3919,6 +3940,8 @@ void setup() {
     Serial.println("Ready. Open Notepad and test keypad macros.");
   }
 
+  watchdogHostFrame = pio_usb_host_get_frame_number();
+  watchdogHostProgressMs = millis();
   watchdog_enable(WATCHDOG_TIMEOUT_MS, true);
   watchdogStarted = true;
 }
@@ -3940,7 +3963,7 @@ void loop() {
 }
 
 // ============================================================
-// Core 1 Execution (Dedicated to USB Host / Pico PIO USB)
+// Core 1 Execution (Dedicated to USB Host / Pico-PIO-USB)
 // ============================================================
 
 void setup1() {
@@ -3952,11 +3975,8 @@ void loop1() {
     delay(1);
     return;
   }
+  // Match the known-working v0.2.68 host scheduling.
   USBHost.task();
-  if (hostReceiveRecoveryRequested) {
-    hostReceiveRecoveryRequested = false;
-    recoverHostReceiveTransfers();
-    USBHost.task();
-  }
+
   pollMountedHidReports();
 }

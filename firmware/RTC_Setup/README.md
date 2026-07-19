@@ -1,6 +1,6 @@
 # QuickType firmware
 
-This sketch targets the Seeed Studio XIAO RP2040. It acts as:
+This sketch runs on the generic RP2040-Zero hardware. It acts as:
 
 - a native USB keyboard connected to the computer;
 - a PIO USB host for the external keyboard/keypad; and
@@ -8,7 +8,7 @@ This sketch targets the Seeed Studio XIAO RP2040. It acts as:
 
 ## Arduino requirements
 
-- Raspberry Pi Pico/RP2040 board package with the Seeed XIAO RP2040 board
+- Raspberry Pi Pico/RP2040 board package with the Seeed XIAO RP2040 board profile
 - Adafruit TinyUSB Library
 - Pico-PIO-USB
 - ArduinoJson 7
@@ -17,14 +17,15 @@ Use these board menu settings:
 
 - **USB Stack:** Adafruit TinyUSB
 - **Flash Size:** 2 MB with a LittleFS partition (the 256 KB option is recommended)
+- **CPU Speed:** default 200 MHz
 
-The DS3231 uses `GPIO6`/`GPIO7` for RTC tokens. A build with **2 MB (no FS)** cannot save website configuration.
+The validated Logitech K360 receiver build uses the Seeed XIAO RP2040 profile at its default 200 MHz on the generic RP2040-Zero hardware. The DS3231 uses `GPIO6`/`GPIO7` for RTC tokens. A build with **2 MB (no FS)** cannot save website configuration.
 
 ## Website programming
 
-1. Flash `RTC_Setup.ino` to the XIAO RP2040.
+1. Flash `RTC_Setup.ino` to the RP2040-Zero.
 2. Open the repository website in Chrome or Edge over HTTPS or localhost.
-3. Choose **Connect Device** and select the XIAO/RP2040 serial port.
+3. Choose **Connect Device** and select the QuickType/RP2040 serial port.
 4. Use **Read Configuration**, **Write Configuration**, or **Sync Clock to This Computer**.
 
 Until the first website configuration is written, the original hard-coded keypad mappings remain active. After a configuration is saved, unmatched keys pass through and configured physical-key or typed-trigger rules run from `/quicktype-config.json` in LittleFS. The configurator keeps up to 24 typed-trigger rules and 19 dedicated numeric-keypad assignments active together.
@@ -58,4 +59,4 @@ The configurator bullet buttons insert `•`, `■`, `□`, `●`, and `◆`. Fi
 
 Typing the hidden `;;;` trigger outputs the active typed expansions followed by the configured keypad actions. Each keypad action is shown as its key and label.
 
-After every typed expansion, the USB-host core aborts and re-arms any stale HID receive transfer. This keeps the inline physical keyboard in transparent passthrough if a receive request stalls while QuickType is emitting an expansion.
+The receiver starts in report protocol and boot-capable keyboard interfaces switch to boot protocol when mounted, matching the validated v0.2.68 host sequence. PIO USB host work stays on the dedicated second core while the main core emits expansions. A pending interrupt-IN transfer is normal while the keyboard is idle and is never aborted on a timer. The PC keyboard LED state is retained for Alt-code handling but is not sent back to the Logitech receiver. The main core preserves FIFO order through the laptop-facing HID endpoint so a queued key-up report cannot overwrite its preceding key-down report. If a mounted keyboard's PIO USB frame counter stops for two seconds after startup, the RP2040 reboots automatically instead of leaving the inline keyboard permanently dead.
