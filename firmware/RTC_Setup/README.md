@@ -59,5 +59,3 @@ The configurator bullet buttons insert `•`, `■`, `□`, `●`, and `◆`. Fi
 Typing the hidden `;;;` trigger outputs the active typed expansions followed by the configured keypad actions. Each keypad action is shown as its key and label.
 
 After every typed expansion, the USB-host core aborts and re-arms any stale HID receive transfer. This keeps the inline physical keyboard in transparent passthrough if a receive request stalls while QuickType is emitting an expansion.
-
-The USB-host core also re-arms idle keyboard receive transfers every five seconds. This prevents an inline keyboard that has been unused from becoming unresponsive while QuickType itself remains powered.

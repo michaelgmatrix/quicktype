@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.69
+// QuickType firmware version: 0.2.68
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -45,7 +45,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.69"; // v0.2.69: Periodically re-arm idle inline-keyboard receives
+static constexpr char FIRMWARE_VERSION[] = "0.2.68"; // v0.2.68: Independent runtime control for configured numpad actions
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 48;
@@ -57,7 +57,6 @@ static constexpr size_t MAX_CONSUMER_BIT_USAGES = 32;
 static constexpr bool ENABLE_SERIAL_DEBUG_LOGS = true;
 static constexpr uint32_t SERIAL_STATE_POLL_MS = 250;
 static constexpr uint32_t WATCHDOG_TIMEOUT_MS = 8000;
-static constexpr uint32_t HOST_IDLE_RECOVERY_INTERVAL_MS = 5000;
 
 enum HidReportId : uint8_t {
   RID_KEYBOARD = 1,
@@ -3954,14 +3953,7 @@ void loop1() {
     return;
   }
   USBHost.task();
-  uint32_t now = millis();
-  uint32_t lastHostActivityMs = telemetry.lastHostReportMs;
-  if (telemetry.lastHostMountMs > lastHostActivityMs) lastHostActivityMs = telemetry.lastHostMountMs;
-  if (telemetry.lastHostRecoverMs > lastHostActivityMs) lastHostActivityMs = telemetry.lastHostRecoverMs;
-  bool idleRecoveryNeeded = mountedKeyboardInterfaceCount() > 0 &&
-    now - lastHostActivityMs >= HOST_IDLE_RECOVERY_INTERVAL_MS;
-
-  if (hostReceiveRecoveryRequested || idleRecoveryNeeded) {
+  if (hostReceiveRecoveryRequested) {
     hostReceiveRecoveryRequested = false;
     recoverHostReceiveTransfers();
     USBHost.task();
