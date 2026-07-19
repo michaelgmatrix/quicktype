@@ -301,6 +301,12 @@
       font-weight: 900;
     }
 
+    .secondary-button.expansions-paused {
+      color: #fff;
+      background: var(--warn);
+      border-color: var(--warn);
+    }
+
     .nav-label,
     .brand-copy,
     #connectionStatus {
@@ -547,6 +553,12 @@
       overflow: auto;
     }
 
+    #keysPanel .panel-body {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
     .layer-tabs {
       display: inline-grid;
       grid-template-columns: repeat(3, minmax(74px, 1fr));
@@ -686,9 +698,12 @@
 
     .expansion-list {
       display: grid;
+      grid-auto-rows: min-content;
+      align-content: start;
       gap: 0;
       max-height: none;
-      height: 100%;
+      min-height: 0;
+      flex: 1 1 auto;
       overflow: auto;
       border: 1px solid var(--line);
       border-radius: var(--radius-small);
@@ -1338,6 +1353,7 @@
             <button id="connectButton" class="secondary-button" type="button">Connect</button>
             <button id="readButton" class="secondary-button" type="button">Read</button>
             <button id="writeButton" class="secondary-button" type="button">Write</button>
+            <button id="toggleExpansionsButton" class="secondary-button" type="button">Pause Expansions</button>
             <button id="telemetryButton" class="secondary-button" type="button">Telemetry</button>
             <button id="readClockButton" class="secondary-button" type="button">Read Clock</button>
             <button id="syncClockButton" class="secondary-button" type="button">Sync Clock</button>
@@ -1613,6 +1629,7 @@
       deviceInfo: null,
       isConnected: false,
       configDirty: false,
+      expansionsEnabled: true,
       expansionSort: { key: null, direction: "asc" },
       config: createDefaultConfig()
     };
@@ -1645,6 +1662,7 @@
       elements.disconnectButton = document.getElementById("disconnectButton");
       elements.readButton = document.getElementById("readButton");
       elements.writeButton = document.getElementById("writeButton");
+      elements.toggleExpansionsButton = document.getElementById("toggleExpansionsButton");
       elements.telemetryButton = document.getElementById("telemetryButton");
       elements.readClockButton = document.getElementById("readClockButton");
       elements.exportButton = document.getElementById("exportButton");
@@ -1693,6 +1711,7 @@
       elements.disconnectButton.addEventListener("click", disconnectDevice);
       elements.readButton.addEventListener("click", readDeviceConfiguration);
       elements.writeButton.addEventListener("click", writeDeviceConfiguration);
+      elements.toggleExpansionsButton.addEventListener("click", toggleDeviceExpansions);
       elements.telemetryButton.addEventListener("click", readDeviceTelemetry);
       elements.readClockButton.addEventListener("click", readDeviceClock);
       elements.exportButton.addEventListener("click", exportConfiguration);
@@ -1829,6 +1848,7 @@
       }
 
       appState.deviceInfo = response.data || {};
+      appState.expansionsEnabled = appState.deviceInfo.expansionsEnabled !== false;
       appState.lastKeyPressCount = null;
       updateDeviceControls();
       logActivity(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
@@ -1970,6 +1990,23 @@
       } catch (error) {
         logActivity(`Write failed: ${error.message}`);
         showToast(`Write failed: ${error.message}`, "error");
+      }
+    }
+
+    async function toggleDeviceExpansions() {
+      if (!ensureConnected("change expansion state")) return;
+
+      const enabled = !appState.expansionsEnabled;
+      try {
+        const response = await sendDeviceCommand("set-expansions-enabled", { enabled });
+        appState.expansionsEnabled = response.data?.expansionsEnabled ?? enabled;
+        updateDeviceControls();
+        const state = appState.expansionsEnabled ? "resumed" : "paused";
+        logActivity(`Expansions ${state}.`);
+        showToast(`Expansions ${state}.`);
+      } catch (error) {
+        logActivity(`Could not change expansion state: ${error.message}`);
+        showToast("This device firmware does not support pausing expansions yet.", "error");
       }
     }
 
@@ -2184,6 +2221,13 @@
       elements.disconnectButton.disabled = !appState.isConnected;
       elements.readButton.disabled = !appState.isConnected;
       elements.writeButton.disabled = !appState.isConnected;
+      elements.toggleExpansionsButton.disabled = !appState.isConnected;
+      elements.toggleExpansionsButton.textContent = appState.expansionsEnabled ? "Pause Expansions" : "Resume Expansions";
+      elements.toggleExpansionsButton.classList.toggle("expansions-paused", !appState.expansionsEnabled);
+      elements.toggleExpansionsButton.setAttribute("aria-pressed", String(!appState.expansionsEnabled));
+      elements.toggleExpansionsButton.title = appState.expansionsEnabled
+        ? "Temporarily stop QuickType from converting triggers. Saved rules are unchanged."
+        : "Expansion triggers are paused; click to resume them.";
       elements.telemetryButton.disabled = !appState.isConnected;
       elements.readClockButton.disabled = !appState.isConnected;
       elements.syncClockButton.disabled = !appState.isConnected;

@@ -45,7 +45,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.64"; // v0.2.64: Support inline double-brace keystrokes and left/right modifier chords
+static constexpr char FIRMWARE_VERSION[] = "0.2.65"; // v0.2.65: Runtime pause/resume control for configured expansions
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 48;
@@ -240,6 +240,7 @@ static size_t configRuleCount = 0;
 static ConfigPlaceholder configPlaceholders[MAX_CONFIG_PLACEHOLDERS];
 static size_t configPlaceholderCount = 0;
 static bool storedConfigurationLoaded = false;
+static bool expansionsEnabled = true;
 static String serialInputLine;
 static bool serialInputOverflow = false;
 static String typedBuffer;
@@ -565,6 +566,7 @@ void addTelemetryToJson(JsonObject target) {
   target["tinyUsbSuspended"] = TinyUSBDevice.suspended();
   target["nativeHidReady"] = usb_hid.ready();
   target["storedConfig"] = storedConfigurationLoaded;
+  target["expansionsEnabled"] = expansionsEnabled;
   target["activeRules"] = activeRuleCount();
   target["compiledRules"] = configRuleCount;
   target["hostInterfaces"] = mountedHostInterfaceCount();
@@ -2040,7 +2042,7 @@ void handleKeyboardReport(hid_keyboard_report_t const* report) {
       continue;
     }
 
-    if (storedConfigurationLoaded) {
+    if (storedConfigurationLoaded && expansionsEnabled) {
       if (processPhysicalKeyRule(keycode)) {
         interceptedPhysicalKey = true;
         break;
@@ -2066,7 +2068,7 @@ void handleKeyboardReport(hid_keyboard_report_t const* report) {
     return;
   }
 
-  if (storedConfigurationLoaded) {
+  if (storedConfigurationLoaded && expansionsEnabled) {
     for (uint8_t i = 0; i < 6; i++) {
       uint8_t keycode = report->keycode[i];
       if (keycode == 0 || keyWasInPreviousReport(keycode)) {
@@ -2969,6 +2971,7 @@ void sendProtocolInfo(uint32_t id) {
   response["data"]["configSchema"] = CONFIG_SCHEMA_VERSION;
   response["data"]["hasConfiguration"] = storedConfigurationLoaded;
   response["data"]["ruleCount"] = activeRuleCount();
+  response["data"]["expansionsEnabled"] = expansionsEnabled;
   sendProtocolJson(response);
 }
 
@@ -3077,6 +3080,24 @@ void handleProtocolLine(const String& line) {
 
   if (strcmp(command, "get-telemetry") == 0) {
     sendProtocolTelemetry(id);
+    return;
+  }
+
+  if (strcmp(command, "set-expansions-enabled") == 0) {
+    if (!request["enabled"].is<bool>()) {
+      sendProtocolError(id, "INVALID_STATE", "The enabled value must be true or false.");
+      return;
+    }
+    expansionsEnabled = request["enabled"].as<bool>();
+    typedBuffer = "";
+    typedSources = "";
+    JsonDocument response;
+    response["qt"] = CONFIG_SCHEMA_VERSION;
+    response["id"] = id;
+    response["ok"] = true;
+    response["type"] = "expansions-state";
+    response["data"]["expansionsEnabled"] = expansionsEnabled;
+    sendProtocolJson(response);
     return;
   }
 
