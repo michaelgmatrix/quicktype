@@ -1341,7 +1341,7 @@
 
       <p class="sidebar-footer">
         Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.
-        <span class="build-stamp">Build 2026-07-21 09:04:44 PDT</span>
+        <span class="build-stamp">Build 2026-07-21 10:42:45 PDT</span>
       </p>
     </aside>
 
@@ -1618,8 +1618,6 @@
       selectedExpansionRule: "R01",
       selectedKeypadRule: "K_KP_NUMLOCK",
       configMode: "keyboard",
-      keypadPollInFlight: false,
-      lastKeyPressCount: null,
       port: null,
       reader: null,
       writer: null,
@@ -1747,7 +1745,6 @@
         });
       });
 
-      window.setInterval(pollPhysicalKeySelection, 350);
     }
 
     function initializeNavigation() {
@@ -1854,7 +1851,6 @@
       appState.deviceInfo = response.data || {};
       appState.expansionsEnabled = appState.deviceInfo.expansionsEnabled !== false;
       appState.keypadExpansionsEnabled = appState.deviceInfo.keypadExpansionsEnabled !== false;
-      appState.lastKeyPressCount = null;
       updateDeviceControls();
       logActivity(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
       showToast(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
@@ -2313,7 +2309,6 @@
       appState.selectedRule = mode === "keypad"
         ? appState.selectedKeypadRule
         : appState.selectedExpansionRule;
-      appState.lastKeyPressCount = null;
       renderAllConfigurationViews();
     }
 
@@ -2324,7 +2319,7 @@
       });
       elements.configModeTitle.textContent = keypadMode ? "Numeric Keypad" : "Trigger Strings";
       elements.configModeDescription.textContent = keypadMode
-        ? "Click a key or press it on the connected keypad to edit its action."
+        ? "Click a key to edit its action."
         : "Replace trigger strings typed on a full keyboard or keypad.";
       elements.addExpansionButton.classList.toggle("hidden", keypadMode);
 
@@ -2378,7 +2373,7 @@
     function renderNumericKeypad() {
       elements.keyGrid.className = "keypad-shell";
       elements.keyGrid.innerHTML = `
-        <p class="keypad-help">Assigned keys show a blue dot. Unassigned keys pass through normally. Physical-key selection requires current firmware and an active device connection.</p>
+        <p class="keypad-help">Assigned keys show a blue dot. Unassigned keys pass through normally. Click a key to edit its action.</p>
         <div class="numeric-keypad" aria-label="19-key numeric keypad"></div>
       `;
       const keypad = elements.keyGrid.querySelector(".numeric-keypad");
@@ -2404,36 +2399,6 @@
 
     function keypadRuleId(keyName) {
       return `K_${keyName}`;
-    }
-
-    function keypadKeyForUsage(usage) {
-      return KEYPAD_KEYS.find((key) => key.usage === Number(usage));
-    }
-
-    async function pollPhysicalKeySelection() {
-      if (appState.configMode !== "keypad" || !appState.isConnected || appState.keypadPollInFlight || !appState.writer) return;
-      appState.keypadPollInFlight = true;
-      try {
-        const response = await sendDeviceCommand("get-telemetry", {}, 2000);
-        const counters = response.data?.counters || {};
-        const count = Number(counters.keyPresses ?? counters.keyboardReports ?? 0);
-        if (appState.lastKeyPressCount === null) {
-          appState.lastKeyPressCount = count;
-          return;
-        }
-        if (count !== appState.lastKeyPressCount) {
-          appState.lastKeyPressCount = count;
-          const key = keypadKeyForUsage(response.data?.last?.keyUsage);
-          if (key) {
-            selectKey(keypadRuleId(key.id));
-            showToast(`Editing ${key.label}.`);
-          }
-        }
-      } catch (error) {
-        if (appState.isConnected) logActivity(`Keypad selection polling paused: ${error.message}`);
-      } finally {
-        appState.keypadPollInFlight = false;
-      }
     }
 
     function getExpansionRows() {
