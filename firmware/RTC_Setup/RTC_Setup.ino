@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.81
+// QuickType firmware version: 0.2.84
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -45,7 +45,9 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.81"; // v0.2.81: Preserve working v0.2.68 host timing and recover an idle stall
+static constexpr char FIRMWARE_VERSION[] = "0.2.84"; // v0.2.84: Use the upstream-tested 240 MHz PIO host clock
+static_assert(F_CPU == 240000000UL,
+              "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 48;
@@ -255,8 +257,6 @@ static String clockTimezoneName = "Local";
 static int clockTimezoneOffsetMinutes = 0;
 static uint32_t lastSerialStatePollMs = 0;
 static bool watchdogStarted = false;
-static uint32_t watchdogHostFrame = 0;
-static uint32_t watchdogHostProgressMs = 0;
 
 // Forward declarations
 uint8_t decToBcd(int value);
@@ -501,20 +501,6 @@ bool sendProtocolJson(JsonDocument& response) {
 void serviceNativeUsb() {
   if (watchdogStarted) {
     watchdog_update();
-    uint32_t const frame = pio_usb_host_get_frame_number();
-    uint32_t const now = millis();
-    if (frame != watchdogHostFrame) {
-      watchdogHostFrame = frame;
-      watchdogHostProgressMs = now;
-    }
-    // The working v0.2.68 host can permanently stop producing frames after
-    // several idle minutes. Reboot only after a keyboard has mounted and the
-    // native laptop-facing USB device is already stable.
-    if (now >= 15000 && TinyUSBDevice.mounted() &&
-        telemetry.hostMountCount > telemetry.hostUnmountCount &&
-        now - watchdogHostProgressMs >= 2000) {
-      watchdog_reboot(0, 0, 10);
-    }
   }
   TinyUSB_Device_Task();
 }
@@ -3940,8 +3926,6 @@ void setup() {
     Serial.println("Ready. Open Notepad and test keypad macros.");
   }
 
-  watchdogHostFrame = pio_usb_host_get_frame_number();
-  watchdogHostProgressMs = millis();
   watchdog_enable(WATCHDOG_TIMEOUT_MS, true);
   watchdogStarted = true;
 }
@@ -3975,8 +3959,9 @@ void loop1() {
     delay(1);
     return;
   }
-  // Match the known-working v0.2.68 host scheduling.
-  USBHost.task();
+  // Return periodically so hostStackSuspended is observed promptly during
+  // flash writes. Idle interrupt-IN transfers remain pending in the HCD.
+  USBHost.task(1);
 
   pollMountedHidReports();
 }

@@ -17,9 +17,9 @@ Use these board menu settings:
 
 - **USB Stack:** Adafruit TinyUSB
 - **Flash Size:** 2 MB with a LittleFS partition (the 256 KB option is recommended)
-- **CPU Speed:** default 200 MHz
+- **CPU Speed:** 240 MHz (overclock)
 
-The validated Logitech K360 receiver build uses the Seeed XIAO RP2040 profile at its default 200 MHz on the generic RP2040-Zero hardware. The DS3231 uses `GPIO6`/`GPIO7` for RTC tokens. A build with **2 MB (no FS)** cannot save website configuration.
+PIO USB requires a clock that is an exact multiple of 120 MHz. This candidate uses 240 MHz because that is the exact frequency used for upstream PR #206's 62-hour host soak; 120 MHz failed to enumerate the Logitech receiver on the QuickType test hardware. The 240 MHz setting is an RP2040 overclock and therefore still requires device-level qualification. The DS3231 uses `GPIO6`/`GPIO7` for RTC tokens. A build with **2 MB (no FS)** cannot save website configuration.
 
 ## Website programming
 
@@ -59,4 +59,4 @@ The configurator bullet buttons insert `•`, `■`, `□`, `●`, and `◆`. Fi
 
 Typing the hidden `;;;` trigger outputs the active typed expansions followed by the configured keypad actions. Each keypad action is shown as its key and label.
 
-The receiver starts in report protocol and boot-capable keyboard interfaces switch to boot protocol when mounted, matching the validated v0.2.68 host sequence. PIO USB host work stays on the dedicated second core while the main core emits expansions. A pending interrupt-IN transfer is normal while the keyboard is idle and is never aborted on a timer. The PC keyboard LED state is retained for Alt-code handling but is not sent back to the Logitech receiver. The main core preserves FIFO order through the laptop-facing HID endpoint so a queued key-up report cannot overwrite its preceding key-down report. If a mounted keyboard's PIO USB frame counter stops for two seconds after startup, the RP2040 reboots automatically instead of leaving the inline keyboard permanently dead.
+The receiver starts in report protocol and boot-capable keyboard interfaces switch to boot protocol when mounted. PIO USB host work stays on the dedicated second core while the main core emits expansions. A pending interrupt-IN transfer is normal while the keyboard is idle and is never aborted on a timer. The vendored PIO host is pinned to upstream PR #206 commit `38cf1166c13999d6316850643c21c5796f503414`, which bounds the host's TX/RX waits, removes a racy EOP program-counter poll, resets the EOP receiver state machine per transaction, and debounces short SE0 glitches. A downstream-host stall must never reboot the entire RP2040 or deliberately disconnect the laptop-facing keyboard. The PC keyboard LED state is retained for Alt-code handling but is not sent back to the Logitech receiver. The main core preserves FIFO order through the laptop-facing HID endpoint so a queued key-up report cannot overwrite its preceding key-down report.
