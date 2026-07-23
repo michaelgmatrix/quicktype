@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.92 (2026-07-23)
+// QuickType firmware version: 0.2.93 (2026-07-23)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -46,13 +46,13 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.92"; // v0.2.92: Add {dump_hardware} token to output comprehensive hardware diagnostic report
+static constexpr char FIRMWARE_VERSION[] = "0.2.93"; // v0.2.93: Increase MAX_CONFIG_RULES to 128
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr uint8_t PROTOCOL_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
-static constexpr size_t MAX_CONFIG_RULES = 48;
+static constexpr size_t MAX_CONFIG_RULES = 128;
 static constexpr size_t MAX_RULE_STEPS = 8;
 static constexpr size_t MAX_CONFIG_PLACEHOLDERS = 32;
 static constexpr size_t MAX_TRIGGER_BUFFER = 64;
