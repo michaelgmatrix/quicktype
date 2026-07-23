@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-23T12:15:40-07:00">
+  <meta name"quicktype-build" content"2026-07-23T12:23:59-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,7 +23,7 @@
       fetch(checkUrl, { cache: "no-store" })
         .then((response) => response.ok ? response.text() : Promise.reject(new Error(`HTTP ${response.status}`)))
         .then((html) => {
-          const latestBuild = html.match(/<meta name="quicktype-build" content="([^"]+)"/)?.[1];
+          const latestBuild = html.match(/<meta name"quicktype-build" content"2026-07-23T12:23:59-07:00"]+)"/)?.[1];
           if (!latestBuild || latestBuild === currentBuild) return;
 
           const freshUrl = new URL(window.location.href);
@@ -1909,7 +1909,16 @@
 
     function renderBuildStamp() {
       const build = document.querySelector('meta[name="quicktype-build"]')?.content;
-      elements.buildStamp.textContent = build ? `Build ${build.replace("T", " ")}` : "Build unknown";
+      if (build && build !== "BUILD_TIMESTAMP") {
+        elements.buildStamp.textContent = `Build ${build.replace("T", " ")}`;
+      } else if (document.lastModified) {
+        const modDate = new Date(document.lastModified);
+        const pad = (n) => String(n).padStart(2, "0");
+        const formatted = `${modDate.getFullYear()}-${pad(modDate.getMonth() + 1)}-${pad(modDate.getDate())} ${pad(modDate.getHours())}:${pad(modDate.getMinutes())}:${pad(modDate.getSeconds())}`;
+        elements.buildStamp.textContent = `Build ${formatted}`;
+      } else {
+        elements.buildStamp.textContent = "Build unknown";
+      }
     }
 
     function bindEvents() {
