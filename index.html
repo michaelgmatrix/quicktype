@@ -7,8 +7,11 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-23T12:02:45-07:00">
+  <meta name="quicktype-build" content="2026-07-23T12:11:30-07:00">
   <title>QuickType Configurator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
   <script>
     (() => {
       if (!/^https?:$/.test(window.location.protocol)) return;
@@ -49,10 +52,14 @@
       --warn: #a05a00;
       --danger: #b73333;
       --ok: #207044;
-      --shadow: 0 18px 50px rgba(31, 43, 54, 0.12);
+      --shadow: 0 14px 38px -4px rgba(31, 43, 54, 0.08), 0 4px 12px -2px rgba(31, 43, 54, 0.04);
       --radius: 8px;
       --radius-small: 6px;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    code, kbd, pre, .build-stamp, .token-button, .placeholder-item code, #triggerPattern, #macroText {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
     [data-theme="dark"] {
@@ -644,6 +651,8 @@
 
     .panel {
       background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border: 1px solid var(--line);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
@@ -778,10 +787,10 @@
       grid-template-rows: repeat(5, minmax(58px, 1fr));
       gap: 8px;
       padding: 12px;
-      border: 1px solid var(--line);
+      border: 1px solid var(--line-strong);
       border-radius: var(--radius);
-      background: #e9eef2;
-      box-shadow: inset 0 1px 2px rgba(31,43,54,0.08);
+      background: #e2e8f0;
+      box-shadow: inset 0 2px 4px rgba(15, 23, 42, 0.08);
     }
 
     .keypad-key {
@@ -790,14 +799,15 @@
       max-width: 100%;
       min-height: 58px;
       padding: 8px 5px;
-      border: 1px solid #aeb9c3;
+      border: 1px solid #cbd5e1;
       border-radius: 9px;
       color: var(--ink);
-      background: linear-gradient(#fff, #f4f7f9);
-      box-shadow: 0 2px 0 #aeb9c3;
+      background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
+      box-shadow: 0 3px 0 #cbd5e1, 0 4px 10px rgba(0,0,0,0.05);
       font-size: 1rem;
       font-weight: 900;
       overflow: hidden;
+      transition: transform 100ms ease, box-shadow 100ms ease, background 150ms ease, border-color 150ms ease;
     }
 
     .keypad-label {
@@ -816,8 +826,13 @@
     .keypad-key.active {
       border-color: var(--accent);
       background: var(--accent-soft);
-      box-shadow: 0 2px 0 var(--accent);
+      box-shadow: 0 3px 0 var(--accent);
       transform: none;
+    }
+
+    .keypad-key:active {
+      transform: translateY(2px);
+      box-shadow: 0 1px 0 var(--accent);
     }
 
     .keypad-key.assigned::after {
@@ -829,6 +844,7 @@
       height: 7px;
       border-radius: 50%;
       background: var(--accent);
+      box-shadow: 0 0 6px var(--accent);
     }
 
     .keypad-key small {
@@ -1220,18 +1236,20 @@
 
     .token-button {
       min-height: 32px;
-      border-radius: 999px;
-      background: #ffffff;
+      border-radius: 6px;
+      background: var(--panel-soft);
       color: var(--accent-strong);
       border: 1px solid var(--line);
       padding: 0 11px;
       font-size: 0.78rem;
-      font-weight: 900;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
     }
 
     .token-button:hover {
       border-color: var(--accent);
-      box-shadow: 0 8px 18px rgba(9,107,114,0.12);
+      box-shadow: 0 4px 12px rgba(9,107,114,0.15);
       transform: translateY(-1px);
     }
 
