@@ -106,7 +106,8 @@
       flex-direction: column;
       gap: 22px;
       border-right: 1px solid rgba(255,255,255,0.08);
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
       transition: padding 180ms ease;
     }
 
@@ -565,7 +566,9 @@
     #keysPanel .panel-body {
       display: flex;
       flex-direction: column;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
+      scrollbar-gutter: stable;
     }
 
     .layer-tabs {
@@ -656,6 +659,8 @@
 
     .keypad-key {
       position: relative;
+      min-width: 0;
+      max-width: 100%;
       min-height: 58px;
       padding: 8px 5px;
       border: 1px solid #aeb9c3;
@@ -665,6 +670,19 @@
       box-shadow: 0 2px 0 #aeb9c3;
       font-size: 1rem;
       font-weight: 900;
+      overflow: hidden;
+    }
+
+    .keypad-label {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .keypad-key.backspace .keypad-label {
+      font-size: 0.58rem;
+      letter-spacing: -0.02em;
     }
 
     .keypad-key:hover,
@@ -1437,6 +1455,7 @@
               <button id="addExpansionButton" class="secondary-button" type="button">Add Expansion</button>
             </div>
             <div id="keyGrid" class="expansion-list" aria-label="Expansion list"></div>
+            <p id="savedExpansionsHint" class="helper-text">To type a list of all saved expansions, enter <kbd>;;;</kbd> followed by <kbd>Space</kbd>, <kbd>Tab</kbd>, <kbd>Enter</kbd>, or <kbd>Esc</kbd>.</p>
           </div>
         </div>
 
@@ -1457,7 +1476,7 @@
                 <div class="field" id="triggerPatternField">
                   <label id="triggerPatternLabel" for="triggerPattern">Trigger String</label>
                   <input id="triggerPattern" name="triggerPattern" type="text" maxlength="48" autocomplete="off" spellcheck="false" aria-describedby="triggerPatternHelp">
-                  <p id="triggerPatternHelp" class="helper-text trigger-help">To expand, follow the trigger with <kbd>Space</kbd>, <kbd>Tab</kbd>, <kbd>Enter</kbd>, or <kbd>Esc</kbd>. To type a list of all saved expansions, type <kbd>;;;</kbd> followed by <kbd>Space</kbd>, <kbd>Tab</kbd>, <kbd>Enter</kbd>, or <kbd>Esc</kbd>.</p>
+                  <p id="triggerPatternHelp" class="helper-text trigger-help">To expand, follow the trigger with <kbd>Space</kbd>, <kbd>Tab</kbd>, <kbd>Enter</kbd>, or <kbd>Esc</kbd>.</p>
                 </div>
 
                 <div class="field">
@@ -2376,6 +2395,7 @@
 
     function renderKeyGrid() {
       const keypadMode = appState.configMode === "keypad";
+      document.getElementById("savedExpansionsHint").classList.toggle("hidden", keypadMode);
       document.querySelectorAll("[data-config-mode]").forEach((button) => {
         button.classList.toggle("active", button.dataset.configMode === appState.configMode);
       });
@@ -2446,12 +2466,13 @@
         button.classList.toggle("active", ruleId === appState.selectedRule);
         button.classList.toggle("assigned", mapping.type !== "disabled");
         button.classList.toggle("tall", Boolean(key.tall));
+        button.classList.toggle("backspace", key.id === "BACKSPACE");
         button.style.gridRow = key.tall ? `${key.row} / span 2` : String(key.row);
         button.style.gridColumn = String(key.column);
         button.title = mapping.type === "disabled"
           ? `${key.id}: unassigned (passes through)`
           : `${key.id}: ${mapping.label || mapping.type}`;
-        button.innerHTML = `${escapeHtml(key.label)}${key.sublabel ? `<small>${escapeHtml(key.sublabel)}</small>` : ""}`;
+        button.innerHTML = `<span class="keypad-label">${escapeHtml(key.label)}</span>${key.sublabel ? `<small>${escapeHtml(key.sublabel)}</small>` : ""}`;
         button.addEventListener("click", () => selectKey(ruleId));
         keypad.appendChild(button);
       });
