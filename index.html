@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-23T08:30:04-07:00">
+  <meta name="quicktype-build" content="2026-07-23T08:33:02-07:00">
   <title>QuickType Configurator</title>
   <script>
     (() => {
@@ -2742,7 +2742,7 @@
 
     function scrubTemplateBullets() {
       const textarea = elements.macroText;
-      const unsupportedBulletPattern = /^([ \t]*)([·‣⁃∙▪▫■□●○◉◆◇◦❖➢➤])(?=[ \t\u00a0])/gm;
+      const unsupportedBulletPattern = /^([^\S\r\n]*)([\u00b7\u2023\u2043\u2219\u25a0-\u25a3\u25aa-\u25ab\u25c6-\u25c7\u25c9\u25cb\u25cf\u25d8\u25e6\u25fb-\u25fe\u2610-\u2612\u2756\u27a2\u27a4\u2b1b-\u2b1c\uf06e-\uf06f\uf0a7\uf0b7])/gm;
       let replacementCount = 0;
       const scrubbedText = textarea.value.replace(unsupportedBulletPattern, (match, indentation) => {
         replacementCount += 1;
