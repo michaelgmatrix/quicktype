@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name"quicktype-build" content"2026-07-23T13:27:52-07:00">
+  <meta name"quicktype-build" content"2026-07-23T13:44:41-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -375,9 +375,20 @@
     .sidebar-section h2 {
       color: #7ed3d2;
       font-size: 0.74rem;
-      margin: 0 0 10px;
+      margin: 0;
       letter-spacing: 0.08em;
       text-transform: uppercase;
+    }
+
+    .storage-capacity-badge {
+      font-size: 0.7rem;
+      font-weight: 800;
+      color: #0ea5e9;
+      background: rgba(14, 165, 233, 0.15);
+      border: 1px solid rgba(14, 165, 233, 0.3);
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-family: 'JetBrains Mono', monospace;
     }
 
     .sidebar-list {
@@ -1522,7 +1533,10 @@
       </section>
 
       <nav class="sidebar-section" aria-label="Configurator sections">
-        <h2>Workspace</h2>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+          <h2>Workspace</h2>
+          <span id="storageCapacityBadge" class="storage-capacity-badge" title="Remaining storage for expansion rules">100% remaining</span>
+        </div>
         <ul class="sidebar-list">
           <li><button class="active" type="button" data-tab="expansionsTab" title="Expansions"><span class="nav-icon" aria-hidden="true">Aa</span><span class="nav-label">Expansions</span></button></li>
           <li><button type="button" data-tab="placeholdersTab" title="Placeholders"><span class="nav-icon" aria-hidden="true">{ }</span><span class="nav-label">Placeholders</span></button></li>
@@ -1853,6 +1867,7 @@
       renderTokenGroups();
       renderRtcFunctions();
       updateEditor();
+      updateCapacityBadge();
       updateDeviceControls();
       setConfigDirty(false);
       logActivity("QuickType configurator ready.");
@@ -1863,6 +1878,7 @@
       elements.statusDot = document.getElementById("statusDot");
       elements.themeToggleButton = document.getElementById("themeToggleButton");
       elements.cheatsheetButton = document.getElementById("cheatsheetButton");
+      elements.storageCapacityBadge = document.getElementById("storageCapacityBadge");
       elements.navToggleButton = document.getElementById("navToggleButton");
       elements.connectionStatus = document.getElementById("connectionStatus");
       elements.connectButton = document.getElementById("connectButton");
@@ -2522,46 +2538,62 @@
               <button type="button" class="token-button" onclick="insertToken('{date}')">{date}</button>
               <button type="button" class="token-button" onclick="insertToken('{date+1d}')">{date+1d}</button>
               <button type="button" class="token-button" onclick="insertToken('{date-7d}')">{date-7d}</button>
+              <button type="button" class="token-button" onclick="insertToken('{date+1w}')">{date+1w}</button>
+              <button type="button" class="token-button" onclick="insertToken('{date+1m}')">{date+1m}</button>
+              <button type="button" class="token-button" onclick="insertToken('{date+1y}')">{date+1y}</button>
               <button type="button" class="token-button" onclick="insertToken('{iso_date}')">{iso_date}</button>
               <button type="button" class="token-button" onclick="insertToken('{iso_date+1d}')">{iso_date+1d}</button>
               <button type="button" class="token-button" onclick="insertToken('{date_short}')">{date_short}</button>
-              <button type="button" class="token-button" onclick="insertToken('{date_short-1d}')">{date_short-1d}</button>
               <button type="button" class="token-button" onclick="insertToken('{time_24}')">{time_24}</button>
               <button type="button" class="token-button" onclick="insertToken('{time_12}')">{time_12}</button>
-              <button type="button" class="token-button" onclick="insertToken('{year}')">{year}</button>
-              <button type="button" class="token-button" onclick="insertToken('{month}')">{month}</button>
-              <button type="button" class="token-button" onclick="insertToken('{day}')">{day}</button>
-              <button type="button" class="token-button" onclick="insertToken('{hour_24}')">{hour_24}</button>
-              <button type="button" class="token-button" onclick="insertToken('{hour_12}')">{hour_12}</button>
-              <button type="button" class="token-button" onclick="insertToken('{minute}')">{minute}</button>
-              <button type="button" class="token-button" onclick="insertToken('{second}')">{second}</button>
-              <button type="button" class="token-button" onclick="insertToken('{ampm}')">{ampm}</button>
-              <button type="button" class="token-button" onclick="insertToken('{timezone}')">{timezone}</button>
-              <button type="button" class="token-button" onclick="insertToken('{timezone_offset}')">{timezone_offset}</button>
+              <button type="button" class="token-button" onclick="insertToken('{week_number}')">{week_number}</button>
+              <button type="button" class="token-button" onclick="insertToken('{day_of_year}')">{day_of_year}</button>
+              <button type="button" class="token-button" onclick="insertToken('{quarter}')">{quarter}</button>
             </div>
           </div>
 
           <div>
-            <h4 style="margin:0 0 6px; font-size:0.88rem; color:var(--accent-strong);">Special Utility Tokens</h4>
+            <h4 style="margin:0 0 6px; font-size:0.88rem; color:var(--accent-strong);">Navigation, Delays & Repetition</h4>
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+              <button type="button" class="token-button" onclick="insertToken('{delay:150}')">{delay:150}</button>
+              <button type="button" class="token-button" onclick="insertToken('{key:left*3}')">{key:left*3}</button>
+              <button type="button" class="token-button" onclick="insertToken('{key:right*3}')">{key:right*3}</button>
+              <button type="button" class="token-button" onclick="insertToken('{key:backspace*5}')">{key:backspace*5}</button>
+              <button type="button" class="token-button" onclick="insertToken('{repeat:20:-}')">{repeat:20:-}</button>
+            </div>
+          </div>
+
+          <div>
+            <h4 style="margin:0 0 6px; font-size:0.88rem; color:var(--accent-strong);">Key Chords & Combinations</h4>
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+              <button type="button" class="token-button" onclick="insertToken('{combo:CTRL+SHIFT+V}')">{combo:CTRL+SHIFT+V}</button>
+              <button type="button" class="token-button" onclick="insertToken('{combo:WIN+ALT+K}')">{combo:WIN+ALT+K}</button>
+              <button type="button" class="token-button" onclick="insertToken('{combo:ALT+F4}')">{combo:ALT+F4}</button>
+            </div>
+          </div>
+
+          <div>
+            <h4 style="margin:0 0 6px; font-size:0.88rem; color:var(--accent-strong);">Random Snippets & Case Transformers</h4>
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+              <button type="button" class="token-button" onclick="insertToken('{random:Option A|Option B}')">{random:Option A|Option B}</button>
+              <button type="button" class="token-button" onclick="insertToken('{uppercase:name}')">{uppercase:name}</button>
+              <button type="button" class="token-button" onclick="insertToken('{lowercase:name}')">{lowercase:name}</button>
+              <button type="button" class="token-button" onclick="insertToken('{titlecase:name}')">{titlecase:name}</button>
+            </div>
+          </div>
+
+          <div>
+            <h4 style="margin:0 0 6px; font-size:0.88rem; color:var(--accent-strong);">Special Utility Tokens & Shortcuts</h4>
             <div style="display:flex; flex-wrap:wrap; gap:6px;">
               <button type="button" class="token-button" onclick="insertToken('{cursor}')">{cursor}</button>
               <button type="button" class="token-button" onclick="insertToken('{clipboard}')">{clipboard}</button>
+              <button type="button" class="token-button" onclick="insertToken('{dump_expansions}')">{dump_expansions}</button>
               <button type="button" class="token-button" onclick="insertToken('{enter}')">{enter}</button>
               <button type="button" class="token-button" onclick="insertToken('{tab}')">{tab}</button>
-            </div>
-          </div>
-
-          <div>
-            <h4 style="margin:0 0 6px; font-size:0.88rem; color:var(--accent-strong);">Keystroke Shortcuts</h4>
-            <div style="display:flex; flex-wrap:wrap; gap:6px;">
               <button type="button" class="token-button" onclick="insertToken('{{WIN}}')">{{WIN}}</button>
               <button type="button" class="token-button" onclick="insertToken('{{CTRL}}')">{{CTRL}}</button>
               <button type="button" class="token-button" onclick="insertToken('{{ALT}}')">{{ALT}}</button>
               <button type="button" class="token-button" onclick="insertToken('{{SHIFT}}')">{{SHIFT}}</button>
-              <button type="button" class="token-button" onclick="insertToken('{{ENTER}}')">{{ENTER}}</button>
-              <button type="button" class="token-button" onclick="insertToken('{{TAB}}')">{{TAB}}</button>
-              <button type="button" class="token-button" onclick="insertToken('{{ESC}}')">{{ESC}}</button>
-              <button type="button" class="token-button" onclick="insertToken('{{WIN+ALT+K}}')">{{WIN+ALT+K}}</button>
             </div>
           </div>
           <p style="margin:4px 0 0; font-size:0.78rem; color:var(--muted);">Click any token to insert into the active macro editor field.</p>
@@ -2733,7 +2765,25 @@
 
     function setConfigDirty(isDirty) {
       appState.configDirty = Boolean(isDirty);
-      updateWriteDirtyIndicator();
+      elements.writeButton.classList.toggle("write-dirty", appState.configDirty);
+      elements.writeButton.title = appState.configDirty
+        ? "Unsaved changes: Click Write to upload to QuickType hardware"
+        : "Configuration synced with device";
+      elements.writeButton.setAttribute("aria-label", appState.configDirty ? "Write unwritten configuration to QuickType" : "Write configuration");
+      updateCapacityBadge();
+    }
+
+    function updateCapacityBadge() {
+      if (!elements.storageCapacityBadge || !appState.config) return;
+      try {
+        const jsonStr = JSON.stringify(appState.config);
+        const usedBytes = new Blob([jsonStr]).size;
+        const maxBytes = 30000;
+        const remBytes = Math.max(0, maxBytes - usedBytes);
+        const remPercent = Math.max(0, Math.min(100, Math.round((remBytes / maxBytes) * 100)));
+        elements.storageCapacityBadge.textContent = `${remPercent}% remaining`;
+        elements.storageCapacityBadge.title = `${usedBytes} / ${maxBytes} bytes used (${remPercent}% storage remaining)`;
+      } catch {}
     }
 
     function updateWriteDirtyIndicator() {

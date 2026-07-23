@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.89 (2026-07-23)
+// QuickType firmware version: 0.2.91 (2026-07-23)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -45,7 +45,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.89"; // v0.2.89: Add relative date math tokens {date+1d}, {date-7d}, {iso_date+1d}, etc.
+static constexpr char FIRMWARE_VERSION[] = "0.2.91"; // v0.2.91: Add {dump_expansions} token to trigger ;;; expansion dump from any macro or key
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
@@ -2852,7 +2852,8 @@ String rtcTokenValue(const String& token) {
                       token == "day_padded" || token == "year" || token == "year_short" ||
                       token == "hour_24" || token == "hour_12" || token == "minute" ||
                       token == "second" || token == "ampm" || token == "timezone" ||
-                      token == "timezone_offset" || token.startsWith("date:") || isRelativeDate;
+                      token == "timezone_offset" || token == "week_number" || token == "day_of_year" ||
+                      token == "quarter" || token.startsWith("date:") || isRelativeDate;
   if (!isClockToken) {
     return "";
   }
@@ -2866,10 +2867,16 @@ String rtcTokenValue(const String& token) {
     int plusIdx = token.indexOf('+');
     int minusIdx = token.indexOf('-');
     int signIdx = (plusIdx != -1) ? plusIdx : minusIdx;
-    if (signIdx != -1 && token.endsWith("d")) {
+    if (signIdx != -1 && token.length() > signIdx + 1) {
       String prefix = token.substring(0, signIdx);
-      int days = token.substring(signIdx, token.length() - 1).toInt();
-      RtcDateTime calcDate = datePlusDays(now, days);
+      char unit = token[token.length() - 1];
+      int val = token.substring(signIdx, token.length() - 1).toInt();
+      RtcDateTime calcDate = now;
+
+      if (unit == 'd') calcDate = datePlusDays(now, val);
+      else if (unit == 'w') calcDate = datePlusDays(now, val * 7);
+      else if (unit == 'm') calcDate = datePlusMonths(now, val);
+      else if (unit == 'y') calcDate = datePlusYears(now, val);
 
       char calcBuf[80];
       if (prefix == "date") {
@@ -2929,6 +2936,9 @@ String rtcTokenValue(const String& token) {
   else if (token == "ampm") snprintf(buffer, sizeof(buffer), "%s", now.hour >= 12 ? "PM" : "AM");
   else if (token == "timezone") snprintf(buffer, sizeof(buffer), "%s", clockTimezoneName.c_str());
   else if (token == "timezone_offset") snprintf(buffer, sizeof(buffer), "%s", formatTimezoneOffset(clockTimezoneOffsetMinutes).c_str());
+  else if (token == "week_number") snprintf(buffer, sizeof(buffer), "W%02d", getIsoWeekNumber(now));
+  else if (token == "day_of_year") snprintf(buffer, sizeof(buffer), "%d", getDayOfYear(now));
+  else if (token == "quarter") snprintf(buffer, sizeof(buffer), "Q%d", (now.month - 1) / 3 + 1);
   else return "";
 
   return String(buffer);
@@ -3015,6 +3025,101 @@ bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs) {
       if (!sendHidKeyWithDelay(0, HID_KEY_ENTER, keyDelayMs)) return false;
     } else if (token == "clipboard") {
       if (!sendHidKeyWithDelay(KEYBOARD_MODIFIER_LEFTCTRL, HID_KEY_V, keyDelayMs)) return false;
+    } else if (token == "dump_expansions" || token == "dump" || token == "expansion_dump") {
+      if (!outputExpansionListTable()) return false;
+    } else if (token.startsWith("delay:")) {
+      uint32_t ms = token.substring(6).toInt();
+      if (ms > 0 && ms <= 10000) cooperativeDelay(ms);
+    } else if (token.startsWith("key:")) {
+      String keySpec = token.substring(4);
+      int count = 1;
+      int starIdx = keySpec.indexOf('*');
+      if (starIdx != -1) {
+        count = keySpec.substring(starIdx + 1).toInt();
+        keySpec = keySpec.substring(0, starIdx);
+        if (count < 1) count = 1;
+        if (count > 100) count = 100;
+      }
+      keySpec.toLowerCase();
+      uint8_t hidKey = 0;
+      if (keySpec == "left") hidKey = HID_KEY_ARROW_LEFT;
+      else if (keySpec == "right") hidKey = HID_KEY_ARROW_RIGHT;
+      else if (keySpec == "up") hidKey = HID_KEY_ARROW_UP;
+      else if (keySpec == "down") hidKey = HID_KEY_ARROW_DOWN;
+      else if (keySpec == "backspace") hidKey = HID_KEY_BACKSPACE;
+      else if (keySpec == "tab") hidKey = HID_KEY_TAB;
+      else if (keySpec == "enter") hidKey = HID_KEY_ENTER;
+      else if (keySpec == "delete") hidKey = HID_KEY_DELETE;
+      else if (keySpec == "esc" || keySpec == "escape") hidKey = HID_KEY_ESCAPE;
+      else if (keySpec == "home") hidKey = HID_KEY_HOME;
+      else if (keySpec == "end") hidKey = HID_KEY_END;
+      else if (keySpec == "pageup") hidKey = HID_KEY_PAGE_UP;
+      else if (keySpec == "pagedown") hidKey = HID_KEY_PAGE_DOWN;
+
+      if (hidKey != 0) {
+        for (int i = 0; i < count; i++) {
+          if (!sendHidKeyWithDelay(0, hidKey, keyDelayMs)) return false;
+        }
+      }
+    } else if (token.startsWith("repeat:")) {
+      int firstColon = 6;
+      int secondColon = token.indexOf(':', firstColon + 1);
+      if (secondColon != -1) {
+        int repeatCount = token.substring(firstColon + 1, secondColon).toInt();
+        String repeatText = token.substring(secondColon + 1);
+        if (repeatCount > 0 && repeatCount <= 100) {
+          for (int i = 0; i < repeatCount; i++) {
+            if (!typeExpansionTemplate(repeatText, keyDelayMs)) return false;
+          }
+        }
+      }
+    } else if (token.startsWith("combo:")) {
+      String chordSpec = token.substring(6);
+      if (!sendShortcut(chordSpec, keyDelayMs)) return false;
+    } else if (token.startsWith("random:")) {
+      String optionsStr = token.substring(7);
+      int count = 1;
+      for (size_t i = 0; i < optionsStr.length(); i++) {
+        if (optionsStr[i] == '|') count++;
+      }
+      uint32_t chosenIdx = rp2040.hw_rand32() % count;
+      int currIdx = 0;
+      int start = 0;
+      String chosenOpt = optionsStr;
+      while (start < optionsStr.length()) {
+        int barIdx = optionsStr.indexOf('|', start);
+        if (barIdx == -1) {
+          if (currIdx == chosenIdx) chosenOpt = optionsStr.substring(start);
+          break;
+        }
+        if (currIdx == chosenIdx) {
+          chosenOpt = optionsStr.substring(start, barIdx);
+          break;
+        }
+        currIdx++;
+        start = barIdx + 1;
+      }
+      if (!typeExpansionTemplate(chosenOpt, keyDelayMs)) return false;
+    } else if (token.startsWith("uppercase:") || token.startsWith("lowercase:") || token.startsWith("titlecase:")) {
+      int colonIdx = token.indexOf(':');
+      String transformType = token.substring(0, colonIdx);
+      String innerName = token.substring(colonIdx + 1);
+      String val = rtcTokenValue(innerName);
+      if (val.length() == 0) val = customPlaceholderValue(innerName);
+      if (val.length() == 0) val = innerName;
+
+      if (transformType == "uppercase") val.toUpperCase();
+      else if (transformType == "lowercase") val.toLowerCase();
+      else if (transformType == "titlecase") {
+        val.toLowerCase();
+        bool capNext = true;
+        for (size_t i = 0; i < val.length(); i++) {
+          if (isspace(val[i])) capNext = true;
+          else if (capNext && isalpha(val[i])) { val[i] = toupper(val[i]); capNext = false; }
+        }
+      }
+      if (!typeExpansionTemplate(val, keyDelayMs)) return false;
+      if (cursorSeen) charactersAfterCursor += val.length();
     } else {
       String literalToken = "{" + token + "}";
       if (!typeAsciiStringWithDelay(literalToken, keyDelayMs)) return false;
@@ -3467,14 +3572,45 @@ RtcDateTime datePlusDays(RtcDateTime dt, int daysToAdd) {
 
     dt.dow--;
 
-    if (dt.dow < 1) {
-      dt.dow = 7;
-    }
-
-    daysToAdd++;
+RtcDateTime datePlusMonths(RtcDateTime dt, int monthsToAdd) {
+  int totalMonths = dt.month - 1 + monthsToAdd;
+  int yearOffset = totalMonths / 12;
+  int remMonth = totalMonths % 12;
+  if (remMonth < 0) {
+    remMonth += 12;
+    yearOffset -= 1;
   }
-
+  dt.year += yearOffset;
+  dt.month = remMonth + 1;
+  int maxDays = daysInMonth(dt.year, dt.month);
+  if (dt.day > maxDays) dt.day = maxDays;
+  dt.dow = weekdayMonday1(dt.year, dt.month, dt.day);
   return dt;
+}
+
+RtcDateTime datePlusYears(RtcDateTime dt, int yearsToAdd) {
+  dt.year += yearsToAdd;
+  int maxDays = daysInMonth(dt.year, dt.month);
+  if (dt.day > maxDays) dt.day = maxDays;
+  dt.dow = weekdayMonday1(dt.year, dt.month, dt.day);
+  return dt;
+}
+
+int getDayOfYear(RtcDateTime dt) {
+  int days = 0;
+  for (int m = 1; m < dt.month; m++) {
+    days += daysInMonth(dt.year, m);
+  }
+  return days + dt.day;
+}
+
+int getIsoWeekNumber(RtcDateTime dt) {
+  int dayOfYear = getDayOfYear(dt);
+  int dow = weekdayMonday1(dt.year, dt.month, dt.day);
+  int week = (dayOfYear - dow + 10) / 7;
+  if (week < 1) week = 52;
+  else if (week > 52) week = 1;
+  return week;
 }
 
 const char* monthNameFull(int month) {
