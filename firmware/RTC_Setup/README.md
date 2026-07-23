@@ -43,8 +43,7 @@ Supported commands are `ping`, `get-config`, `set-config`, `get-clock`, `set-clo
 ## Rule behavior
 
 - `key`: intercepts a named physical key such as `KP_0`, `KP_ENTER`, or `BACKSPACE`.
-- `suffix` / `instant`: replaces a typed trigger as soon as it matches.
-- `delimiter`: replaces a trigger when followed by space, tab, or Enter and restores that delimiter after the expansion.
+- All configured typed-trigger modes replace a trigger when it is followed by Space, Tab, Enter, or Escape. Space is restored after the expansion; Tab, Enter, and Escape are consumed only when a trigger matches. If any other character follows the trigger, the original text passes through without expansion.
 - `keyboard`, `numpad`, and `any` scopes restrict the source of typed triggers.
 
 The 19-key keypad editor supports Num Lock, `/`, `*`, Backspace, `-`, `+`, Enter, `0` through `9`, `00`, and `.`. Assigned keys run their configured action; unassigned keys continue to the computer normally. While the web configurator is connected, pressing a physical keypad key selects its editor through telemetry polling.
@@ -57,6 +56,6 @@ New rules and rules without an explicit `keyDelay` use a 5 ms key delay by defau
 
 The configurator bullet buttons insert `•`, `■`, `□`, `●`, and `◆`. Firmware converts these UTF-8 symbols to Windows Alt-key sequences when an expansion runs; application and font support can vary, so the variants are provided for compatibility testing.
 
-Typing the hidden `;;;` trigger outputs the active typed expansions followed by the configured keypad actions. Each keypad action is shown as its key and label.
+Typed triggers expand when followed by Space, Tab, Enter, or Escape. Space remains after the expansion; Tab, Enter, and Escape are consumed only when a typed trigger matches. Otherwise those keys are forwarded normally. Typing the hidden `;;;` trigger followed by any of these keys outputs the active typed expansions followed by the configured keypad actions. Each keypad action is shown as its key and label.
 
 The receiver starts in report protocol and boot-capable keyboard interfaces switch to boot protocol when mounted. PIO USB host work stays on the dedicated second core while the main core emits expansions. A pending interrupt-IN transfer is normal while the keyboard is idle and is never aborted on a timer. The vendored PIO host is pinned to upstream PR #206 commit `38cf1166c13999d6316850643c21c5796f503414`, which bounds the host's TX/RX waits, removes a racy EOP program-counter poll, resets the EOP receiver state machine per transaction, and debounces short SE0 glitches. A downstream-host stall must never reboot the entire RP2040 or deliberately disconnect the laptop-facing keyboard. The PC keyboard LED state is retained for Alt-code handling but is not sent back to the Logitech receiver. The main core preserves FIFO order through the laptop-facing HID endpoint so a queued key-up report cannot overwrite its preceding key-down report.

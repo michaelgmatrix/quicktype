@@ -843,7 +843,7 @@
     }
 
     .editor-fields {
-      align-items: end;
+      align-items: start;
     }
 
     .field {
@@ -909,6 +909,28 @@
 
     .template-insert-row .secondary-button {
       min-height: 40px;
+    }
+
+    .bullet-buttons-row {
+      display: flex;
+      align-items: stretch;
+      gap: 6px;
+      width: 100%;
+    }
+
+    .bullet-buttons-row .secondary-button {
+      min-height: 40px;
+    }
+
+    .insert-bullet-btn {
+      flex: 0 0 44px;
+      padding: 0;
+      font-size: 1.2rem;
+    }
+
+    .scrub-bullets-btn {
+      flex: 0 0 auto;
+      padding-inline: 12px;
     }
 
     .two-column {
@@ -1077,6 +1099,17 @@
       font-size: 0.78rem;
       line-height: 1.4;
       margin: 0;
+    }
+
+    .trigger-help kbd {
+      display: inline-block;
+      border: 1px solid var(--line-strong);
+      border-radius: 4px;
+      background: #f8fbfc;
+      color: #334252;
+      font: 700 0.7rem/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      margin: 0 1px;
+      padding: 3px 5px;
     }
 
     .function-list {
@@ -1416,7 +1449,8 @@
               <div class="two-column editor-fields">
                 <div class="field" id="triggerPatternField">
                   <label id="triggerPatternLabel" for="triggerPattern">Trigger String</label>
-                  <input id="triggerPattern" name="triggerPattern" type="text" maxlength="48" autocomplete="off" spellcheck="false">
+                  <input id="triggerPattern" name="triggerPattern" type="text" maxlength="48" autocomplete="off" spellcheck="false" aria-describedby="triggerPatternHelp">
+                  <p id="triggerPatternHelp" class="helper-text trigger-help">To expand, follow the trigger with <kbd>Space</kbd>, <kbd>Tab</kbd>, <kbd>Enter</kbd>, or <kbd>Esc</kbd>.</p>
                 </div>
 
                 <div class="field">
@@ -1434,8 +1468,9 @@
                       <select id="insertFieldSelect"></select>
                     </div>
                   </div>
-                  <div class="bullet-buttons-row" style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; width: 100%;">
-                    <button class="secondary-button insert-bullet-btn" type="button" data-bullet="•" title="Insert Solid Bullet (•)" style="font-size: 1.2rem; min-height: 40px; padding: 0;">•</button>
+                  <div class="bullet-buttons-row" aria-label="Bullet tools">
+                    <button class="secondary-button insert-bullet-btn" type="button" data-bullet="•" aria-label="Insert bullet" title="Insert bullet (•)">•</button>
+                    <button id="scrubBulletsButton" class="secondary-button scrub-bullets-btn" type="button" title="Replace unsupported bullet markers with •">Scrub bullets</button>
                   </div>
                 </div>
                 <textarea id="macroText" name="macroText" maxlength="1024" autocomplete="off" spellcheck="false"></textarea>
@@ -1630,7 +1665,7 @@
       configDirty: false,
       expansionsEnabled: true,
       keypadExpansionsEnabled: true,
-      expansionSort: { key: null, direction: "asc" },
+      expansionSort: { key: "trigger", direction: "asc" },
       config: createDefaultConfig()
     };
 
@@ -1695,6 +1730,7 @@
       elements.macroText = document.getElementById("macroText");
       elements.templateHelp = document.getElementById("templateHelp");
       elements.insertFieldSelect = document.getElementById("insertFieldSelect");
+      elements.scrubBulletsButton = document.getElementById("scrubBulletsButton");
       elements.preDelay = document.getElementById("preDelay");
       elements.keyDelay = document.getElementById("keyDelay");
       elements.rtcFunctionList = document.getElementById("rtcFunctionList");
@@ -1728,6 +1764,7 @@
       document.querySelectorAll(".insert-bullet-btn").forEach((btn) => {
         btn.addEventListener("click", () => insertToken(btn.dataset.bullet));
       });
+      elements.scrubBulletsButton.addEventListener("click", scrubTemplateBullets);
       elements.syncClockButton.addEventListener("click", syncDeviceClock);
       elements.modalCloseButton.addEventListener("click", hideModal);
       elements.mappingForm.addEventListener("submit", saveCurrentMapping);
@@ -2678,6 +2715,31 @@
       textarea.selectionStart = start + token.length;
       textarea.selectionEnd = textarea.selectionStart;
       setConfigDirty(true);
+    }
+
+    function scrubTemplateBullets() {
+      const textarea = elements.macroText;
+      const unsupportedBulletPattern = /^([ \t]*)([·‣⁃∙▪▫■□●○◉◆◇◦❖➢➤])(?=[ \t\u00a0])/gm;
+      let replacementCount = 0;
+      const scrubbedText = textarea.value.replace(unsupportedBulletPattern, (match, indentation) => {
+        replacementCount += 1;
+        return `${indentation}•`;
+      });
+
+      if (!replacementCount) {
+        textarea.focus();
+        showToast("No unsupported bullet markers found.");
+        return;
+      }
+
+      const selectionStart = textarea.selectionStart;
+      const selectionEnd = textarea.selectionEnd;
+      textarea.value = scrubbedText;
+      textarea.focus();
+      textarea.selectionStart = selectionStart;
+      textarea.selectionEnd = selectionEnd;
+      setConfigDirty(true);
+      showToast(`Scrubbed ${replacementCount} bullet${replacementCount === 1 ? "" : "s"}.`);
     }
 
     function updateEditor() {

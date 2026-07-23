@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.84
+// QuickType firmware version: 0.2.86
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -45,9 +45,9 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.84"; // v0.2.84: Use the upstream-tested 240 MHz PIO host clock
-static_assert(F_CPU == 240000000UL,
-              "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
+static constexpr char FIRMWARE_VERSION[] = "0.2.86"; // v0.2.86: Commit typed triggers with Space, Tab, Enter, or Escape
+//
+    //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 48;
@@ -353,7 +353,7 @@ bool processPhysicalKeyRule(uint8_t keycode);
 void recordTypedCharacter(char value, bool isNumpad);
 bool outputExpansionListTable();
 bool outputDiagnosticInformation();
-bool processTypedTriggerRules(char currentCharacter);
+bool processTypedTriggerRules(char currentCharacter, bool delimiterRecorded = true);
 bool executeConfiguredRule(const ConfigRule& rule, size_t eraseCount, char delimiterToRestore);
 bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs);
 String customPlaceholderValue(const String& name);
@@ -1782,8 +1782,9 @@ void recordTypedCharacter(char value, bool isNumpad) {
 bool outputExpansionListTable() {
   const uint16_t keyDelayMs = 5;
 
-  // The final trigger character is detected before its report is forwarded.
-  for (uint8_t count = 0; count < 2; count++) {
+  // The committing key is intercepted, so erase the three trigger characters
+  // that have already reached the computer.
+  for (uint8_t count = 0; count < 3; count++) {
     if (!sendHidKeyWithDelay(0, HID_KEY_BACKSPACE, keyDelayMs)) return false;
   }
 
@@ -1883,8 +1884,9 @@ const char* getManufacturerName(uint16_t vid) {
 bool outputDiagnosticInformation() {
   const uint16_t keyDelayMs = 5;
 
-  // Erase the trigger ";;!" (3 characters, but "!" is intercepted and not forwarded, so backspace the two ";")
-  for (uint8_t count = 0; count < 2; count++) {
+  // The committing key is intercepted, so erase the three trigger characters
+  // that have already reached the computer.
+  for (uint8_t count = 0; count < 3; count++) {
     if (!sendHidKeyWithDelay(0, HID_KEY_BACKSPACE, keyDelayMs)) return false;
   }
 
@@ -1964,8 +1966,16 @@ bool outputDiagnosticInformation() {
   return true;
 }
 
-bool processTypedTriggerRules(char currentCharacter) {
-  if (typedBuffer.endsWith(";;;")) {
+bool processTypedTriggerRules(char currentCharacter, bool delimiterRecorded) {
+  const bool restoreSpace = delimiterRecorded && currentCharacter == ' ';
+  const bool consumeDelimiter = !delimiterRecorded &&
+    (currentCharacter == '\t' || currentCharacter == '\n' || currentCharacter == '\x1b');
+  if (!restoreSpace && !consumeDelimiter) {
+    return false;
+  }
+
+  const String expansionListSuffix = restoreSpace ? ";;; " : ";;;";
+  if (typedBuffer.endsWith(expansionListSuffix)) {
     if (serialDebugConnected()) {
       Serial.println("Matched hidden expansion list trigger.");
     }
@@ -1974,7 +1984,8 @@ bool processTypedTriggerRules(char currentCharacter) {
     return outputExpansionListTable();
   }
 
-  if (typedBuffer.endsWith(";;!")) {
+  const String diagnosticsSuffix = restoreSpace ? ";;! " : ";;!";
+  if (typedBuffer.endsWith(diagnosticsSuffix)) {
     if (serialDebugConnected()) {
       Serial.println("Matched hidden diagnostics trigger.");
     }
@@ -1989,12 +2000,10 @@ bool processTypedTriggerRules(char currentCharacter) {
       continue;
     }
 
-    bool delimiterMode = rule.trigger.equalsIgnoreCase("delimiter");
-    bool isDelimiter = currentCharacter == ' ' || currentCharacter == '\t' || currentCharacter == '\n';
     size_t patternLength = rule.triggerPattern.length();
-    size_t suffixLength = delimiterMode ? patternLength + 1 : patternLength;
+    size_t suffixLength = patternLength + (restoreSpace ? 1 : 0);
 
-    if ((delimiterMode && !isDelimiter) || typedBuffer.length() < suffixLength) {
+    if (typedBuffer.length() < suffixLength) {
       continue;
     }
 
@@ -2020,8 +2029,8 @@ bool processTypedTriggerRules(char currentCharacter) {
     }
     memset(&pendingKeyboardReport, 0, sizeof(pendingKeyboardReport));
     pendingKeyboardReportValid = false;
-    size_t eraseCount = suffixLength > 0 ? suffixLength - 1 : 0;
-    bool result = executeConfiguredRule(rule, eraseCount, delimiterMode ? currentCharacter : 0);
+    size_t eraseCount = patternLength;
+    bool result = executeConfiguredRule(rule, eraseCount, restoreSpace ? ' ' : 0);
     typedBuffer = "";
     typedSources = "";
     return result;
@@ -2114,6 +2123,17 @@ void handleKeyboardReport(hid_keyboard_report_t const* report) {
         if (typedBuffer.length() > 0) typedBuffer.remove(typedBuffer.length() - 1);
         if (typedSources.length() > 0) typedSources.remove(typedSources.length() - 1);
         continue;
+      }
+
+      // Tab, Enter, and Escape commit an enabled typed trigger, but are not
+      // included in its expansion output. If no rule matches, they continue
+      // through their existing handling below and are forwarded normally.
+      if (keycode == HID_KEY_TAB || keycode == HID_KEY_ENTER || keycode == HID_KEY_ESCAPE) {
+        char delimiter = keycode == HID_KEY_TAB ? '\t' : (keycode == HID_KEY_ENTER ? '\n' : '\x1b');
+        if (processTypedTriggerRules(delimiter, false)) {
+          expansionTriggered = true;
+          break;
+        }
       }
 
       if (keycode == HID_KEY_ESCAPE || keycode == HID_KEY_DELETE || keycode == HID_KEY_HOME ||
