@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-23T12:11:30-07:00">
+  <meta name="quicktype-build" content="2026-07-23T12:15:40-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -481,29 +481,6 @@
       font-size: 0.78rem;
       line-height: 1.5;
       padding: 0 4px;
-    }
-
-    .theme-toggle-button {
-      margin-top: 10px;
-      width: 100%;
-      padding: 8px 10px;
-      border-radius: var(--radius-small);
-      color: #d9e4ea;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.12);
-      font-size: 0.8rem;
-      font-weight: 700;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
-    }
-
-    .theme-toggle-button:hover {
-      background: rgba(255,255,255,0.16);
-      color: #ffffff;
-      border-color: rgba(255,255,255,0.22);
     }
 
     .build-stamp {
@@ -1551,12 +1528,12 @@
           <li><button type="button" data-tab="placeholdersTab" title="Placeholders"><span class="nav-icon" aria-hidden="true">{ }</span><span class="nav-label">Placeholders</span></button></li>
           <li><button type="button" data-tab="rtcTab" title="Date/Time Functions"><span class="nav-icon" aria-hidden="true">DT</span><span class="nav-label">Date/Time Functions</span></button></li>
           <li><button type="button" data-tab="activityTab" title="Device Activity"><span class="nav-icon" aria-hidden="true">Log</span><span class="nav-label">Device Activity</span></button></li>
+          <li><button id="themeToggleButton" type="button" title="Toggle Theme"><span id="themeNavIcon" class="nav-icon" aria-hidden="true">🌙</span><span id="themeNavLabel" class="nav-label">Dark Theme</span></button></li>
         </ul>
       </nav>
 
       <p class="sidebar-footer">
         Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.
-        <button id="themeToggleButton" class="theme-toggle-button" type="button" aria-label="Toggle theme">🌙 Dark Theme</button>
         <span id="buildStamp" class="build-stamp"></span>
       </p>
     </aside>
@@ -2002,9 +1979,18 @@
       } else {
         document.documentElement.removeAttribute("data-theme");
       }
+      const iconEl = document.getElementById("themeNavIcon");
+      const labelEl = document.getElementById("themeNavLabel");
+      if (iconEl) {
+        iconEl.textContent = theme === "dark" ? "☀️" : "🌙";
+      }
+      if (labelEl) {
+        labelEl.textContent = theme === "dark" ? "Light Mode" : "Dark Theme";
+      }
       if (elements.themeToggleButton) {
-        elements.themeToggleButton.textContent = theme === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode";
-        elements.themeToggleButton.setAttribute("aria-label", `Switch to ${theme === "dark" ? "light" : "dark"} mode`);
+        const titleText = theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Theme";
+        elements.themeToggleButton.title = titleText;
+        elements.themeToggleButton.setAttribute("aria-label", titleText);
       }
       if (persist) {
         try {
