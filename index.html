@@ -6,7 +6,8 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta name="quicktype-build" content="2026-07-16T16:20:32-07:00">
+  <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
+  <meta name="quicktype-build" content="2026-07-23T08:25:42-07:00">
   <title>QuickType Configurator</title>
   <script>
     (() => {
@@ -1374,7 +1375,7 @@
 
       <p class="sidebar-footer">
         Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.
-        <span class="build-stamp">Build 2026-07-21 10:42:45 PDT</span>
+        <span id="buildStamp" class="build-stamp"></span>
       </p>
     </aside>
 
@@ -1675,6 +1676,7 @@
 
     function initApp() {
       cacheElements();
+      renderBuildStamp();
       initializeNavigation();
       bindEvents();
       validateWebSerialSupport();
@@ -1740,6 +1742,12 @@
       elements.modalTitle = document.getElementById("modalTitle");
       elements.modalBody = document.getElementById("modalBody");
       elements.modalCloseButton = document.getElementById("modalCloseButton");
+      elements.buildStamp = document.getElementById("buildStamp");
+    }
+
+    function renderBuildStamp() {
+      const build = document.querySelector('meta[name="quicktype-build"]')?.content;
+      elements.buildStamp.textContent = build ? `Build ${build.replace("T", " ")}` : "Build unknown";
     }
 
     function bindEvents() {
