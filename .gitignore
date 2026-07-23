@@ -1,1 +1,3 @@
+.build/
 diagnostics/*.csv
+diagnostics/*.json
