@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.86
+// QuickType firmware version: 0.2.87 (2026-07-23)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -45,7 +45,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.86"; // v0.2.86: Commit typed triggers with Space, Tab, Enter, or Escape
+static constexpr char FIRMWARE_VERSION[] = "0.2.87"; // v0.2.87: Custom USB VID 0x2E8A PID 0x5154 descriptors and predictable device identification
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
@@ -414,6 +414,10 @@ void configureUsbDeviceKeyboard() {
   // IMPORTANT:
   // This must be called before Serial.begin() and before delay(),
   // so the HID interface exists when the PC enumerates the USB device.
+
+  TinyUSBDevice.setID(0x2E8A, 0x5154); // Custom RP2040 VID:0x2E8A (11914), PID:0x5154 (20820 - 'QT')
+  TinyUSBDevice.setManufacturerDescriptor("QuickType");
+  TinyUSBDevice.setProductDescriptor("QuickType Keyboard");
 
   usb_hid.setPollInterval(2);
   usb_hid.setReportDescriptor(hidReportDescriptor, sizeof(hidReportDescriptor));

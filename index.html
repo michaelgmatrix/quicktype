@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name"quicktype-build" content"2026-07-23T12:34:09-07:00">
+  <meta name"quicktype-build" content"2026-07-23T12:40:24-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1743,6 +1743,10 @@
     const SERIAL_BAUD_RATE = 115200;
     const REQUEST_TIMEOUT_MS = 8000;
     const MAX_CONFIG_PAYLOAD_BYTES = 30000;
+    const QUICKTYPE_USB_FILTERS = [
+      { usbVendorId: 0x2E8A, usbProductId: 0x5154 }, // Specific QuickType VID 0x2E8A / PID 0x5154
+      { usbVendorId: 0x2E8A }                        // RP2040 fallback
+    ];
     const RULE_COUNT = 24;
     const KEYPAD_KEYS = [
       { usage: 0x53, id: "KP_NUMLOCK", label: "Num", sublabel: "Lock", row: 1, column: 1 },
@@ -2094,7 +2098,7 @@
 
         showToast("Opening serial port chooser...");
         logActivity("Choose the QuickType serial port in the browser prompt.");
-        const port = await navigator.serial.requestPort();
+        const port = await navigator.serial.requestPort({ filters: QUICKTYPE_USB_FILTERS });
         await connectDevice(port);
       } catch (error) {
         logActivity(`Connection failed: ${error.message}`);
@@ -2121,6 +2125,9 @@
         for (const port of ports) {
           const info = port.getInfo();
           if (info && info.usbVendorId !== undefined) {
+            if (info.usbVendorId === 0x2E8A && info.usbProductId === 0x5154) {
+              return port;
+            }
             if (savedVid && String(info.usbVendorId) === savedVid &&
                 savedPid && String(info.usbProductId) === savedPid) {
               return port;
