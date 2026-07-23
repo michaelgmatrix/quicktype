@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-23T12:01:00-07:00">
+  <meta name="quicktype-build" content="2026-07-23T12:02:45-07:00">
   <title>QuickType Configurator</title>
   <script>
     (() => {
@@ -53,6 +53,96 @@
       --radius: 8px;
       --radius-small: 6px;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --panel-soft: #334155;
+      --ink: #f8fafc;
+      --muted: #94a3b8;
+      --line: #334155;
+      --line-strong: #475569;
+      --accent: #0ea5e9;
+      --accent-strong: #38bdf8;
+      --accent-soft: rgba(14, 165, 233, 0.18);
+      --warn: #f59e0b;
+      --danger: #f43f5e;
+      --ok: #10b981;
+      --shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    }
+
+    [data-theme="dark"] body {
+      background:
+        linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.97)),
+        radial-gradient(circle at top left, rgba(14, 165, 233, 0.15), transparent 40%),
+        #0f172a;
+      color: var(--ink);
+    }
+
+    [data-theme="dark"] .panel,
+    [data-theme="dark"] .command-bar {
+      background: rgba(30, 41, 59, 0.95);
+      border-color: var(--line);
+    }
+
+    [data-theme="dark"] .field input,
+    [data-theme="dark"] .field select,
+    [data-theme="dark"] .field textarea,
+    [data-theme="dark"] .key-button,
+    [data-theme="dark"] .expansion-list,
+    [data-theme="dark"] .placeholder-item {
+      background: #182232;
+      color: var(--ink);
+      border-color: var(--line);
+    }
+
+    [data-theme="dark"] .expansion-header,
+    [data-theme="dark"] .template-insert-row,
+    [data-theme="dark"] .advanced-panel,
+    [data-theme="dark"] .inline-tools-panel,
+    [data-theme="dark"] .placeholder-manager,
+    [data-theme="dark"] .preview-box,
+    [data-theme="dark"] .empty-state {
+      background: #0f172a;
+      color: var(--ink);
+      border-color: var(--line);
+    }
+
+    [data-theme="dark"] .expansion-header {
+      color: var(--ink);
+    }
+
+    [data-theme="dark"] .field label,
+    [data-theme="dark"] .advanced-panel summary,
+    [data-theme="dark"] .inline-tools-panel summary {
+      color: #cbd5e1;
+    }
+
+    [data-theme="dark"] .numeric-keypad {
+      background: #0f172a;
+      border-color: var(--line);
+    }
+
+    [data-theme="dark"] .keypad-key {
+      background: linear-gradient(#1e293b, #182232);
+      color: var(--ink);
+      border-color: #334155;
+      box-shadow: 0 2px 0 #334155;
+    }
+
+    [data-theme="dark"] .keypad-key:hover,
+    [data-theme="dark"] .keypad-key.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      box-shadow: 0 2px 0 var(--accent);
+    }
+
+    [data-theme="dark"] .token-button {
+      background: #1e293b;
+      color: var(--accent-strong);
+      border-color: var(--line);
     }
 
     * {
@@ -384,6 +474,29 @@
       font-size: 0.78rem;
       line-height: 1.5;
       padding: 0 4px;
+    }
+
+    .theme-toggle-button {
+      margin-top: 10px;
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: var(--radius-small);
+      color: #d9e4ea;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      font-size: 0.8rem;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+    }
+
+    .theme-toggle-button:hover {
+      background: rgba(255,255,255,0.16);
+      color: #ffffff;
+      border-color: rgba(255,255,255,0.22);
     }
 
     .build-stamp {
@@ -1425,6 +1538,7 @@
 
       <p class="sidebar-footer">
         Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.
+        <button id="themeToggleButton" class="theme-toggle-button" type="button" aria-label="Toggle theme">🌙 Dark Theme</button>
         <span id="buildStamp" class="build-stamp"></span>
       </p>
     </aside>
@@ -1728,6 +1842,7 @@
     function initApp() {
       cacheElements();
       renderBuildStamp();
+      initializeTheme();
       initializeNavigation();
       bindEvents();
       validateWebSerialSupport();
@@ -1744,6 +1859,7 @@
 
     function cacheElements() {
       elements.statusDot = document.getElementById("statusDot");
+      elements.themeToggleButton = document.getElementById("themeToggleButton");
       elements.navToggleButton = document.getElementById("navToggleButton");
       elements.connectionStatus = document.getElementById("connectionStatus");
       elements.connectButton = document.getElementById("connectButton");
@@ -1802,6 +1918,9 @@
     }
 
     function bindEvents() {
+      if (elements.themeToggleButton) {
+        elements.themeToggleButton.addEventListener("click", toggleTheme);
+      }
       elements.navToggleButton.addEventListener("click", toggleNavigation);
       elements.connectButton.addEventListener("click", requestDeviceConnection);
       elements.disconnectButton.addEventListener("click", disconnectDevice);
@@ -1841,6 +1960,39 @@
         });
       });
 
+    }
+
+    function initializeTheme() {
+      let savedTheme = null;
+      try {
+        savedTheme = window.localStorage.getItem("quicktype-theme");
+      } catch {}
+
+      const theme = savedTheme === "dark" ? "dark" : "light";
+      setTheme(theme, false);
+    }
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute("data-theme") || "light";
+      const next = current === "dark" ? "light" : "dark";
+      setTheme(next, true);
+    }
+
+    function setTheme(theme, persist = true) {
+      if (theme === "dark") {
+        document.documentElement.setAttribute("data-theme", "dark");
+      } else {
+        document.documentElement.removeAttribute("data-theme");
+      }
+      if (elements.themeToggleButton) {
+        elements.themeToggleButton.textContent = theme === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode";
+        elements.themeToggleButton.setAttribute("aria-label", `Switch to ${theme === "dark" ? "light" : "dark"} mode`);
+      }
+      if (persist) {
+        try {
+          window.localStorage.setItem("quicktype-theme", theme);
+        } catch {}
+      }
     }
 
     function initializeNavigation() {
