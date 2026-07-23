@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name"quicktype-build" content"2026-07-23T12:45:57-07:00">
+  <meta name"quicktype-build" content"2026-07-23T12:57:17-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1528,6 +1528,7 @@
           <li><button type="button" data-tab="placeholdersTab" title="Placeholders"><span class="nav-icon" aria-hidden="true">{ }</span><span class="nav-label">Placeholders</span></button></li>
           <li><button type="button" data-tab="rtcTab" title="Date/Time Functions"><span class="nav-icon" aria-hidden="true">DT</span><span class="nav-label">Date/Time Functions</span></button></li>
           <li><button type="button" data-tab="activityTab" title="Device Activity"><span class="nav-icon" aria-hidden="true">Log</span><span class="nav-label">Device Activity</span></button></li>
+          <li><button id="cheatsheetButton" type="button" title="Token Cheatsheet (?)"><span class="nav-icon" aria-hidden="true">?</span><span class="nav-label">Cheatsheet (?)</span></button></li>
           <li><button id="themeToggleButton" type="button" title="Toggle Theme"><span id="themeNavIcon" class="nav-icon" aria-hidden="true">🌙</span><span id="themeNavLabel" class="nav-label">Dark Theme</span></button></li>
         </ul>
       </nav>
@@ -1861,6 +1862,7 @@
     function cacheElements() {
       elements.statusDot = document.getElementById("statusDot");
       elements.themeToggleButton = document.getElementById("themeToggleButton");
+      elements.cheatsheetButton = document.getElementById("cheatsheetButton");
       elements.navToggleButton = document.getElementById("navToggleButton");
       elements.connectionStatus = document.getElementById("connectionStatus");
       elements.connectButton = document.getElementById("connectButton");
@@ -1931,6 +1933,15 @@
       if (elements.themeToggleButton) {
         elements.themeToggleButton.addEventListener("click", toggleTheme);
       }
+      if (elements.cheatsheetButton) {
+        elements.cheatsheetButton.addEventListener("click", showCheatsheetModal);
+      }
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "?" && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) {
+          e.preventDefault();
+          showCheatsheetModal();
+        }
+      });
       elements.navToggleButton.addEventListener("click", toggleNavigation);
       elements.connectButton.addEventListener("click", requestDeviceConnection);
       elements.disconnectButton.addEventListener("click", disconnectDevice);
@@ -2213,6 +2224,7 @@
       logActivity(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
       showToast(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
       await readDeviceConfiguration({ automatic: true });
+      await syncDeviceClock({ silent: true });
     }
 
     async function disconnectDevice() {
@@ -2440,7 +2452,8 @@
       );
     }
 
-    async function syncDeviceClock() {
+    async function syncDeviceClock(options = {}) {
+      const silent = options.silent === true;
       if (!ensureConnected("sync the clock")) {
         return;
       }
@@ -2459,14 +2472,66 @@
       const timezoneOffsetMinutes = -now.getTimezoneOffset();
 
       try {
-        showToast("Syncing clock...");
+        if (!silent) showToast("Syncing clock...");
         await sendDeviceCommand("set-clock", { clock, timezoneName, timezoneOffsetMinutes });
-        logActivity(`Clock synchronized to ${now.toLocaleString()}.`);
-        showToast(`Clock synchronized to ${now.toLocaleString()}.`);
+        const msg = `Clock synchronized to ${now.toLocaleString()}.`;
+        logActivity(silent ? `Auto-synced clock to ${now.toLocaleTimeString()}` : msg);
+        if (!silent) showToast(msg);
       } catch (error) {
         logActivity(`Clock sync failed: ${error.message}`);
-        showToast(`Clock sync failed: ${error.message}`, "error");
+        if (!silent) showToast(`Clock sync failed: ${error.message}`, "error");
       }
+    }
+
+    function showCheatsheetModal() {
+      const html = `
+        <div style="display:grid; gap:16px; max-height:70vh; overflow-y:auto; padding-right:4px;">
+          <div>
+            <h4 style="margin:0 0 6px; font-size:0.88rem; color:var(--accent-strong);">Date & Time Tokens</h4>
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+              <button type="button" class="token-button" onclick="insertToken('{date}')">{date}</button>
+              <button type="button" class="token-button" onclick="insertToken('{time_24}')">{time_24}</button>
+              <button type="button" class="token-button" onclick="insertToken('{time_12}')">{time_12}</button>
+              <button type="button" class="token-button" onclick="insertToken('{year}')">{year}</button>
+              <button type="button" class="token-button" onclick="insertToken('{month}')">{month}</button>
+              <button type="button" class="token-button" onclick="insertToken('{day}')">{day}</button>
+              <button type="button" class="token-button" onclick="insertToken('{hour_24}')">{hour_24}</button>
+              <button type="button" class="token-button" onclick="insertToken('{hour_12}')">{hour_12}</button>
+              <button type="button" class="token-button" onclick="insertToken('{minute}')">{minute}</button>
+              <button type="button" class="token-button" onclick="insertToken('{second}')">{second}</button>
+              <button type="button" class="token-button" onclick="insertToken('{ampm}')">{ampm}</button>
+              <button type="button" class="token-button" onclick="insertToken('{timezone}')">{timezone}</button>
+              <button type="button" class="token-button" onclick="insertToken('{timezone_offset}')">{timezone_offset}</button>
+            </div>
+          </div>
+
+          <div>
+            <h4 style="margin:0 0 6px; font-size:0.88rem; color:var(--accent-strong);">Special Utility Tokens</h4>
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+              <button type="button" class="token-button" onclick="insertToken('{cursor}')">{cursor}</button>
+              <button type="button" class="token-button" onclick="insertToken('{clipboard}')">{clipboard}</button>
+              <button type="button" class="token-button" onclick="insertToken('{enter}')">{enter}</button>
+              <button type="button" class="token-button" onclick="insertToken('{tab}')">{tab}</button>
+            </div>
+          </div>
+
+          <div>
+            <h4 style="margin:0 0 6px; font-size:0.88rem; color:var(--accent-strong);">Keystroke Shortcuts</h4>
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+              <button type="button" class="token-button" onclick="insertToken('{{WIN}}')">{{WIN}}</button>
+              <button type="button" class="token-button" onclick="insertToken('{{CTRL}}')">{{CTRL}}</button>
+              <button type="button" class="token-button" onclick="insertToken('{{ALT}}')">{{ALT}}</button>
+              <button type="button" class="token-button" onclick="insertToken('{{SHIFT}}')">{{SHIFT}}</button>
+              <button type="button" class="token-button" onclick="insertToken('{{ENTER}}')">{{ENTER}}</button>
+              <button type="button" class="token-button" onclick="insertToken('{{TAB}}')">{{TAB}}</button>
+              <button type="button" class="token-button" onclick="insertToken('{{ESC}}')">{{ESC}}</button>
+              <button type="button" class="token-button" onclick="insertToken('{{WIN+ALT+K}}')">{{WIN+ALT+K}}</button>
+            </div>
+          </div>
+          <p style="margin:4px 0 0; font-size:0.78rem; color:var(--muted);">Click any token to insert into the active macro editor field.</p>
+        </div>
+      `;
+      showModal("QuickType Token Cheatsheet", html);
     }
 
     async function sendDeviceCommand(command, payload = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
