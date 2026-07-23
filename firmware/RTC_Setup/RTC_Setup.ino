@@ -50,6 +50,7 @@ static constexpr char FIRMWARE_VERSION[] = "0.2.92"; // v0.2.92: Add {dump_hardw
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
+static constexpr uint8_t PROTOCOL_VERSION = 1;
 static constexpr size_t MAX_CONFIG_BYTES = 32768;
 static constexpr size_t MAX_CONFIG_RULES = 48;
 static constexpr size_t MAX_RULE_STEPS = 8;
@@ -361,6 +362,11 @@ String customPlaceholderValue(const String& name);
 bool sendShortcut(const String& shortcut, uint16_t keyDelayMs);
 uint8_t shortcutKeycode(const String& token);
 void handleKeyboardReport(hid_keyboard_report_t const* report);
+
+RtcDateTime datePlusMonths(RtcDateTime dt, int monthsToAdd);
+RtcDateTime datePlusYears(RtcDateTime dt, int yearsToAdd);
+int getDayOfYear(RtcDateTime dt);
+int getIsoWeekNumber(RtcDateTime dt);
 
 void clearCompiledConfiguration();
 bool compileConfiguration(JsonVariantConst config, String& errorMessage);
@@ -3089,7 +3095,7 @@ bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs) {
       for (size_t i = 0; i < optionsStr.length(); i++) {
         if (optionsStr[i] == '|') count++;
       }
-      uint32_t chosenIdx = rp2040.hw_rand32() % count;
+      uint32_t chosenIdx = rp2040.hwrand32() % count;
       int currIdx = 0;
       int start = 0;
       String chosenOpt = optionsStr;
@@ -3578,6 +3584,16 @@ RtcDateTime datePlusDays(RtcDateTime dt, int daysToAdd) {
     }
 
     dt.dow--;
+
+    if (dt.dow < 1) {
+      dt.dow = 7;
+    }
+
+    daysToAdd++;
+  }
+
+  return dt;
+}
 
 RtcDateTime datePlusMonths(RtcDateTime dt, int monthsToAdd) {
   int totalMonths = dt.month - 1 + monthsToAdd;
