@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name"quicktype-build" content"2026-07-23T12:57:17-07:00">
+  <meta name"quicktype-build" content"2026-07-23T13:00:49-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2484,10 +2484,41 @@
     }
 
     function showCheatsheetModal() {
+      const placeholders = appState.config?.placeholders || {};
+      const placeholderEntries = Object.entries(placeholders);
+
+      let customPlaceholdersHtml = "";
+      if (placeholderEntries.length > 0) {
+        const buttons = placeholderEntries.map(([name, value]) => {
+          const tokenStr = `{${name}}`;
+          const escToken = tokenStr.replace(/'/g, "\\'");
+          const escVal = String(value).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+          return `<button type="button" class="token-button" title="Value: ${escVal}" onclick="insertToken('${escToken}')">${tokenStr} <span style="font-weight:400; opacity:0.8;">= ${escVal}</span></button>`;
+        }).join("");
+
+        customPlaceholdersHtml = `
+          <div>
+            <h4 style="margin:0 0 6px; font-size:0.88rem; color:var(--accent-strong);">Custom User Placeholders (${placeholderEntries.length})</h4>
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+              ${buttons}
+            </div>
+          </div>
+        `;
+      } else {
+        customPlaceholdersHtml = `
+          <div>
+            <h4 style="margin:0 0 6px; font-size:0.88rem; color:var(--accent-strong);">Custom User Placeholders</h4>
+            <p style="margin:0; font-size:0.82rem; color:var(--muted);">No custom placeholders created yet. Create placeholders under the Placeholders tab!</p>
+          </div>
+        `;
+      }
+
       const html = `
         <div style="display:grid; gap:16px; max-height:70vh; overflow-y:auto; padding-right:4px;">
+          ${customPlaceholdersHtml}
+
           <div>
-            <h4 style="margin:0 0 6px; font-size:0.88rem; color:var(--accent-strong);">Date & Time Tokens</h4>
+            <h4 style="margin:0 0 6px; font-size:0.88rem; color:var(--accent-strong);">Date & Time Functions</h4>
             <div style="display:flex; flex-wrap:wrap; gap:6px;">
               <button type="button" class="token-button" onclick="insertToken('{date}')">{date}</button>
               <button type="button" class="token-button" onclick="insertToken('{time_24}')">{time_24}</button>
@@ -2531,7 +2562,7 @@
           <p style="margin:4px 0 0; font-size:0.78rem; color:var(--muted);">Click any token to insert into the active macro editor field.</p>
         </div>
       `;
-      showModal("QuickType Token Cheatsheet", html);
+      showModal("QuickType Token & Placeholder Cheatsheet", html);
     }
 
     async function sendDeviceCommand(command, payload = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
