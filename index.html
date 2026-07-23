@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-23T08:25:42-07:00">
+  <meta name="quicktype-build" content="2026-07-23T08:30:04-07:00">
   <title>QuickType Configurator</title>
   <script>
     (() => {
@@ -393,12 +393,12 @@
       display: flex;
       flex-direction: column;
       align-items: stretch;
-      gap: 12px;
+      gap: 8px;
     }
 
     .topbar-controls {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       gap: 8px;
       min-width: 0;
     }
@@ -434,6 +434,14 @@
       flex: 1 1 auto;
       min-width: 0;
       justify-content: flex-start;
+      align-items: center;
+      row-gap: 6px;
+    }
+
+    .topbar .actions .secondary-button {
+      min-height: 34px;
+      padding: 0 10px;
+      font-size: 0.82rem;
     }
 
     .danger-disclosure {
@@ -498,7 +506,7 @@
     }
 
     .workspace.primary {
-      grid-template-columns: minmax(520px, 46%) minmax(0, 1fr);
+      grid-template-columns: minmax(300px, 0.9fr) minmax(360px, 1.1fr);
       height: 100%;
     }
 
@@ -810,9 +818,9 @@
 
     .empty-state {
       display: grid;
-      gap: 12px;
+      gap: 6px;
       justify-items: start;
-      padding: 18px;
+      padding: 14px;
       border: 1px dashed var(--line-strong);
       border-radius: var(--radius);
       background: #f8fbfc;
@@ -1264,28 +1272,7 @@
       gap: 12px;
     }
 
-    @media (max-width: 1180px) {
-      .workspace,
-      .workspace.primary {
-        grid-template-columns: 1fr;
-      }
-
-      .workspace.primary {
-        height: auto;
-        align-items: start;
-        grid-auto-rows: minmax(440px, auto);
-      }
-
-      .tab-panel {
-        overflow: auto;
-      }
-
-      #editorPanel {
-        min-height: 620px;
-      }
-    }
-
-    @media (max-width: 720px) {
+    @media (max-width: 720px) and (hover: none) and (pointer: coarse) {
       .main {
         padding: 12px;
       }
@@ -1318,6 +1305,25 @@
 
       .title-block p {
         font-size: 0.88rem;
+      }
+
+      .workspace,
+      .workspace.primary {
+        grid-template-columns: 1fr;
+      }
+
+      .workspace.primary {
+        height: auto;
+        align-items: start;
+        grid-auto-rows: minmax(440px, auto);
+      }
+
+      .tab-panel {
+        overflow: auto;
+      }
+
+      #editorPanel {
+        min-height: 620px;
       }
 
       #keysPanel .panel-header,
@@ -2303,6 +2309,17 @@
       elements.telemetryButton.disabled = !appState.isConnected;
       elements.readClockButton.disabled = !appState.isConnected;
       elements.syncClockButton.disabled = !appState.isConnected;
+      elements.connectButton.classList.toggle("hidden", appState.isConnected);
+      [
+        elements.disconnectButton,
+        elements.readButton,
+        elements.writeButton,
+        elements.toggleExpansionsButton,
+        elements.toggleKeypadExpansionsButton,
+        elements.telemetryButton,
+        elements.readClockButton,
+        elements.syncClockButton
+      ].forEach((control) => control.classList.toggle("hidden", !appState.isConnected));
       updateWriteDirtyIndicator();
     }
 
@@ -2382,10 +2399,8 @@
           <div class="empty-state">
             <strong>No expansions yet</strong>
             <span>Add an expansion, give it a trigger string, then write the configuration to QuickType.</span>
-            <button class="secondary-button" type="button" data-empty-add>Add Expansion</button>
           </div>
         `;
-        elements.keyGrid.querySelector("[data-empty-add]").addEventListener("click", addExpansionRule);
         return;
       }
 
