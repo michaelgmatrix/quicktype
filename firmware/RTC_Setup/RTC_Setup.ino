@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.91 (2026-07-23)
+// QuickType firmware version: 0.2.92 (2026-07-23)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -9,6 +9,7 @@
 #include <tusb.h>
 #include <hardware/watchdog.h>
 #include <hardware/clocks.h>
+#include <pico/unique_id.h>
 
 // ============================================================
 // RP2040-Zero wiring
@@ -45,7 +46,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.91"; // v0.2.91: Add {dump_expansions} token to trigger ;;; expansion dump from any macro or key
+static constexpr char FIRMWARE_VERSION[] = "0.2.92"; // v0.2.92: Add {dump_hardware} token to output comprehensive hardware diagnostic report
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
@@ -1889,84 +1890,88 @@ const char* getManufacturerName(uint16_t vid) {
 bool outputDiagnosticInformation() {
   const uint16_t keyDelayMs = 5;
 
-  // The committing key is intercepted, so erase the three trigger characters
-  // that have already reached the computer.
-  for (uint8_t count = 0; count < 3; count++) {
-    if (!sendHidKeyWithDelay(0, HID_KEY_BACKSPACE, keyDelayMs)) return false;
-  }
+  pico_unique_board_id_t id;
+  char boardIdStr[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1] = "Unknown";
+  pico_get_unique_board_id_string(boardIdStr, sizeof(boardIdStr));
 
-  if (!typeAsciiStringWithDelay("\n--- QUICKTYPE DIAGNOSTIC REPORT ---\n", keyDelayMs)) return false;
-  
-  if (!typeAsciiStringWithDelay("Firmware Version: ", keyDelayMs)) return false;
-  if (!typeAsciiStringWithDelay(FIRMWARE_VERSION, keyDelayMs)) return false;
-  if (!typeAsciiStringWithDelay("\n", keyDelayMs)) return false;
+  uint32_t uptimeSec = millis() / 1000;
+  uint32_t freeHeap = rp2040.getFreeHeap();
+  uint32_t totalCpuHz = clock_get_hz(clk_sys);
 
-  if (!typeAsciiStringWithDelay("RTC Present: ", keyDelayMs)) return false;
-  if (!typeAsciiStringWithDelay(rtcPresent() ? "YES" : "NO", keyDelayMs)) return false;
-  if (!typeAsciiStringWithDelay("\n", keyDelayMs)) return false;
+  if (!typeAsciiStringWithDelay("\n================================================\n", keyDelayMs)) return false;
+  if (!typeAsciiStringWithDelay("        QUICKTYPE HARDWARE DIAGNOSTIC REPORT\n", keyDelayMs)) return false;
+  if (!typeAsciiStringWithDelay("================================================\n", keyDelayMs)) return false;
 
-  if (rtcPresent()) {
-    if (!typeAsciiStringWithDelay("RTC Oscillator Stop Flag: ", keyDelayMs)) return false;
-    if (!typeAsciiStringWithDelay(rtcOscillatorStopFlagSet() ? "SET (Time invalid/lost power)" : "CLEAR (Valid)", keyDelayMs)) return false;
-    if (!typeAsciiStringWithDelay("\n", keyDelayMs)) return false;
+  char buf[384];
 
-    RtcDateTime dt = rtcGetDateTime();
-    const char* dowNames[] = {"", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
-    const char* dowStr = (dt.dow >= 1 && dt.dow <= 7) ? dowNames[dt.dow] : "Unknown";
+  // 1. Firmware & System
+  snprintf(buf, sizeof(buf), "[SYSTEM]\n* Firmware Version: QuickType v%s (Protocol v%u)\n* MCU Architecture: RP2040 Dual-Core ARM Cortex-M0+\n* System Clock: %lu MHz (Pico-PIO-USB Overclock)\n* Hardware Board ID: %s\n* System Uptime: %lu sec (%lu m %lu s)\n* Free Heap Memory: %lu bytes\n\n",
+           FIRMWARE_VERSION, PROTOCOL_VERSION, totalCpuHz / 1000000, boardIdStr, uptimeSec, uptimeSec / 60, uptimeSec % 60, freeHeap);
+  if (!typeAsciiStringWithDelay(buf, keyDelayMs)) return false;
 
-    char buf[128];
-    snprintf(buf, sizeof(buf), "RTC Date/Time: %04d-%02d-%02d %02d:%02d:%02d (%s)\n",
-             dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dowStr);
-    if (!typeAsciiStringWithDelay(buf, keyDelayMs)) return false;
-  }
+  // 2. USB Device (To Host PC)
+  snprintf(buf, sizeof(buf), "[USB DEVICE INTERFACE]\n* USB Vendor ID: 0x2E8A (Raspberry Pi Foundation)\n* USB Product ID: 0x5154 (QuickType Hardware)\n* CDC Serial Speed: 115200 baud (%s)\n* USB HID Keyboard: Active (Poll Interval: 2ms)\n* Host Lock State: NumLock=%s, CapsLock=%s, ScrollLock=%s\n\n",
+           serialProtocolConnected() ? "Connected DTR=1" : "Disconnected DTR=0",
+           (hostLedsState & KEYBOARD_LED_NUMLOCK) ? "ON" : "OFF",
+           (hostLedsState & KEYBOARD_LED_CAPSLOCK) ? "ON" : "OFF",
+           (hostLedsState & KEYBOARD_LED_SCROLLLOCK) ? "ON" : "OFF");
+  if (!typeAsciiStringWithDelay(buf, keyDelayMs)) return false;
 
-  if (!typeAsciiStringWithDelay("USB Host Status:\n", keyDelayMs)) return false;
+  // 3. USB Host Port (Pico-PIO-USB)
+  if (!typeAsciiStringWithDelay("[USB HOST PORT (PIO0/GPIO0+1)]\n", keyDelayMs)) return false;
   size_t mountedCount = 0;
   for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
     HostHidInterfaceInfo const& info = hostHidInterfaces[index];
     if (info.mounted) {
       uint16_t vid = 0, pid = 0;
       tuh_vid_pid_get(info.devAddr, &vid, &pid);
-      
-      char bufDev[256];
       const char* mfg = getManufacturerName(vid);
       
       if (info.keyboard) {
-        snprintf(bufDev, sizeof(bufDev), "* Keyboard Interface (Device Addr %u, Instance %u, %s [VID: 0x%04X, PID: 0x%04X])\n", 
+        snprintf(buf, sizeof(buf), "* Mounted Keyboard (Addr %u, Instance %u, %s [VID: 0x%04X, PID: 0x%04X])\n", 
                  info.devAddr, info.instance, mfg, vid, pid);
       } else if (info.consumerControl) {
-        snprintf(bufDev, sizeof(bufDev), "* Media Keys Interface (Device Addr %u, Instance %u, Report ID %u, %s [VID: 0x%04X, PID: 0x%04X])\n", 
-                 info.devAddr, info.instance, info.consumerReportId, mfg, vid, pid);
+        snprintf(buf, sizeof(buf), "* Mounted Media/Consumer (Addr %u, Instance %u, %s [VID: 0x%04X, PID: 0x%04X])\n", 
+                 info.devAddr, info.instance, mfg, vid, pid);
       } else {
-        snprintf(bufDev, sizeof(bufDev), "* Generic HID Interface (Device Addr %u, Instance %u, %s [VID: 0x%04X, PID: 0x%04X])\n", 
+        snprintf(buf, sizeof(buf), "* Mounted Generic HID (Addr %u, Instance %u, %s [VID: 0x%04X, PID: 0x%04X])\n", 
                  info.devAddr, info.instance, mfg, vid, pid);
       }
-      if (!typeAsciiStringWithDelay(bufDev, keyDelayMs)) return false;
+      if (!typeAsciiStringWithDelay(buf, keyDelayMs)) return false;
       mountedCount++;
     }
   }
   if (mountedCount == 0) {
-    if (!typeAsciiStringWithDelay("* No USB devices mounted.\n", keyDelayMs)) return false;
+    if (!typeAsciiStringWithDelay("* No USB keyboard or device mounted on host port.\n", keyDelayMs)) return false;
   }
+  if (!typeAsciiStringWithDelay("\n", keyDelayMs)) return false;
 
-  if (!typeAsciiStringWithDelay("System Performance:\n", keyDelayMs)) return false;
-  char bufTel[256];
-  snprintf(bufTel, sizeof(bufTel), 
-           "* Active Rules: %u of %u\n"
-           "* Reports Received from Keyboard: %u\n"
-           "* Standard Keys Forwarded: %u\n"
-           "* Media Keys Forwarded: %u\n"
-           "* Key Parsing Errors: %u\n"
-           "* USB Transmission Failures: %u\n",
-           (unsigned int)activeRuleCount(), (unsigned int)MAX_CONFIG_RULES,
-           (unsigned int)telemetry.hostReportCallbackCount,
-           (unsigned int)telemetry.forwardedKeyboardCount,
-           (unsigned int)telemetry.forwardedConsumerCount,
-           (unsigned int)telemetry.keyboardDecodeFailCount,
-           (unsigned int)(telemetry.keyboardSendFailCount + telemetry.consumerSendFailCount));
-  if (!typeAsciiStringWithDelay(bufTel, keyDelayMs)) return false;
+  // 4. DS3231 RTC Clock
+  if (!typeAsciiStringWithDelay("[HARDWARE RTC CLOCK (DS3231)]\n", keyDelayMs)) return false;
+  snprintf(buf, sizeof(buf), "* Hardware RTC Status: %s\n", rtcPresent() ? "Present & Operational (0x68)" : "Not Found / Fault");
+  if (!typeAsciiStringWithDelay(buf, keyDelayMs)) return false;
+  if (rtcPresent()) {
+    RtcDateTime dt = rtcGetDateTime();
+    const char* dowNames[] = {"", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+    const char* dowStr = (dt.dow >= 1 && dt.dow <= 7) ? dowNames[dt.dow] : "Unknown";
+    snprintf(buf, sizeof(buf), "* Clock Oscillator: %s\n* Current Time: %04d-%02d-%02d %02d:%02d:%02d (%s, %s)\n",
+             rtcOscillatorStopFlagSet() ? "LOST POWER / INVALID" : "VALID",
+             dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dowStr, clockTimezoneName.c_str());
+    if (!typeAsciiStringWithDelay(buf, keyDelayMs)) return false;
+  }
+  if (!typeAsciiStringWithDelay("\n", keyDelayMs)) return false;
 
-  if (!typeAsciiStringWithDelay("------------------------------------\n", keyDelayMs)) return false;
+  // 5. LittleFS Storage & Config
+  if (!typeAsciiStringWithDelay("[STORAGE & CONFIGURATION]\n", keyDelayMs)) return false;
+  size_t configFileBytes = 0;
+  if (LittleFS.exists(CONFIG_FILE)) {
+    File f = LittleFS.open(CONFIG_FILE, "r");
+    if (f) { configFileBytes = f.size(); f.close(); }
+  }
+  snprintf(buf, sizeof(buf), "* Config File Size: %zu / %zu bytes (%zu%% remaining)\n* Configured Rules: %zu / %zu active\n* Configured Placeholders: %zu / %zu active\n================================================\n",
+           configFileBytes, MAX_CONFIG_BYTES, (MAX_CONFIG_BYTES > configFileBytes) ? ((MAX_CONFIG_BYTES - configFileBytes) * 100 / MAX_CONFIG_BYTES) : 0,
+           configRuleCount, MAX_CONFIG_RULES, configPlaceholderCount, MAX_CONFIG_PLACEHOLDERS);
+  if (!typeAsciiStringWithDelay(buf, keyDelayMs)) return false;
 
   return true;
 }
@@ -3027,6 +3032,8 @@ bool typeExpansionTemplate(const String& text, uint16_t keyDelayMs) {
       if (!sendHidKeyWithDelay(KEYBOARD_MODIFIER_LEFTCTRL, HID_KEY_V, keyDelayMs)) return false;
     } else if (token == "dump_expansions" || token == "dump" || token == "expansion_dump") {
       if (!outputExpansionListTable()) return false;
+    } else if (token == "dump_hardware" || token == "hardware_dump" || token == "dump_hw" || token == "diagnostics") {
+      if (!outputDiagnosticInformation()) return false;
     } else if (token.startsWith("delay:")) {
       uint32_t ms = token.substring(6).toInt();
       if (ms > 0 && ms <= 10000) cooperativeDelay(ms);
