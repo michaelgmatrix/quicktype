@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name"quicktype-build" content"2026-07-23T12:23:59-07:00">
+  <meta name"quicktype-build" content"2026-07-23T12:34:09-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1841,6 +1841,7 @@
       initializeNavigation();
       bindEvents();
       validateWebSerialSupport();
+      setupWebSerialHotplugListeners();
       selectDefaultRuleForEditor();
       renderKeyGrid();
       renderPlaceholderList();
@@ -1850,6 +1851,7 @@
       updateDeviceControls();
       setConfigDirty(false);
       logActivity("QuickType configurator ready.");
+      checkAndAutoConnectDevice();
     }
 
     function cacheElements() {
@@ -2078,6 +2080,18 @@
       }
 
       try {
+        const authorizedPort = await findAuthorizedQuickTypePort();
+        if (authorizedPort) {
+          showToast("Connecting to saved QuickType device...");
+          logActivity("Connecting to previously approved QuickType serial port...");
+          try {
+            await connectDevice(authorizedPort);
+            return;
+          } catch (autoErr) {
+            logActivity(`Quick connect failed (${autoErr.message}). Opening chooser prompt...`);
+          }
+        }
+
         showToast("Opening serial port chooser...");
         logActivity("Choose the QuickType serial port in the browser prompt.");
         const port = await navigator.serial.requestPort();
@@ -2091,12 +2105,88 @@
       }
     }
 
+    async function findAuthorizedQuickTypePort() {
+      if (!("serial" in navigator)) return null;
+      try {
+        const ports = await navigator.serial.getPorts();
+        if (!ports || ports.length === 0) return null;
+
+        let savedVid = null;
+        let savedPid = null;
+        try {
+          savedVid = window.localStorage.getItem("quicktype-last-vid");
+          savedPid = window.localStorage.getItem("quicktype-last-pid");
+        } catch {}
+
+        for (const port of ports) {
+          const info = port.getInfo();
+          if (info && info.usbVendorId !== undefined) {
+            if (savedVid && String(info.usbVendorId) === savedVid &&
+                savedPid && String(info.usbProductId) === savedPid) {
+              return port;
+            }
+            if (info.usbVendorId === 0x2E8A || info.usbVendorId === 11914) {
+              return port;
+            }
+          }
+        }
+        return ports[0];
+      } catch {
+        return null;
+      }
+    }
+
+    async function checkAndAutoConnectDevice() {
+      if (!("serial" in navigator) || appState.isConnected) return;
+      const port = await findAuthorizedQuickTypePort();
+      if (port) {
+        logActivity("Previously authorized QuickType port found. Connecting...");
+        try {
+          await connectDevice(port);
+        } catch {
+          // Silent fallback if device is disconnected or busy
+        }
+      }
+    }
+
+    function setupWebSerialHotplugListeners() {
+      if (!("serial" in navigator)) return;
+      navigator.serial.addEventListener("connect", async (event) => {
+        logActivity("USB device connected to host.");
+        showToast("USB device connected.");
+        if (!appState.isConnected) {
+          try {
+            await connectDevice(event.port);
+          } catch (err) {
+            logActivity(`Hotplug auto-connect failed: ${err.message}`);
+          }
+        }
+      });
+
+      navigator.serial.addEventListener("disconnect", async (event) => {
+        logActivity("USB device disconnected.");
+        showToast("USB device disconnected.");
+        if (appState.isConnected && appState.port === event.port) {
+          await disconnectDevice();
+        }
+      });
+    }
+
     async function connectDevice(port) {
       await port.open({ baudRate: SERIAL_BAUD_RATE, bufferSize: 65536 });
       appState.port = port;
       appState.writer = port.writable.getWriter();
       appState.reader = port.readable.getReader();
       appState.isConnected = true;
+
+      const info = port.getInfo();
+      if (info && info.usbVendorId !== undefined) {
+        try {
+          window.localStorage.setItem("quicktype-last-vid", String(info.usbVendorId));
+          window.localStorage.setItem("quicktype-last-pid", String(info.usbProductId));
+        } catch {}
+      }
+
       updateDeviceControls();
       appState.readLoop = readSerialLoop();
       logActivity("Serial port opened. Waiting for QuickType firmware...");
