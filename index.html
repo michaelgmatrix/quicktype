@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name"quicktype-build" content"2026-07-23T14:32:59-07:00">
+  <meta name"quicktype-build" content"2026-07-23T15:06:53-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2124,8 +2124,17 @@
 
         showToast("Opening serial port chooser...");
         logActivity("Choose the QuickType serial port in the browser prompt.");
-        const port = await navigator.serial.requestPort({ filters: QUICKTYPE_USB_FILTERS });
-        await connectDevice(port);
+        let port = null;
+        try {
+          port = await navigator.serial.requestPort({ filters: QUICKTYPE_USB_FILTERS });
+        } catch (filterErr) {
+          logActivity(`QuickType USB filter matched no device or prompt changed (${filterErr.message}). Listing all available serial ports...`);
+          showToast("Listing all available serial ports...");
+          port = await navigator.serial.requestPort({});
+        }
+        if (port) {
+          await connectDevice(port);
+        }
       } catch (error) {
         logActivity(`Connection failed: ${error.message}`);
         showToast(`Connection failed: ${error.message}`, "error");
