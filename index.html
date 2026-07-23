@@ -7,7 +7,27 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-23T11:15:09-07:00">
+  <meta name="quicktype-build" content="2026-07-23T11:57:55-07:00">
+  <title>QuickType Configurator</title>
+  <script>
+    (() => {
+      if (!/^https?:$/.test(window.location.protocol)) return;
+
+      const currentBuild = document.querySelector('meta[name="quicktype-build"]')?.content;
+      const checkUrl = new URL("index.html", window.location.href);
+      checkUrl.searchParams.set("_qt_cache_check", Date.now().toString());
+
+      fetch(checkUrl, { cache: "no-store" })
+        .then((response) => response.ok ? response.text() : Promise.reject(new Error(`HTTP ${response.status}`)))
+        .then((html) => {
+          const latestBuild = html.match(/<meta name="quicktype-build" content="([^"]+)"/)?.[1];
+          if (!latestBuild || latestBuild === currentBuild) return;
+
+          const freshUrl = new URL(window.location.href);
+          freshUrl.searchParams.delete("_qt_cache_check");
+          freshUrl.searchParams.set("v", latestBuild);
+          window.location.replace(freshUrl);
+        })
   <title>QuickType Configurator</title>
   <script>
     (() => {
@@ -35,7 +55,7 @@
   </script>
   <style>
     :root {
-      color-scheme: light;
+      color-scheme: light dark;
       --bg: #f4f6f8;
       --panel: #ffffff;
       --panel-soft: #eef3f7;
@@ -53,6 +73,44 @@
       --radius: 8px;
       --radius-small: 6px;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #0b0f14;
+      --panel: #141c24;
+      --panel-soft: #1c2632;
+      --ink: #e6edf3;
+      --muted: #8b98a5;
+      --line: #263342;
+      --line-strong: #38495c;
+      --accent: #149b9e;
+      --accent-strong: #36d17f;
+      --accent-soft: rgba(20, 155, 158, 0.2);
+      --warn: #d97706;
+      --danger: #e11d48;
+      --ok: #22c55e;
+      --shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --bg: #0b0f14;
+        --panel: #141c24;
+        --panel-soft: #1c2632;
+        --ink: #e6edf3;
+        --muted: #8b98a5;
+        --line: #263342;
+        --line-strong: #38495c;
+        --accent: #149b9e;
+        --accent-strong: #36d17f;
+        --accent-soft: rgba(20, 155, 158, 0.2);
+        --warn: #d97706;
+        --danger: #e11d48;
+        --ok: #22c55e;
+        --shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+      }
     }
 
     * {
@@ -167,11 +225,25 @@
       border-radius: 50%;
       background: #c47d21;
       box-shadow: 0 0 0 4px rgba(196,125,33,0.16);
+      animation: statusWarnPulse 2.2s ease-in-out infinite;
     }
 
     .status-dot.connected {
       background: #36d17f;
       box-shadow: 0 0 0 4px rgba(54,209,127,0.16);
+      animation: statusPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes statusPulse {
+      0% { box-shadow: 0 0 0 0 rgba(54,209,127,0.5); }
+      70% { box-shadow: 0 0 0 8px rgba(54,209,127,0); }
+      100% { box-shadow: 0 0 0 0 rgba(54,209,127,0); }
+    }
+
+    @keyframes statusWarnPulse {
+      0% { box-shadow: 0 0 0 0 rgba(196,125,33,0.5); }
+      70% { box-shadow: 0 0 0 8px rgba(196,125,33,0); }
+      100% { box-shadow: 0 0 0 0 rgba(196,125,33,0); }
     }
 
     .primary-button,
@@ -233,10 +305,10 @@
 
     @keyframes writePulse {
       0%, 100% {
-        box-shadow: 0 0 0 0 rgba(229,169,59,0.46);
+        box-shadow: 0 0 0 0 rgba(229,169,59,0.5), 0 8px 20px rgba(229,169,59,0.2);
       }
       50% {
-        box-shadow: 0 0 0 7px rgba(229,169,59,0);
+        box-shadow: 0 0 0 9px rgba(229,169,59,0), 0 10px 26px rgba(229,169,59,0.35);
       }
     }
 
@@ -370,6 +442,29 @@
       font-size: 0.78rem;
       line-height: 1.5;
       padding: 0 4px;
+    }
+
+    .theme-toggle-button {
+      margin-top: 10px;
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: var(--radius-small);
+      color: #d9e4ea;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      font-size: 0.8rem;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+    }
+
+    .theme-toggle-button:hover {
+      background: rgba(255,255,255,0.16);
+      color: #ffffff;
+      border-color: rgba(255,255,255,0.22);
     }
 
     .build-stamp {
@@ -1256,18 +1351,34 @@
       z-index: 50;
     }
 
+    @keyframes toastIn {
+      from {
+        opacity: 0;
+        transform: translateY(14px) scale(0.96);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
     .toast {
       max-width: 420px;
-      padding: 11px 13px;
+      padding: 12px 16px;
       border-radius: var(--radius-small);
-      color: #fff;
-      background: #263645;
-      box-shadow: 0 12px 30px rgba(0,0,0,0.22);
+      color: #ffffff;
+      background: #1e293b;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-left: 4px solid var(--accent);
+      box-shadow: 0 14px 32px rgba(0,0,0,0.25);
       font-weight: 700;
+      animation: toastIn 220ms cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .toast.error {
       background: var(--danger);
+      border-left-color: #fca5a5;
     }
 
     .modal-backdrop {
@@ -1399,6 +1510,7 @@
 
       <p class="sidebar-footer">
         Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.
+        <button id="themeToggleButton" class="theme-toggle-button" type="button" aria-label="Toggle theme">🌙 Dark Theme</button>
         <span id="buildStamp" class="build-stamp"></span>
       </p>
     </aside>
@@ -1702,6 +1814,7 @@
     function initApp() {
       cacheElements();
       renderBuildStamp();
+      initializeTheme();
       initializeNavigation();
       bindEvents();
       validateWebSerialSupport();
@@ -1718,6 +1831,7 @@
 
     function cacheElements() {
       elements.statusDot = document.getElementById("statusDot");
+      elements.themeToggleButton = document.getElementById("themeToggleButton");
       elements.navToggleButton = document.getElementById("navToggleButton");
       elements.connectionStatus = document.getElementById("connectionStatus");
       elements.connectButton = document.getElementById("connectButton");
@@ -1776,6 +1890,9 @@
     }
 
     function bindEvents() {
+      if (elements.themeToggleButton) {
+        elements.themeToggleButton.addEventListener("click", toggleTheme);
+      }
       elements.navToggleButton.addEventListener("click", toggleNavigation);
       elements.connectButton.addEventListener("click", requestDeviceConnection);
       elements.disconnectButton.addEventListener("click", disconnectDevice);
@@ -1814,7 +1931,35 @@
           showTab(button.dataset.tab);
         });
       });
+    }
 
+    function initializeTheme() {
+      let savedTheme = null;
+      try {
+        savedTheme = window.localStorage.getItem("quicktype-theme");
+      } catch {}
+
+      const theme = savedTheme || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      setTheme(theme, false);
+    }
+
+    function toggleTheme() {
+      const current = document.body.getAttribute("data-theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      const next = current === "dark" ? "light" : "dark";
+      setTheme(next, true);
+    }
+
+    function setTheme(theme, persist = true) {
+      document.body.setAttribute("data-theme", theme);
+      if (elements.themeToggleButton) {
+        elements.themeToggleButton.textContent = theme === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode";
+        elements.themeToggleButton.setAttribute("aria-label", `Switch to ${theme === "dark" ? "light" : "dark"} mode`);
+      }
+      if (persist) {
+        try {
+          window.localStorage.setItem("quicktype-theme", theme);
+        } catch {}
+      }
     }
 
     function initializeNavigation() {
