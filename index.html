@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name"quicktype-build" content"2026-07-23T13:00:49-07:00">
+  <meta name"quicktype-build" content"2026-07-23T13:02:31-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2067,7 +2067,6 @@
       document.querySelectorAll(".tab-panel").forEach((panel) => {
         panel.classList.toggle("hidden", panel.id !== tabId);
       });
-      showToast(`Showing ${document.querySelector(`[data-tab="${tabId}"]`)?.textContent || "tab"}.`);
     }
 
     function showToast(message, type = "info") {
