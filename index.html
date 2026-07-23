@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name"quicktype-build" content"2026-07-23T13:02:31-07:00">
+  <meta name"quicktype-build" content"2026-07-23T13:27:52-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2520,6 +2520,12 @@
             <h4 style="margin:0 0 6px; font-size:0.88rem; color:var(--accent-strong);">Date & Time Functions</h4>
             <div style="display:flex; flex-wrap:wrap; gap:6px;">
               <button type="button" class="token-button" onclick="insertToken('{date}')">{date}</button>
+              <button type="button" class="token-button" onclick="insertToken('{date+1d}')">{date+1d}</button>
+              <button type="button" class="token-button" onclick="insertToken('{date-7d}')">{date-7d}</button>
+              <button type="button" class="token-button" onclick="insertToken('{iso_date}')">{iso_date}</button>
+              <button type="button" class="token-button" onclick="insertToken('{iso_date+1d}')">{iso_date+1d}</button>
+              <button type="button" class="token-button" onclick="insertToken('{date_short}')">{date_short}</button>
+              <button type="button" class="token-button" onclick="insertToken('{date_short-1d}')">{date_short-1d}</button>
               <button type="button" class="token-button" onclick="insertToken('{time_24}')">{time_24}</button>
               <button type="button" class="token-button" onclick="insertToken('{time_12}')">{time_12}</button>
               <button type="button" class="token-button" onclick="insertToken('{year}')">{year}</button>

@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.88 (2026-07-23)
+// QuickType firmware version: 0.2.89 (2026-07-23)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -45,7 +45,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.88"; // v0.2.88: Set explicit CDC Serial string descriptor to "QuickType Serial"
+static constexpr char FIRMWARE_VERSION[] = "0.2.89"; // v0.2.89: Add relative date math tokens {date+1d}, {date-7d}, {iso_date+1d}, etc.
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
@@ -2839,6 +2839,10 @@ bool sendShortcut(const String& shortcut, uint16_t keyDelayMs) {
 }
 
 String rtcTokenValue(const String& token) {
+  bool isRelativeDate = token.startsWith("date+") || token.startsWith("date-") ||
+                        token.startsWith("iso_date+") || token.startsWith("iso_date-") ||
+                        token.startsWith("date_short+") || token.startsWith("date_short-");
+
   bool isClockToken = token == "date" || token == "date_short" || token == "iso_date" ||
                       token == "time" || token == "time_12_compact" || token == "time_seconds" || token == "time_24" ||
                       token == "time_24_seconds" || token == "datetime" || token == "iso_datetime" ||
@@ -2848,7 +2852,7 @@ String rtcTokenValue(const String& token) {
                       token == "day_padded" || token == "year" || token == "year_short" ||
                       token == "hour_24" || token == "hour_12" || token == "minute" ||
                       token == "second" || token == "ampm" || token == "timezone" ||
-                      token == "timezone_offset" || token.startsWith("date:");
+                      token == "timezone_offset" || token.startsWith("date:") || isRelativeDate;
   if (!isClockToken) {
     return "";
   }
@@ -2856,6 +2860,29 @@ String rtcTokenValue(const String& token) {
   RtcDateTime now = rtcGetDateTime();
   if (!validateDateTime(now)) {
     return "[RTC unavailable]";
+  }
+
+  if (isRelativeDate) {
+    int plusIdx = token.indexOf('+');
+    int minusIdx = token.indexOf('-');
+    int signIdx = (plusIdx != -1) ? plusIdx : minusIdx;
+    if (signIdx != -1 && token.endsWith("d")) {
+      String prefix = token.substring(0, signIdx);
+      int days = token.substring(signIdx, token.length() - 1).toInt();
+      RtcDateTime calcDate = datePlusDays(now, days);
+
+      char calcBuf[80];
+      if (prefix == "date") {
+        snprintf(calcBuf, sizeof(calcBuf), "%02d/%02d/%04d", calcDate.month, calcDate.day, calcDate.year);
+        return String(calcBuf);
+      } else if (prefix == "iso_date") {
+        snprintf(calcBuf, sizeof(calcBuf), "%04d-%02d-%02d", calcDate.year, calcDate.month, calcDate.day);
+        return String(calcBuf);
+      } else if (prefix == "date_short") {
+        snprintf(calcBuf, sizeof(calcBuf), "%d/%d/%02d", calcDate.month, calcDate.day, calcDate.year % 100);
+        return String(calcBuf);
+      }
+    }
   }
 
   if (token.startsWith("date:")) {
