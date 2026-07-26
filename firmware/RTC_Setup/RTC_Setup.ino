@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.97 (2026-07-25)
+// QuickType firmware version: 0.2.98 (2026-07-25)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -55,7 +55,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.97"; // v0.2.97: Permanent UART mode, PIO fallback disabled
+static constexpr char FIRMWARE_VERSION[] = "0.2.98"; // v0.2.98: Pure UART mode without unserviced PIO USB interrupts, PIO fallback disabled
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
@@ -4590,16 +4590,6 @@ void setup1() {
   Serial2.setTX(UART_TX_PIN);
   Serial2.setRX(UART_RX_PIN);
   Serial2.begin(UART_BAUD);
-
-  // Preserve the original one-second USB power-up delay while still receiving
-  // any bridge descriptor packets sent during startup.
-  uint32_t hostStartAt = millis() + 1000;
-  while ((int32_t)(millis() - hostStartAt) < 0) {
-    serviceUartBridge();
-    delay(1);
-  }
-
-  configureUsbHost();
 }
 
 void loop1() {
