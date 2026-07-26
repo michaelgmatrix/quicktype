@@ -2477,6 +2477,16 @@ void handleUartPacket(uint8_t type, uint8_t const* payload, uint8_t length) {
     return;
   }
 
+  if (type == QuickTypeUart::TYPE_LOG && length > 0) {
+    char msg[QuickTypeUart::MAX_PAYLOAD_SIZE + 1] = {};
+    memcpy(msg, payload, min(static_cast<uint8_t>(sizeof(msg) - 1), length));
+    if (Serial && Serial.dtr()) {
+      Serial.print("[BRIDGE LOG] ");
+      Serial.println(msg);
+    }
+    return;
+  }
+
   telemetry.uartFramingErrorCount++;
 }
 

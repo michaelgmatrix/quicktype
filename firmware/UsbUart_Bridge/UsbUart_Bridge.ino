@@ -140,6 +140,12 @@ void writeMountedHidSnapshots() {
   }
 }
 
+void writeLog(const char* message) {
+  if (message == nullptr) return;
+  uint8_t len = min(static_cast<size_t>(QuickTypeUart::MAX_PAYLOAD_SIZE), strlen(message));
+  writePacket(QuickTypeUart::TYPE_LOG, reinterpret_cast<const uint8_t*>(message), len);
+}
+
 void writeHidReport(
   uint8_t devAddr,
   uint8_t instance,
@@ -160,13 +166,15 @@ void setup() {
   Serial2.setRX(UART_RX_PIN);
   Serial2.begin(UART_BAUD);
   writePacket(QuickTypeUart::TYPE_HEARTBEAT, nullptr, 0);
+  writeLog("Bridge booting (Native Host)");
 
   tuh_hid_set_default_protocol(HID_PROTOCOL_BOOT);
   USBHost.begin(0);
+  writeLog("USBHost.begin(0) called");
 }
 
 void loop() {
-  USBHost.task(0);
+  USBHost.task();
 
   uint32_t now = millis();
   if (now - lastHeartbeatMs >= HEARTBEAT_INTERVAL_MS) {
@@ -185,6 +193,7 @@ extern "C" void tuh_hid_mount_cb(
   uint8_t const* reportDescriptor,
   uint16_t descriptorLength
 ) {
+  writeLog("USB HID Mount Event");
   uint8_t protocol = tuh_hid_interface_protocol(devAddr, instance);
   HidInterfaceSnapshot* snapshot = cacheHidInterface(
     devAddr,
@@ -217,10 +226,12 @@ extern "C" void tuh_hid_mount_cb(
 
 extern "C" void tuh_hid_set_protocol_complete_cb(uint8_t devAddr, uint8_t instance, uint8_t protocol) {
   (void)protocol;
+  writeLog("HID Protocol Complete");
   tuh_hid_receive_report(devAddr, instance);
 }
 
 extern "C" void tuh_hid_umount_cb(uint8_t devAddr, uint8_t instance) {
+  writeLog("USB HID Unmount Event");
   HidInterfaceSnapshot* info = findHidInterface(devAddr, instance);
   if (info != nullptr) {
     *info = HidInterfaceSnapshot();
@@ -235,6 +246,7 @@ extern "C" void tuh_hid_report_received_cb(
   uint8_t const* report,
   uint16_t length
 ) {
+  writeLog("USB HID Report Event");
   writeHidReport(devAddr, instance, report, length);
   tuh_hid_receive_report(devAddr, instance);
 }

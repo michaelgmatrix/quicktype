@@ -12,6 +12,7 @@ static constexpr uint8_t TYPE_HID_MOUNT = 2;
 static constexpr uint8_t TYPE_HID_DESCRIPTOR = 3;
 static constexpr uint8_t TYPE_HID_REPORT = 4;
 static constexpr uint8_t TYPE_HID_UNMOUNT = 5;
+static constexpr uint8_t TYPE_LOG = 6;
 static constexpr uint8_t HEADER_FIELD_COUNT = 5;
 static constexpr uint8_t MAX_PAYLOAD_SIZE = 72;
 static constexpr uint8_t DESCRIPTOR_CHUNK_SIZE = 60;
