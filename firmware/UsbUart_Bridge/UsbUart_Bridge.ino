@@ -2,7 +2,7 @@
 #define USE_TINYUSB_HOST
 #endif
 
-// QuickType USB-UART native host bridge build: 0.2.7 (2026-07-25)
+// QuickType USB-UART native host bridge build: 0.2.8 (2026-07-25)
 #include <Arduino.h>
 #include "QuickTypeUartProtocol.h"
 #include <Adafruit_TinyUSB.h>
@@ -16,7 +16,7 @@ static constexpr uint32_t HID_SNAPSHOT_INTERVAL_MS = 2000;
 static constexpr uint8_t MAX_HID_INTERFACES = 4;
 static constexpr uint16_t MAX_HID_DESCRIPTOR_SIZE = 1024;
 
-static constexpr char BRIDGE_FIRMWARE_VERSION[] = "0.2.7";
+static constexpr char BRIDGE_FIRMWARE_VERSION[] = "0.2.8";
 
 static uint8_t packetSequence = 0;
 static uint32_t lastHeartbeatMs = 0;
@@ -274,7 +274,6 @@ extern "C" void tuh_hid_report_received_cb(
   uint8_t const* report,
   uint16_t length
 ) {
-  writeLog("USB HID Report Event");
   writeHidReport(devAddr, instance, report, length);
   tuh_hid_receive_report(devAddr, instance);
 }

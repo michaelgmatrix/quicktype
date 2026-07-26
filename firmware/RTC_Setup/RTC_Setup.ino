@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.99 (2026-07-25)
+// QuickType firmware version: 0.2.100 (2026-07-25)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -55,7 +55,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.99"; // v0.2.99: Auto-mount HID interface fallback on report receipt
+static constexpr char FIRMWARE_VERSION[] = "0.2.100"; // v0.2.100: Zero-delay UART RX processing for 100% keypress accuracy
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
@@ -4617,5 +4617,4 @@ void loop1() {
   }
 
   serviceUartBridge();
-  delay(1);
 }
