@@ -1,14 +1,12 @@
+// QuickType USB-UART native host bridge build: 0.2.0 (2026-07-25)
 #include <Arduino.h>
 #include "QuickTypeUartProtocol.h"
-
-#include <pio_usb.h>
 #include <Adafruit_TinyUSB.h>
 
-#ifndef USE_TINYUSB
-#error This keyboard-facing firmware requires the RP2040 native TinyUSB stack.
+#ifndef USE_TINYUSB_HOST
+#error This keyboard-facing bridge firmware must be built with usbstack=tinyusb_host FQBN flag.
 #endif
 
-static constexpr uint8_t USB_HOST_DP_GPIO = 0;
 static constexpr uint8_t UART_TX_PIN = 4;
 static constexpr uint8_t UART_RX_PIN = 5;
 static constexpr uint32_t UART_BAUD = 1000000;
@@ -163,15 +161,12 @@ void setup() {
   Serial2.begin(UART_BAUD);
   writePacket(QuickTypeUart::TYPE_HEARTBEAT, nullptr, 0);
 
-  pio_usb_configuration_t pioConfig = PIO_USB_DEFAULT_CONFIG;
-  pioConfig.pin_dp = USB_HOST_DP_GPIO;
   tuh_hid_set_default_protocol(HID_PROTOCOL_BOOT);
-  USBHost.configure_pio_usb(1, &pioConfig);
-  USBHost.begin(1);
+  USBHost.begin(0);
 }
 
 void loop() {
-  USBHost.task();
+  USBHost.task(0);
 
   uint32_t now = millis();
   if (now - lastHeartbeatMs >= HEARTBEAT_INTERVAL_MS) {
