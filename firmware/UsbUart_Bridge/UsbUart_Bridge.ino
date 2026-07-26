@@ -167,7 +167,7 @@ void setup() {
 }
 
 void loop() {
-  USBHost.task(1);
+  USBHost.task();
 
   uint32_t now = millis();
   if (now - lastHeartbeatMs >= HEARTBEAT_INTERVAL_MS) {
