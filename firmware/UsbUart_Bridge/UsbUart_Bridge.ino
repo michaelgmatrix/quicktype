@@ -2,10 +2,11 @@
 #define USE_TINYUSB_HOST
 #endif
 
-// QuickType USB-UART native host bridge build: 0.2.2 (2026-07-25)
+// QuickType USB-UART native host bridge build: 0.2.3 (2026-07-25)
 #include <Arduino.h>
 #include "QuickTypeUartProtocol.h"
 #include <Adafruit_TinyUSB.h>
+#include <hardware/structs/usb.h>
 
 static constexpr uint8_t UART_TX_PIN = 4;
 static constexpr uint8_t UART_RX_PIN = 5;
@@ -15,7 +16,7 @@ static constexpr uint32_t HID_SNAPSHOT_INTERVAL_MS = 2000;
 static constexpr uint8_t MAX_HID_INTERFACES = 4;
 static constexpr uint16_t MAX_HID_DESCRIPTOR_SIZE = 1024;
 
-static constexpr char BRIDGE_FIRMWARE_VERSION[] = "0.2.2";
+static constexpr char BRIDGE_FIRMWARE_VERSION[] = "0.2.3";
 
 static uint8_t packetSequence = 0;
 static uint32_t lastHeartbeatMs = 0;
@@ -171,17 +172,31 @@ void writeHidReport(
   writePacket(QuickTypeUart::TYPE_HID_REPORT, payload, length + 2);
 }
 
+static bool hostBeginOk = false;
+
+void checkHardwareHostDiagnostics() {
+  uint32_t sieStatus = usb_hw->sie_status;
+  uint32_t mainCtrl = usb_hw->main_ctrl;
+  char buf[QuickTypeUart::MAX_PAYLOAD_SIZE] = {};
+  snprintf(buf, sizeof(buf), "Host Status: ok=%d ctrl=0x%02X sie=0x%04X",
+           hostBeginOk ? 1 : 0,
+           static_cast<unsigned int>(mainCtrl & 0xFF),
+           static_cast<unsigned int>(sieStatus & 0xFFFF));
+  writeLog(buf);
+}
+
 void setup() {
   Serial2.setTX(UART_TX_PIN);
   Serial2.setRX(UART_RX_PIN);
   Serial2.begin(UART_BAUD);
   writePacket(QuickTypeUart::TYPE_HEARTBEAT, nullptr, 0);
   sendBridgeVersion();
-  writeLog("⚡ UART Bridge Board Reset / Booted (v0.2.2)");
+  writeLog("⚡ UART Bridge Board Reset / Booted (v0.2.3)");
 
   tuh_hid_set_default_protocol(HID_PROTOCOL_BOOT);
-  USBHost.begin(0);
-  writeLog("USBHost.begin(0) called");
+  hostBeginOk = USBHost.begin(0);
+  writeLog(hostBeginOk ? "USBHost.begin(0) SUCCESS" : "USBHost.begin(0) FAILED");
+  checkHardwareHostDiagnostics();
 }
 
 void loop() {
@@ -195,6 +210,7 @@ void loop() {
   if (now - lastHidSnapshotMs >= HID_SNAPSHOT_INTERVAL_MS) {
     lastHidSnapshotMs = now;
     sendBridgeVersion();
+    checkHardwareHostDiagnostics();
     writeMountedHidSnapshots();
   }
 }
