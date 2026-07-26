@@ -2409,10 +2409,17 @@ void processBridgeHidReport(
 }
 
 void handleUartPacket(uint8_t type, uint8_t const* payload, uint8_t length) {
+  bool bridgeWasInactive = (millis() - lastUartBridgePacketMs > UART_BRIDGE_TIMEOUT_MS);
   telemetry.uartPacketCount++;
   telemetry.lastUartPacketMs = millis();
   lastUartBridgePacketMs = millis();
   selectKeypadInputMode(KeypadInputMode::UartBridge);
+
+  if (bridgeWasInactive) {
+    if (Serial && Serial.dtr()) {
+      Serial.println("[BRIDGE LOG] ⚡ UART Bridge connection active");
+    }
+  }
 
   if (type == QuickTypeUart::TYPE_HEARTBEAT) {
     return;

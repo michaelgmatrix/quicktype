@@ -177,7 +177,7 @@ void setup() {
   Serial2.begin(UART_BAUD);
   writePacket(QuickTypeUart::TYPE_HEARTBEAT, nullptr, 0);
   sendBridgeVersion();
-  writeLog("Bridge booting (Native Host)");
+  writeLog("⚡ UART Bridge Board Reset / Booted (v0.2.1)");
 
   tuh_hid_set_default_protocol(HID_PROTOCOL_BOOT);
   USBHost.begin(0);
