@@ -2,11 +2,12 @@
 #define USE_TINYUSB_HOST
 #endif
 
-// QuickType USB-UART native host bridge build: 0.2.4 (2026-07-25)
+// QuickType USB-UART native host bridge build: 0.2.5 (2026-07-25)
 #include <Arduino.h>
 #include "QuickTypeUartProtocol.h"
 #include <Adafruit_TinyUSB.h>
 #include <hardware/structs/usb.h>
+#include <hardware/watchdog.h>
 
 static constexpr uint8_t UART_TX_PIN = 4;
 static constexpr uint8_t UART_RX_PIN = 5;
@@ -16,7 +17,7 @@ static constexpr uint32_t HID_SNAPSHOT_INTERVAL_MS = 2000;
 static constexpr uint8_t MAX_HID_INTERFACES = 4;
 static constexpr uint16_t MAX_HID_DESCRIPTOR_SIZE = 1024;
 
-static constexpr char BRIDGE_FIRMWARE_VERSION[] = "0.2.4";
+static constexpr char BRIDGE_FIRMWARE_VERSION[] = "0.2.5";
 
 static uint8_t packetSequence = 0;
 static uint32_t lastHeartbeatMs = 0;
@@ -186,12 +187,13 @@ void checkHardwareHostDiagnostics() {
 }
 
 void setup() {
+  watchdog_enable(3000, 1);
   Serial2.setTX(UART_TX_PIN);
   Serial2.setRX(UART_RX_PIN);
   Serial2.begin(UART_BAUD);
   writePacket(QuickTypeUart::TYPE_HEARTBEAT, nullptr, 0);
   sendBridgeVersion();
-  writeLog("⚡ UART Bridge Board Reset / Booted (v0.2.4)");
+  writeLog("⚡ UART Bridge Board Reset / Booted (v0.2.5)");
 
   // Force hardware USB PHY into Native Host mode (main_ctrl = 0x03)
   usb_hw->main_ctrl = USB_MAIN_CTRL_CONTROLLER_EN_BITS | USB_MAIN_CTRL_HOST_NDEVICE_BITS;
@@ -213,6 +215,7 @@ void setup() {
 }
 
 void loop() {
+  watchdog_update();
   USBHost.task();
 
   uint32_t now = millis();
