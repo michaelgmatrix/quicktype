@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.95 (2026-07-25)
+// QuickType firmware version: 0.2.96 (2026-07-25)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -55,7 +55,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.95"; // v0.2.95: Live bridge log forwarding
+static constexpr char FIRMWARE_VERSION[] = "0.2.96"; // v0.2.96: Direct WebSerial log streaming without DTR restriction
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
@@ -484,7 +484,7 @@ bool serialDebugConnected() {
 }
 
 bool serialProtocolConnected() {
-  return Serial && Serial.dtr();
+  return static_cast<bool>(Serial);
 }
 
 void resetSerialProtocolInput() {
@@ -2416,7 +2416,7 @@ void handleUartPacket(uint8_t type, uint8_t const* payload, uint8_t length) {
   selectKeypadInputMode(KeypadInputMode::UartBridge);
 
   if (bridgeWasInactive) {
-    if (Serial && Serial.dtr()) {
+    if (Serial) {
       Serial.println("[BRIDGE LOG] ⚡ UART Bridge connection active");
     }
   }
@@ -2489,7 +2489,7 @@ void handleUartPacket(uint8_t type, uint8_t const* payload, uint8_t length) {
   if (type == QuickTypeUart::TYPE_LOG && length > 0) {
     char msg[QuickTypeUart::MAX_PAYLOAD_SIZE + 1] = {};
     memcpy(msg, payload, min(static_cast<uint8_t>(sizeof(msg) - 1), length));
-    if (Serial && Serial.dtr()) {
+    if (Serial) {
       Serial.print("[BRIDGE LOG] ");
       Serial.println(msg);
     }
