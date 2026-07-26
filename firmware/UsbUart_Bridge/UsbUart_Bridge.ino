@@ -191,7 +191,7 @@ void setup() {
   Serial2.begin(UART_BAUD);
   writePacket(QuickTypeUart::TYPE_HEARTBEAT, nullptr, 0);
   sendBridgeVersion();
-  writeLog("⚡ UART Bridge Board Reset / Booted (v0.2.7)");
+  writeLog("⚡ UART Bridge Board Reset / Booted (v0.2.10)");
 
   tuh_hid_set_default_protocol(HID_PROTOCOL_BOOT);
   hostBeginOk = USBHost.begin(0);
@@ -223,6 +223,18 @@ extern "C" void tuh_hid_mount_cb(
 ) {
   writeLog("USB HID Mount Event");
   uint8_t protocol = tuh_hid_interface_protocol(devAddr, instance);
+
+  if (protocol != HID_ITF_PROTOCOL_KEYBOARD && reportDescriptor != nullptr && descriptorLength > 0) {
+    tuh_hid_report_info_t reports[8];
+    uint8_t reportCount = tuh_hid_parse_report_descriptor(reports, 8, reportDescriptor, descriptorLength);
+    for (uint8_t i = 0; i < reportCount; i++) {
+      if (reports[i].usage_page == HID_USAGE_PAGE_DESKTOP && reports[i].usage == HID_USAGE_DESKTOP_KEYBOARD) {
+        protocol = HID_ITF_PROTOCOL_KEYBOARD;
+        break;
+      }
+    }
+  }
+
   HidInterfaceSnapshot* snapshot = cacheHidInterface(
     devAddr,
     instance,

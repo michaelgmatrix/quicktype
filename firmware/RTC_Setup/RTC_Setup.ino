@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.101 (2026-07-25)
+// QuickType firmware version: 0.2.103 (2026-07-26)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -55,7 +55,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.101"; // v0.2.101: Auto Report-ID strip for full Report Protocol keyboards
+static constexpr char FIRMWARE_VERSION[] = "0.2.103"; // v0.2.103: Support composite 2.4GHz wireless keyboard dongles (TeckNet, etc.) for full Report Protocol keyboards
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
@@ -2407,8 +2407,8 @@ void processBridgeHidReport(
   }
 
   bool keyboardReport =
-    info->keyboard &&
-    (info->keyboardReportId == 0 || report[0] == info->keyboardReportId);
+    (info->keyboard || length >= 8) &&
+    (info->keyboardReportId == 0 || report[0] == info->keyboardReportId || length >= 8);
   bool consumerReport =
     info->consumerControl &&
     (info->consumerReportId == 0 || report[0] == info->consumerReportId);
@@ -2416,6 +2416,10 @@ void processBridgeHidReport(
   if (keyboardReport) {
     hid_keyboard_report_t decoded = {};
     if (decodeKeyboardReport(report, length, info->keyboardReportId, decoded)) {
+      info->keyboard = true;
+      enqueueKeyboardReport(decoded);
+    } else if (decodeKeyboardReport(report, length, 0, decoded)) {
+      info->keyboard = true;
       enqueueKeyboardReport(decoded);
     } else {
       telemetry.keyboardDecodeFailCount++;
