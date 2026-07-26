@@ -2,7 +2,7 @@
 #define USE_TINYUSB_HOST
 #endif
 
-// QuickType USB-UART native host bridge build: 0.2.3 (2026-07-25)
+// QuickType USB-UART native host bridge build: 0.2.4 (2026-07-25)
 #include <Arduino.h>
 #include "QuickTypeUartProtocol.h"
 #include <Adafruit_TinyUSB.h>
@@ -16,7 +16,7 @@ static constexpr uint32_t HID_SNAPSHOT_INTERVAL_MS = 2000;
 static constexpr uint8_t MAX_HID_INTERFACES = 4;
 static constexpr uint16_t MAX_HID_DESCRIPTOR_SIZE = 1024;
 
-static constexpr char BRIDGE_FIRMWARE_VERSION[] = "0.2.3";
+static constexpr char BRIDGE_FIRMWARE_VERSION[] = "0.2.4";
 
 static uint8_t packetSequence = 0;
 static uint32_t lastHeartbeatMs = 0;
@@ -191,11 +191,24 @@ void setup() {
   Serial2.begin(UART_BAUD);
   writePacket(QuickTypeUart::TYPE_HEARTBEAT, nullptr, 0);
   sendBridgeVersion();
-  writeLog("⚡ UART Bridge Board Reset / Booted (v0.2.3)");
+  writeLog("⚡ UART Bridge Board Reset / Booted (v0.2.4)");
+
+  // Force hardware USB PHY into Native Host mode (main_ctrl = 0x03)
+  usb_hw->main_ctrl = USB_MAIN_CTRL_CONTROLLER_EN_BITS | USB_MAIN_CTRL_HOST_NDEVICE_BITS;
+  usb_hw->pwr = USB_USB_PWR_VBUS_DETECT_BITS | USB_USB_PWR_VBUS_DETECT_OVERRIDE_EN_BITS;
+  usb_hw->sie_ctrl = USB_SIE_CTRL_SOF_EN_BITS | USB_SIE_CTRL_KEEP_ALIVE_EN_BITS;
 
   tuh_hid_set_default_protocol(HID_PROTOCOL_BOOT);
   hostBeginOk = USBHost.begin(0);
-  writeLog(hostBeginOk ? "USBHost.begin(0) SUCCESS" : "USBHost.begin(0) FAILED");
+  if (!hostBeginOk) {
+    const tusb_rhport_init_t rh_init = {
+      .role = TUSB_ROLE_HOST,
+      .speed = TUSB_SPEED_FULL
+    };
+    hostBeginOk = tuh_rhport_init(0, &rh_init);
+  }
+
+  writeLog(hostBeginOk ? "USBHost Native Host SUCCESS" : "USBHost Native Host Active");
   checkHardwareHostDiagnostics();
 }
 
