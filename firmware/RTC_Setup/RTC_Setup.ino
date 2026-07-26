@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.94 (2026-07-25)
+// QuickType firmware version: 0.2.95 (2026-07-25)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -55,7 +55,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.94"; // v0.2.94: Receive keypad reports from UART bridge
+static constexpr char FIRMWARE_VERSION[] = "0.2.95"; // v0.2.95: Live bridge log forwarding
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
