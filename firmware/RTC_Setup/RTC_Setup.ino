@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.100 (2026-07-25)
+// QuickType firmware version: 0.2.101 (2026-07-25)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -55,7 +55,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.100"; // v0.2.100: Zero-delay UART RX processing for 100% keypress accuracy
+static constexpr char FIRMWARE_VERSION[] = "0.2.101"; // v0.2.101: Auto Report-ID strip for full Report Protocol keyboards
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
@@ -1250,7 +1250,7 @@ bool decodeKeyboardReport(
   uint8_t expectedReportId,
   hid_keyboard_report_t& out
 ) {
-  if (report == nullptr) {
+  if (report == nullptr || len == 0) {
     return false;
   }
 
@@ -1262,6 +1262,9 @@ bool decodeKeyboardReport(
       return false;
     }
 
+    payload = report + 1;
+    payloadLen = len - 1;
+  } else if (len == sizeof(hid_keyboard_report_t) + 1 || (len > sizeof(hid_keyboard_report_t) && report[0] <= 8)) {
     payload = report + 1;
     payloadLen = len - 1;
   }
