@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.93 (2026-07-23)
+// QuickType firmware version: 0.2.94 (2026-07-25)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -10,6 +10,7 @@
 #include <hardware/watchdog.h>
 #include <hardware/clocks.h>
 #include <pico/unique_id.h>
+#include "QuickTypeUartProtocol.h"
 
 // ============================================================
 // RP2040-Zero wiring
@@ -29,15 +30,23 @@
 //   USB RED wire   = +5V / VBUS
 //   USB BLACK wire = GND
 //
-// Pico-PIO-USB rule:
-//   USB_HOST_DP_GPIO is D+
-//   D- is automatically USB_HOST_DP_GPIO + 1
+// Optional keyboard-facing RP2040 UART bridge:
+//   GPIO4 = UART TX to bridge GPIO5
+//   GPIO5 = UART RX from bridge GPIO4
+//   GND   = common ground
+//
+// Valid bridge heartbeats select UART input. Without them, the original
+// Pico-PIO-USB keypad input remains active.
 
 static constexpr int SDA_PIN = 6;
 static constexpr int SCL_PIN = 7;
 
 static constexpr int USB_HOST_DP_GPIO = 0; // GPIO0 / USB green D+
 static constexpr int USB_HOST_DM_GPIO = 1; // GPIO1 / USB white D-
+static constexpr uint8_t UART_TX_PIN = 4;
+static constexpr uint8_t UART_RX_PIN = 5;
+static constexpr uint32_t UART_BAUD = 1000000;
+static constexpr uint32_t UART_BRIDGE_TIMEOUT_MS = 1500;
 
 static constexpr uint8_t RTC_ADDR = 0x68;
 static constexpr char TIMESTAMP_FILE[] = "/Timestamp.txt";
@@ -46,7 +55,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.93"; // v0.2.93: Increase MAX_CONFIG_RULES to 128
+static constexpr char FIRMWARE_VERSION[] = "0.2.94"; // v0.2.94: Receive keypad reports from UART bridge
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
@@ -84,7 +93,7 @@ Adafruit_USBD_HID usb_hid;
 // Track the active host keyboard LED report status (Num Lock, Caps Lock, etc.)
 static uint8_t hostLedsState = 0xFF;
 
-// PIO USB host object for the external keypad.
+// PIO USB host object for original one-board devices.
 Adafruit_USBH_Host USBHost;
 
 struct RtcDateTime {
@@ -138,6 +147,12 @@ struct HostHidInterfaceInfo {
   bool keyboard;
   bool consumerControl;
   bool consumerBitmask;
+  bool uartBridge;
+};
+
+enum class KeypadInputMode : uint8_t {
+  PioUsb,
+  UartBridge
 };
 
 struct TelemetryState {
@@ -147,6 +162,11 @@ struct TelemetryState {
   uint32_t hostReportRequestFailCount;
   uint32_t hostReportCallbackCount;
   uint32_t hostZeroLengthReportCount;
+  uint32_t uartPacketCount;
+  uint32_t uartChecksumFailCount;
+  uint32_t uartFramingErrorCount;
+  uint32_t uartSequenceGapCount;
+  uint32_t uartDroppedReportCount;
   uint32_t keyboardReportCount;
   uint32_t keyboardDecodeFailCount;
   uint32_t consumerReportCount;
@@ -166,9 +186,12 @@ struct TelemetryState {
   uint32_t keyPressCount;
   uint32_t hostMountCount;
   uint32_t hostUnmountCount;
+  uint32_t bridgeMountCount;
+  uint32_t bridgeUnmountCount;
   uint32_t lastLoopMs;
   uint32_t maxLoopGapMs;
   uint32_t lastHostReportMs;
+  uint32_t lastUartPacketMs;
   uint32_t lastKeyboardReportMs;
   uint32_t lastConsumerReportMs;
   uint32_t lastForwardedKeyboardMs;
@@ -179,6 +202,8 @@ struct TelemetryState {
   uint32_t lastProtocolCommandMs;
   uint32_t lastHostMountMs;
   uint32_t lastHostUnmountMs;
+  uint32_t lastBridgeMountMs;
+  uint32_t lastBridgeUnmountMs;
   uint32_t lastHeartbeatMs;
   uint16_t lastConsumerUsage;
   uint8_t lastKeyUsage;
@@ -236,6 +261,24 @@ static uint32_t lastWakeupAttemptMs = 0;
 static volatile bool deviceConnectionResetPending = false;
 static volatile bool hostStackSuspended = false;
 static volatile bool hostRemoteWakeupEnabled = false;
+static volatile bool bridgeKeyboardMounted = false;
+static volatile KeypadInputMode keypadInputMode = KeypadInputMode::PioUsb;
+static volatile uint32_t lastUartBridgePacketMs = 0;
+static volatile bool inputModeResetPending = false;
+static bool uartSequenceValid = false;
+static uint8_t uartLastSequence = 0;
+static uint8_t uartParserState = 0;
+static uint8_t uartHeader[QuickTypeUart::HEADER_FIELD_COUNT] = {};
+static uint8_t uartHeaderIndex = 0;
+static uint8_t uartPayload[QuickTypeUart::MAX_PAYLOAD_SIZE] = {};
+static uint8_t uartPayloadIndex = 0;
+static constexpr uint16_t MAX_BRIDGE_HID_DESCRIPTOR_SIZE = 1024;
+static uint8_t bridgeDescriptor[MAX_BRIDGE_HID_DESCRIPTOR_SIZE] = {};
+static uint16_t bridgeDescriptorExpected = 0;
+static uint16_t bridgeDescriptorReceived = 0;
+static uint8_t bridgeDescriptorDevAddr = 0;
+static uint8_t bridgeDescriptorInstance = 0;
+static uint8_t bridgeDescriptorProtocol = HID_ITF_PROTOCOL_NONE;
 static constexpr size_t CONSUMER_QUEUE_SIZE = 8;
 static volatile uint16_t consumerUsageQueue[CONSUMER_QUEUE_SIZE];
 static volatile size_t consumerQueueHead = 0;
@@ -390,6 +433,7 @@ size_t mountedKeyboardInterfaceCount();
 size_t mountedConsumerInterfaceCount();
 void requestNextHidReport(uint8_t dev_addr, uint8_t instance);
 void pollMountedHidReports();
+void serviceUartBridge();
 void serviceUsbBridge();
 void resetBridgeStateAfterConfigurationChange();
 
@@ -542,7 +586,11 @@ void resumeHostStack() {
 size_t mountedHostInterfaceCount() {
   size_t count = 0;
   for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
-    if (hostHidInterfaces[index].mounted) count++;
+    HostHidInterfaceInfo const& info = hostHidInterfaces[index];
+    bool activeSource = keypadInputMode == KeypadInputMode::UartBridge
+      ? info.uartBridge
+      : !info.uartBridge;
+    if (info.mounted && activeSource) count++;
   }
   return count;
 }
@@ -550,7 +598,11 @@ size_t mountedHostInterfaceCount() {
 size_t mountedKeyboardInterfaceCount() {
   size_t count = 0;
   for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
-    if (hostHidInterfaces[index].mounted && hostHidInterfaces[index].keyboard) count++;
+    HostHidInterfaceInfo const& info = hostHidInterfaces[index];
+    bool activeSource = keypadInputMode == KeypadInputMode::UartBridge
+      ? info.uartBridge
+      : !info.uartBridge;
+    if (info.mounted && activeSource && info.keyboard) count++;
   }
   return count;
 }
@@ -558,7 +610,11 @@ size_t mountedKeyboardInterfaceCount() {
 size_t mountedConsumerInterfaceCount() {
   size_t count = 0;
   for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
-    if (hostHidInterfaces[index].mounted && hostHidInterfaces[index].consumerControl) count++;
+    HostHidInterfaceInfo const& info = hostHidInterfaces[index];
+    bool activeSource = keypadInputMode == KeypadInputMode::UartBridge
+      ? info.uartBridge
+      : !info.uartBridge;
+    if (info.mounted && activeSource && info.consumerControl) count++;
   }
   return count;
 }
@@ -578,6 +634,12 @@ void addTelemetryToJson(JsonObject target) {
   target["hostInterfaces"] = mountedHostInterfaceCount();
   target["keyboardInterfaces"] = mountedKeyboardInterfaceCount();
   target["consumerInterfaces"] = mountedConsumerInterfaceCount();
+  target["keypadInputMode"] = keypadInputMode == KeypadInputMode::UartBridge ? "uart" : "pio";
+  target["uartBridgeActive"] = keypadInputMode == KeypadInputMode::UartBridge;
+  target["bridgeKeyboardMounted"] = bridgeKeyboardMounted;
+  target["deviceConnected"] = (keypadInputMode == KeypadInputMode::UartBridge)
+    ? bridgeKeyboardMounted
+    : (mountedKeyboardInterfaceCount() > 0);
   target["pendingKeyboard"] = pendingKeyboardReportValid;
   target["pendingConsumer"] = (consumerQueueTail != consumerQueueHead);
   target["typedBufferLength"] = typedBuffer.length();
@@ -589,6 +651,11 @@ void addTelemetryToJson(JsonObject target) {
   counters["hostReportRequestFails"] = telemetry.hostReportRequestFailCount;
   counters["hostReportCallbacks"] = telemetry.hostReportCallbackCount;
   counters["zeroLengthReports"] = telemetry.hostZeroLengthReportCount;
+  counters["uartPackets"] = telemetry.uartPacketCount;
+  counters["uartChecksumFails"] = telemetry.uartChecksumFailCount;
+  counters["uartFramingErrors"] = telemetry.uartFramingErrorCount;
+  counters["uartSequenceGaps"] = telemetry.uartSequenceGapCount;
+  counters["uartDroppedReports"] = telemetry.uartDroppedReportCount;
   counters["keyboardReports"] = telemetry.keyboardReportCount;
   counters["keyboardDecodeFails"] = telemetry.keyboardDecodeFailCount;
   counters["consumerReports"] = telemetry.consumerReportCount;
@@ -608,11 +675,14 @@ void addTelemetryToJson(JsonObject target) {
   counters["keyPresses"] = telemetry.keyPressCount;
   counters["hostMounts"] = telemetry.hostMountCount;
   counters["hostUnmounts"] = telemetry.hostUnmountCount;
+  counters["bridgeMounts"] = telemetry.bridgeMountCount;
+  counters["bridgeUnmounts"] = telemetry.bridgeUnmountCount;
 
   JsonObject last = target["last"].to<JsonObject>();
   last["loopMs"] = telemetry.lastLoopMs;
   last["maxLoopGapMs"] = telemetry.maxLoopGapMs;
   last["hostReportMs"] = telemetry.lastHostReportMs;
+  last["uartPacketMs"] = telemetry.lastUartPacketMs;
   last["keyboardReportMs"] = telemetry.lastKeyboardReportMs;
   last["consumerReportMs"] = telemetry.lastConsumerReportMs;
   last["forwardedKeyboardMs"] = telemetry.lastForwardedKeyboardMs;
@@ -626,6 +696,8 @@ void addTelemetryToJson(JsonObject target) {
   last["consumerUsage"] = telemetry.lastConsumerUsage;
   last["hostMountMs"] = telemetry.lastHostMountMs;
   last["hostUnmountMs"] = telemetry.lastHostUnmountMs;
+  last["bridgeMountMs"] = telemetry.lastBridgeMountMs;
+  last["bridgeUnmountMs"] = telemetry.lastBridgeUnmountMs;
 }
 
 void emitTelemetryHeartbeat() {
@@ -1100,7 +1172,6 @@ void outputDateFormatForKey(uint8_t keycode) {
 // ============================================================
 
 void configureUsbHost() {
-  delay(1000); // Wait 1 second for power and keyboard boot stabilization
   pio_usb_configuration_t pioConfig = PIO_USB_DEFAULT_CONFIG;
   pioConfig.pin_dp = USB_HOST_DP_GPIO;
 
@@ -1923,12 +1994,35 @@ bool outputDiagnosticInformation() {
            (hostLedsState & KEYBOARD_LED_SCROLLLOCK) ? "ON" : "OFF");
   if (!typeAsciiStringWithDelay(buf, keyDelayMs)) return false;
 
-  // 3. USB Host Port (Pico-PIO-USB)
-  if (!typeAsciiStringWithDelay("[USB HOST PORT (PIO0/GPIO0+1)]\n", keyDelayMs)) return false;
+  // 3. Active keypad input
+  snprintf(
+    buf,
+    sizeof(buf),
+    "[KEYPAD INPUT (%s)]\n",
+    keypadInputMode == KeypadInputMode::UartBridge ? "UART BRIDGE GPIO4/5" : "PIO USB GPIO0/1"
+  );
+  if (!typeAsciiStringWithDelay(buf, keyDelayMs)) return false;
   size_t mountedCount = 0;
   for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
     HostHidInterfaceInfo const& info = hostHidInterfaces[index];
-    if (info.mounted) {
+    bool activeSource = keypadInputMode == KeypadInputMode::UartBridge
+      ? info.uartBridge
+      : !info.uartBridge;
+    if (info.mounted && activeSource) {
+      if (info.uartBridge) {
+        snprintf(
+          buf,
+          sizeof(buf),
+          "* UART HID interface %u: keyboard=%s, media=%s\n",
+          info.instance,
+          info.keyboard ? "yes" : "no",
+          info.consumerControl ? "yes" : "no"
+        );
+        if (!typeAsciiStringWithDelay(buf, keyDelayMs)) return false;
+        mountedCount++;
+        continue;
+      }
+
       uint16_t vid = 0, pid = 0;
       tuh_vid_pid_get(info.devAddr, &vid, &pid);
       const char* mfg = getManufacturerName(vid);
@@ -1948,7 +2042,7 @@ bool outputDiagnosticInformation() {
     }
   }
   if (mountedCount == 0) {
-    if (!typeAsciiStringWithDelay("* No USB keyboard or device mounted on host port.\n", keyDelayMs)) return false;
+    if (!typeAsciiStringWithDelay("* No keyboard or Consumer Control interface mounted.\n", keyDelayMs)) return false;
   }
   if (!typeAsciiStringWithDelay("\n", keyDelayMs)) return false;
 
@@ -2190,7 +2284,287 @@ void handleKeyboardReport(hid_keyboard_report_t const* report) {
   previousKeyboardReport = *report;
 }
 
+uint8_t bridgeInterfaceAddress(uint8_t devAddr) {
+  return devAddr | 0x80;
+}
+
+void enqueueKeyboardReport(const hid_keyboard_report_t& report) {
+  size_t nextHead = (keyboardQueueHead + 1) % KEYBOARD_REPORT_QUEUE_SIZE;
+  if (nextHead == keyboardQueueTail) {
+    telemetry.uartDroppedReportCount++;
+    return;
+  }
+
+  keyboardReportQueue[keyboardQueueHead] = report;
+  __asm__ volatile("dmb" : : : "memory");
+  keyboardQueueHead = nextHead;
+}
+
+void selectKeypadInputMode(KeypadInputMode mode) {
+  if (keypadInputMode == mode) {
+    return;
+  }
+
+  keyboardQueueTail = keyboardQueueHead;
+  consumerQueueTail = consumerQueueHead;
+  __asm__ volatile("dmb" : : : "memory");
+  keypadInputMode = mode;
+  inputModeResetPending = true;
+}
+
+void updateBridgeMountedState() {
+  bridgeKeyboardMounted = false;
+  for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
+    HostHidInterfaceInfo const& info = hostHidInterfaces[index];
+    if (info.mounted && info.uartBridge && (info.keyboard || info.consumerControl)) {
+      bridgeKeyboardMounted = true;
+      return;
+    }
+  }
+}
+
+void clearBridgeInterfaces() {
+  for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
+    if (hostHidInterfaces[index].mounted && hostHidInterfaces[index].uartBridge) {
+      hostHidInterfaces[index] = HostHidInterfaceInfo();
+    }
+  }
+  bridgeKeyboardMounted = false;
+}
+
+void finishBridgeDescriptor() {
+  bool keyboard = bridgeDescriptorProtocol == HID_ITF_PROTOCOL_KEYBOARD;
+  uint8_t keyboardReportId = 0;
+  bool consumerControl = false;
+  uint8_t consumerReportId = 0;
+
+  parseHostHidDescriptor(
+    bridgeDescriptor,
+    bridgeDescriptorReceived,
+    keyboard,
+    keyboardReportId,
+    consumerControl,
+    consumerReportId
+  );
+  if (bridgeDescriptorProtocol == HID_ITF_PROTOCOL_KEYBOARD) {
+    keyboard = true;
+  }
+
+  uint8_t mappedDevAddr = bridgeInterfaceAddress(bridgeDescriptorDevAddr);
+  rememberHostHidInterface(
+    mappedDevAddr,
+    bridgeDescriptorInstance,
+    keyboard,
+    keyboardReportId,
+    consumerControl,
+    consumerReportId
+  );
+
+  HostHidInterfaceInfo* info = hostHidInterfaceInfo(mappedDevAddr, bridgeDescriptorInstance);
+  if (info != nullptr) {
+    info->uartBridge = true;
+    parseConsumerBitmaskDescriptor(bridgeDescriptor, bridgeDescriptorReceived, *info);
+  }
+
+  updateBridgeMountedState();
+  bridgeDescriptorExpected = 0;
+  bridgeDescriptorReceived = 0;
+}
+
+void processBridgeHidReport(
+  uint8_t devAddr,
+  uint8_t instance,
+  uint8_t const* report,
+  uint16_t length
+) {
+  HostHidInterfaceInfo* info = hostHidInterfaceInfo(bridgeInterfaceAddress(devAddr), instance);
+  if (info == nullptr || report == nullptr || length == 0) {
+    telemetry.keyboardDecodeFailCount++;
+    return;
+  }
+
+  bool keyboardReport =
+    info->keyboard &&
+    (info->keyboardReportId == 0 || report[0] == info->keyboardReportId);
+  bool consumerReport =
+    info->consumerControl &&
+    (info->consumerReportId == 0 || report[0] == info->consumerReportId);
+
+  if (keyboardReport) {
+    hid_keyboard_report_t decoded = {};
+    if (decodeKeyboardReport(report, length, info->keyboardReportId, decoded)) {
+      enqueueKeyboardReport(decoded);
+    } else {
+      telemetry.keyboardDecodeFailCount++;
+    }
+  }
+
+  if (consumerReport) {
+    telemetry.consumerReportCount++;
+    telemetry.lastConsumerReportMs = millis();
+    forwardConsumerControlReport(report, length, *info);
+  }
+}
+
+void handleUartPacket(uint8_t type, uint8_t const* payload, uint8_t length) {
+  telemetry.uartPacketCount++;
+  telemetry.lastUartPacketMs = millis();
+  lastUartBridgePacketMs = millis();
+  selectKeypadInputMode(KeypadInputMode::UartBridge);
+
+  if (type == QuickTypeUart::TYPE_HEARTBEAT) {
+    return;
+  }
+
+  if (type == QuickTypeUart::TYPE_HID_MOUNT && length == 5) {
+    telemetry.bridgeMountCount++;
+    telemetry.lastBridgeMountMs = millis();
+    bridgeDescriptorDevAddr = payload[0];
+    bridgeDescriptorInstance = payload[1];
+    bridgeDescriptorProtocol = payload[2];
+    bridgeDescriptorExpected = (uint16_t)payload[3] | ((uint16_t)payload[4] << 8);
+    bridgeDescriptorReceived = 0;
+
+    clearHostHidInterface(
+      bridgeInterfaceAddress(bridgeDescriptorDevAddr),
+      bridgeDescriptorInstance
+    );
+
+    if (bridgeDescriptorExpected > MAX_BRIDGE_HID_DESCRIPTOR_SIZE) {
+      telemetry.uartFramingErrorCount++;
+      bridgeDescriptorExpected = 0;
+      return;
+    }
+    if (bridgeDescriptorExpected == 0) {
+      finishBridgeDescriptor();
+    }
+    return;
+  }
+
+  if (type == QuickTypeUart::TYPE_HID_DESCRIPTOR && length >= 4) {
+    uint16_t offset = (uint16_t)payload[2] | ((uint16_t)payload[3] << 8);
+    uint16_t chunkLength = length - 4;
+    if (bridgeDescriptorExpected == 0 ||
+        payload[0] != bridgeDescriptorDevAddr ||
+        payload[1] != bridgeDescriptorInstance ||
+        offset != bridgeDescriptorReceived ||
+        bridgeDescriptorReceived + chunkLength > bridgeDescriptorExpected) {
+      telemetry.uartFramingErrorCount++;
+      return;
+    }
+
+    memcpy(bridgeDescriptor + bridgeDescriptorReceived, payload + 4, chunkLength);
+    bridgeDescriptorReceived += chunkLength;
+    if (bridgeDescriptorReceived == bridgeDescriptorExpected) {
+      finishBridgeDescriptor();
+    }
+    return;
+  }
+
+  if (type == QuickTypeUart::TYPE_HID_REPORT && length >= 3) {
+    processBridgeHidReport(payload[0], payload[1], payload + 2, length - 2);
+    return;
+  }
+
+  if (type == QuickTypeUart::TYPE_HID_UNMOUNT && length == 2) {
+    telemetry.bridgeUnmountCount++;
+    telemetry.lastBridgeUnmountMs = millis();
+    clearHostHidInterface(bridgeInterfaceAddress(payload[0]), payload[1]);
+    updateBridgeMountedState();
+    hid_keyboard_report_t released = {};
+    enqueueKeyboardReport(released);
+    sendConsumerUsage(0);
+    return;
+  }
+
+  telemetry.uartFramingErrorCount++;
+}
+
+void resetUartParser() {
+  uartParserState = 0;
+  uartHeaderIndex = 0;
+  uartPayloadIndex = 0;
+}
+
+void acceptUartPacket() {
+  uint8_t type = uartHeader[1];
+  uint8_t sequence = uartHeader[2];
+  uint8_t length = uartHeader[3];
+  uint8_t expectedChecksum = uartHeader[4];
+  uint8_t actualChecksum = QuickTypeUart::checksum(type, sequence, uartPayload, length);
+
+  if (actualChecksum != expectedChecksum) {
+    telemetry.uartChecksumFailCount++;
+    resetUartParser();
+    return;
+  }
+
+  if (uartSequenceValid && sequence != static_cast<uint8_t>(uartLastSequence + 1)) {
+    telemetry.uartSequenceGapCount++;
+  }
+  uartSequenceValid = true;
+  uartLastSequence = sequence;
+  handleUartPacket(type, uartPayload, length);
+  resetUartParser();
+}
+
+void processUartByte(uint8_t value) {
+  if (uartParserState == 0) {
+    if (value == QuickTypeUart::MAGIC_0) {
+      uartParserState = 1;
+    }
+    return;
+  }
+
+  if (uartParserState == 1) {
+    if (value == QuickTypeUart::MAGIC_1) {
+      uartParserState = 2;
+      uartHeaderIndex = 0;
+    } else {
+      uartParserState = value == QuickTypeUart::MAGIC_0 ? 1 : 0;
+    }
+    return;
+  }
+
+  if (uartParserState == 2) {
+    uartHeader[uartHeaderIndex++] = value;
+    if (uartHeaderIndex < QuickTypeUart::HEADER_FIELD_COUNT) {
+      return;
+    }
+
+    if (uartHeader[0] != QuickTypeUart::VERSION ||
+        uartHeader[3] > QuickTypeUart::MAX_PAYLOAD_SIZE) {
+      telemetry.uartFramingErrorCount++;
+      resetUartParser();
+      return;
+    }
+
+    uartPayloadIndex = 0;
+    if (uartHeader[3] == 0) {
+      acceptUartPacket();
+    } else {
+      uartParserState = 3;
+    }
+    return;
+  }
+
+  uartPayload[uartPayloadIndex++] = value;
+  if (uartPayloadIndex == uartHeader[3]) {
+    acceptUartPacket();
+  }
+}
+
+void serviceUartBridge() {
+  while (Serial2.available() > 0) {
+    processUartByte(Serial2.read());
+  }
+}
+
 void requestNextHidReport(uint8_t dev_addr, uint8_t instance) {
+  if (keypadInputMode != KeypadInputMode::PioUsb) {
+    return;
+  }
+
   HostHidInterfaceInfo* info = hostHidInterfaceInfo(dev_addr, instance);
   uint32_t now = millis();
   if (info != nullptr && now < info->nextReportRequestMs) {
@@ -2234,9 +2608,19 @@ void pollMountedHidReports() {
 void serviceUsbBridge() {
   telemetry.bridgeServiceCount++;
   serviceNativeUsb();
-  // USB Host tasks run continuously on Core 1, including while Core 0 emits
-  // an expansion to the computer.
   serviceNativeUsb();
+
+  if (inputModeResetPending) {
+    inputModeResetPending = false;
+    memset(&pendingKeyboardReport, 0, sizeof(pendingKeyboardReport));
+    pendingKeyboardReportValid = TinyUSBDevice.mounted();
+    memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
+    activeTopRowConsumerUsage = 0;
+    pendingConsumerUsage = 0;
+    consumerQueueTail = consumerQueueHead;
+    typedBuffer = "";
+    typedSources = "";
+  }
 
   if (deviceConnectionResetPending) {
     deviceConnectionResetPending = false;
@@ -2319,6 +2703,10 @@ extern "C" void tuh_hid_mount_cb(
   uint8_t const* desc_report,
   uint16_t desc_len
 ) {
+  if (keypadInputMode != KeypadInputMode::PioUsb) {
+    return;
+  }
+
   telemetry.hostMountCount++;
   telemetry.lastHostMountMs = millis();
   uint8_t protocol = tuh_hid_interface_protocol(dev_addr, instance);
@@ -2368,6 +2756,9 @@ extern "C" void tuh_hid_mount_cb(
 }
 
 extern "C" void tuh_hid_set_protocol_complete_cb(uint8_t dev_addr, uint8_t instance, uint8_t protocol) {
+  if (keypadInputMode != KeypadInputMode::PioUsb) {
+    return;
+  }
   requestNextHidReport(dev_addr, instance);
 }
 
@@ -2407,6 +2798,10 @@ extern "C" void tuh_hid_report_received_cb(
   uint8_t const* report,
   uint16_t len
 ) {
+  if (keypadInputMode != KeypadInputMode::PioUsb) {
+    return;
+  }
+
   uint8_t protocol = tuh_hid_interface_protocol(dev_addr, instance);
   HostHidInterfaceInfo* info = hostHidInterfaceInfo(dev_addr, instance);
   telemetry.hostReportCallbackCount++;
@@ -3221,6 +3616,10 @@ void sendProtocolInfo(uint32_t id) {
   response["data"]["ruleCount"] = activeRuleCount();
   response["data"]["expansionsEnabled"] = expansionsEnabled;
   response["data"]["keypadExpansionsEnabled"] = keypadExpansionsEnabled;
+  response["data"]["keypadInputMode"] = keypadInputMode == KeypadInputMode::UartBridge ? "uart" : "pio";
+  response["data"]["deviceConnected"] = (keypadInputMode == KeypadInputMode::UartBridge)
+    ? bridgeKeyboardMounted
+    : (mountedKeyboardInterfaceCount() > 0);
   sendProtocolJson(response);
 }
 
@@ -4158,10 +4557,22 @@ void loop() {
 }
 
 // ============================================================
-// Core 1 Execution (Dedicated to USB Host / Pico-PIO-USB)
+// Core 1 Execution (Auto-selecting UART bridge or Pico-PIO-USB)
 // ============================================================
 
 void setup1() {
+  Serial2.setTX(UART_TX_PIN);
+  Serial2.setRX(UART_RX_PIN);
+  Serial2.begin(UART_BAUD);
+
+  // Preserve the original one-second USB power-up delay while still receiving
+  // any bridge descriptor packets sent during startup.
+  uint32_t hostStartAt = millis() + 1000;
+  while ((int32_t)(millis() - hostStartAt) < 0) {
+    serviceUartBridge();
+    delay(1);
+  }
+
   configureUsbHost();
 }
 
@@ -4170,6 +4581,20 @@ void loop1() {
     delay(1);
     return;
   }
+
+  serviceUartBridge();
+
+  if (keypadInputMode == KeypadInputMode::UartBridge) {
+    if (millis() - lastUartBridgePacketMs <= UART_BRIDGE_TIMEOUT_MS) {
+      delay(1);
+      return;
+    }
+
+    clearBridgeInterfaces();
+    uartSequenceValid = false;
+    selectKeypadInputMode(KeypadInputMode::PioUsb);
+  }
+
   // Return periodically so hostStackSuspended is observed promptly during
   // flash writes. Idle interrupt-IN transfers remain pending in the HCD.
   USBHost.task(1);

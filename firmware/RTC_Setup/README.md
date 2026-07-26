@@ -3,8 +3,16 @@
 This sketch runs on the generic RP2040-Zero hardware. It acts as:
 
 - a native USB keyboard connected to the computer;
-- a PIO USB host for the external keyboard/keypad; and
+- an auto-selecting keypad input host using either the original PIO USB wiring
+  or the two-board UART bridge; and
 - a USB serial device used by the QuickType web configurator.
+
+The original one-board hardware remains supported on PIO USB `GPIO0`/`GPIO1`.
+For two-board hardware, connect primary `GPIO4` TX to bridge `GPIO5` RX,
+primary `GPIO5` RX to bridge `GPIO4` TX, and connect ground. Valid UART bridge
+heartbeats select UART mode automatically. If they stop for 1.5 seconds, the
+primary releases any held input and resumes PIO USB. Only the selected input
+path is serviced.
 
 ## Arduino requirements
 
@@ -58,4 +66,20 @@ The configurator bullet buttons insert `•`, `■`, `□`, `●`, and `◆`. Fi
 
 Typed triggers expand when followed by Space, Tab, Enter, or Escape. Space remains after the expansion; Tab, Enter, and Escape are consumed only when a typed trigger matches. Otherwise those keys are forwarded normally. Typing the hidden `;;;` trigger followed by any of these keys outputs the active typed expansions followed by the configured keypad actions. Each keypad action is shown as its key and label.
 
-The receiver starts in report protocol and boot-capable keyboard interfaces switch to boot protocol when mounted. PIO USB host work stays on the dedicated second core while the main core emits expansions. A pending interrupt-IN transfer is normal while the keyboard is idle and is never aborted on a timer. The vendored PIO host is pinned to upstream PR #206 commit `38cf1166c13999d6316850643c21c5796f503414`, which bounds the host's TX/RX waits, removes a racy EOP program-counter poll, resets the EOP receiver state machine per transaction, and debounces short SE0 glitches. A downstream-host stall must never reboot the entire RP2040 or deliberately disconnect the laptop-facing keyboard. The PC keyboard LED state is retained for Alt-code handling but is not sent back to the Logitech receiver. The main core preserves FIFO order through the laptop-facing HID endpoint so a queued key-up report cannot overwrite its preceding key-down report.
+The UART bridge preserves report protocol and forwards HID descriptors plus raw
+reports, allowing the primary to decode keyboard and Consumer Control media
+keys. It periodically re-advertises mounted interfaces so either board can be
+restarted independently. The original PIO receiver starts in report protocol
+and boot-capable keyboard interfaces switch to boot protocol when mounted.
+Selected input work stays on the dedicated second core while the main core
+emits expansions. A pending PIO interrupt-IN transfer is normal while a
+keyboard is idle and is never aborted on a timer. The vendored PIO host is
+pinned to upstream PR #206 commit
+`38cf1166c13999d6316850643c21c5796f503414`, which bounds the host's TX/RX
+waits, removes a racy EOP program-counter poll, resets the EOP receiver state
+machine per transaction, and debounces short SE0 glitches. A downstream-host
+stall must never reboot the entire RP2040 or deliberately disconnect the
+laptop-facing keyboard. The PC keyboard LED state is retained for Alt-code
+handling. The main core preserves FIFO order through the laptop-facing HID
+endpoint so a queued key-up report cannot overwrite its preceding key-down
+report.

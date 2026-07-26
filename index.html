@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name"quicktype-build" content"2026-07-23T15:06:53-07:00">
+  <meta name="quicktype-build" content="2026-07-25T17:50:35-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2245,7 +2245,9 @@
       appState.expansionsEnabled = appState.deviceInfo.expansionsEnabled !== false;
       appState.keypadExpansionsEnabled = appState.deviceInfo.keypadExpansionsEnabled !== false;
       updateDeviceControls();
-      logActivity(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
+      const connMode = (appState.deviceInfo.keypadInputMode || "pio").toUpperCase();
+      const connDev = appState.deviceInfo.deviceConnected ? "YES" : "NO";
+      logActivity(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"} (Mode: ${connMode}, Keyboard Connected: ${connDev}).`);
       showToast(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
       await readDeviceConfiguration({ automatic: true });
       await syncDeviceClock({ silent: true });
@@ -2466,8 +2468,13 @@
 
       const counters = data.counters || {};
       const last = data.last || {};
+      const mode = (data.keypadInputMode || (data.uartBridgeActive ? "uart" : "pio")).toUpperCase();
+      const isConnected = data.deviceConnected !== undefined
+        ? data.deviceConnected
+        : (data.keyboardInterfaces > 0 || data.bridgeKeyboardMounted);
+      const connectedStr = isConnected ? "YES" : "NO";
       logActivity(
-        `${prefix}: up=${data.uptimeMs}ms heap=${data.freeHeap} host=${data.hostInterfaces}/kbd=${data.keyboardInterfaces}` +
+        `${prefix}: [Mode: ${mode} | Device Connected: ${connectedStr}] up=${data.uptimeMs}ms heap=${data.freeHeap} host=${data.hostInterfaces}/kbd=${data.keyboardInterfaces}` +
         ` req=${counters.hostReportRequests || 0} cb=${counters.hostReportCallbacks || 0}` +
         ` kbd=${counters.keyboardReports || 0} fwd=${counters.forwardedKeyboard || 0}` +
         ` zlen=${counters.zeroLengthReports || 0} decFail=${counters.keyboardDecodeFails || 0}` +
