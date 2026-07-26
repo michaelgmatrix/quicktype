@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name"quicktype-build" content"2026-07-26T12:47:00-07:00">
+  <meta name"quicktype-build" content"2026-07-26T13:12:10-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2484,7 +2484,7 @@
         `${prefix}: [Mode: ${mode}${bridgeVer} | Keyboard Connected: ${connectedStr}]\n` +
         `  • UART Stats: rxPackets=${counters.uartPackets || 0}, chkFails=${counters.uartChecksumFails || 0}, frameErrs=${counters.uartFramingErrors || 0}, lastRx=${uartAge}\n` +
         `  • Bridge Mounts: mounts=${counters.bridgeMounts || 0}, unmounts=${counters.bridgeUnmounts || 0}, lastMount=${mountAge}\n` +
-        `  • HID Traffic: kbdReports=${counters.keyboardReports || 0}, fwdKbd=${counters.forwardedKeyboard || 0}, sendFails=${counters.keyboardSendFails || 0}`
+        `  • HID Traffic: kbdReports=${counters.keyboardReports || 0}, decodeFails=${counters.keyboardDecodeFails || 0}, uartDrops=${counters.uartDroppedReports || 0}, seqGaps=${counters.uartSequenceGaps || 0}, fwdKbd=${counters.forwardedKeyboard || 0}, sendFails=${counters.keyboardSendFails || 0}`
       );
     }
 
