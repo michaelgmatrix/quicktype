@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.103 (2026-07-26)
+// QuickType firmware version: 0.2.112 (2026-07-26)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -6,6 +6,7 @@
 
 #include <pio_usb.h>
 #include <Adafruit_TinyUSB.h>
+#include <Adafruit_NeoPixel.h>
 #include <tusb.h>
 #include <hardware/watchdog.h>
 #include <hardware/clocks.h>
@@ -45,7 +46,7 @@ static constexpr int USB_HOST_DP_GPIO = 0; // GPIO0 / USB green D+
 static constexpr int USB_HOST_DM_GPIO = 1; // GPIO1 / USB white D-
 static constexpr uint8_t UART_TX_PIN = 4;
 static constexpr uint8_t UART_RX_PIN = 5;
-static constexpr uint32_t UART_BAUD = 1000000;
+static constexpr uint32_t UART_BAUD = 115200;
 static constexpr uint32_t UART_BRIDGE_TIMEOUT_MS = 1500;
 
 static constexpr uint8_t RTC_ADDR = 0x68;
@@ -55,7 +56,18 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.103"; // v0.2.103: Support composite 2.4GHz wireless keyboard dongles (TeckNet, etc.) for full Report Protocol keyboards
+static constexpr char FIRMWARE_VERSION[] = "0.2.112"; // v0.2.112: Real-time RED LED out-of-contact timeout handling
+static constexpr uint8_t NEOPIXEL_PIN = 16;
+static Adafruit_NeoPixel statusLed(1, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
+
+void setStatusLed(uint8_t r, uint8_t g, uint8_t b) {
+  statusLed.begin();
+  uint8_t dimR = (uint16_t)r * 40 / 255;
+  uint8_t dimG = (uint16_t)g * 40 / 255;
+  uint8_t dimB = (uint16_t)b * 40 / 255;
+  statusLed.setPixelColor(0, statusLed.Color(dimR, dimG, dimB));
+  statusLed.show();
+}
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
@@ -339,6 +351,8 @@ bool serialDebugConnected();
 bool serialProtocolConnected();
 void resetSerialProtocolInput();
 bool serialWriteBytes(uint8_t const* data, size_t size);
+enum class KeypadInputMode : uint8_t;
+void selectKeypadInputMode(KeypadInputMode mode);
 bool serialWriteText(const char* text);
 bool serialWriteUInt(uint32_t value);
 bool sendProtocolJson(JsonDocument& response);
@@ -1254,6 +1268,7 @@ bool decodeKeyboardReport(
     return false;
   }
 
+  memset(&out, 0, sizeof(out));
   uint8_t const* payload = report;
   uint16_t payloadLen = len;
 
@@ -1261,16 +1276,19 @@ bool decodeKeyboardReport(
     if (len < 1 || report[0] != expectedReportId) {
       return false;
     }
-
     payload = report + 1;
     payloadLen = len - 1;
-  } else if (len == sizeof(hid_keyboard_report_t) + 1 || (len > sizeof(hid_keyboard_report_t) && report[0] <= 8)) {
+  } else if (len > sizeof(hid_keyboard_report_t) && report[0] <= 8) {
+    payload = report + 1;
+    payloadLen = len - 1;
+  } else if (len == sizeof(hid_keyboard_report_t) + 1) {
     payload = report + 1;
     payloadLen = len - 1;
   }
 
-  if (payloadLen >= sizeof(hid_keyboard_report_t)) {
-    memcpy(&out, payload, sizeof(out));
+  if (payloadLen > 0) {
+    size_t copyBytes = min(static_cast<size_t>(payloadLen), sizeof(out));
+    memcpy(&out, payload, copyBytes);
     return true;
   }
 
@@ -2319,12 +2337,21 @@ void selectKeypadInputMode(KeypadInputMode mode) {
 
 void updateBridgeMountedState() {
   bridgeKeyboardMounted = false;
+  bool uartActive = (millis() - lastUartBridgePacketMs <= UART_BRIDGE_TIMEOUT_MS);
+
   for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
     HostHidInterfaceInfo const& info = hostHidInterfaces[index];
     if (info.mounted && info.uartBridge && (info.keyboard || info.consumerControl)) {
       bridgeKeyboardMounted = true;
+      setStatusLed(0, 255, 0); // GREEN = Keyboard Connected & Active!
       return;
     }
+  }
+
+  if (uartActive) {
+    setStatusLed(0, 0, 255); // BLUE = Primary Board can talk to UART Bridge Board!
+  } else {
+    setStatusLed(255, 0, 0); // RED = No UART Communication / Disconnected
   }
 }
 
@@ -2395,10 +2422,12 @@ void processBridgeHidReport(
       0
     );
     info = hostHidInterfaceInfo(mappedAddr, instance);
-    if (info != nullptr) {
-      info->uartBridge = true;
-      updateBridgeMountedState();
-    }
+  }
+
+  if (info != nullptr) {
+    info->keyboard = true;
+    info->uartBridge = true;
+    updateBridgeMountedState();
   }
 
   if (info == nullptr || report == nullptr || length == 0) {
@@ -2406,9 +2435,7 @@ void processBridgeHidReport(
     return;
   }
 
-  bool keyboardReport =
-    (info->keyboard || length >= 8) &&
-    (info->keyboardReportId == 0 || report[0] == info->keyboardReportId || length >= 8);
+  bool keyboardReport = (report != nullptr && length >= 1);
   bool consumerReport =
     info->consumerControl &&
     (info->consumerReportId == 0 || report[0] == info->consumerReportId);
@@ -2416,10 +2443,8 @@ void processBridgeHidReport(
   if (keyboardReport) {
     hid_keyboard_report_t decoded = {};
     if (decodeKeyboardReport(report, length, info->keyboardReportId, decoded)) {
-      info->keyboard = true;
       enqueueKeyboardReport(decoded);
     } else if (decodeKeyboardReport(report, length, 0, decoded)) {
-      info->keyboard = true;
       enqueueKeyboardReport(decoded);
     } else {
       telemetry.keyboardDecodeFailCount++;
@@ -2439,6 +2464,7 @@ void handleUartPacket(uint8_t type, uint8_t const* payload, uint8_t length) {
   telemetry.lastUartPacketMs = millis();
   lastUartBridgePacketMs = millis();
   selectKeypadInputMode(KeypadInputMode::UartBridge);
+  updateBridgeMountedState();
 
   if (bridgeWasInactive) {
     if (Serial) {
@@ -2609,6 +2635,7 @@ void serviceUartBridge() {
   while (Serial2.available() > 0) {
     processUartByte(Serial2.read());
   }
+  updateBridgeMountedState();
 }
 
 void requestNextHidReport(uint8_t dev_addr, uint8_t instance) {
@@ -4513,6 +4540,11 @@ void handleTimestampFile() {
 // ============================================================
 
 void setup() {
+  setStatusLed(255, 0, 0); delay(200); // Boot test Red
+  setStatusLed(0, 255, 0); delay(200); // Boot test Green
+  setStatusLed(0, 0, 255); delay(200); // Boot test Blue
+  setStatusLed(255, 0, 0); // Red until keyboard mounts
+
   // Critical ordering:
   // Configure HID first so the PC sees the keyboard interface
   // when the USB device enumerates.
