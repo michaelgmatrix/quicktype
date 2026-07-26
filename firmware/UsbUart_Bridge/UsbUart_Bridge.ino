@@ -1,11 +1,11 @@
-// QuickType USB-UART native host bridge build: 0.2.0 (2026-07-25)
+#ifndef USE_TINYUSB_HOST
+#define USE_TINYUSB_HOST
+#endif
+
+// QuickType USB-UART native host bridge build: 0.2.1 (2026-07-25)
 #include <Arduino.h>
 #include "QuickTypeUartProtocol.h"
 #include <Adafruit_TinyUSB.h>
-
-#ifndef USE_TINYUSB_HOST
-#error This keyboard-facing bridge firmware must be built with usbstack=tinyusb_host FQBN flag.
-#endif
 
 static constexpr uint8_t UART_TX_PIN = 4;
 static constexpr uint8_t UART_RX_PIN = 5;
