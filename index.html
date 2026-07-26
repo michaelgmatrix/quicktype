@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name"quicktype-build" content"2026-07-26T10:05:47-07:00">
+  <meta name"quicktype-build" content"2026-07-26T10:14:24-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2197,10 +2197,13 @@
         logActivity("USB device connected to host.");
         showToast("USB device connected.");
         if (!appState.isConnected) {
-          try {
-            await connectDevice(event.port);
-          } catch (err) {
-            logActivity(`Hotplug auto-connect failed: ${err.message}`);
+          const targetPort = event.port || (event.target && event.target !== navigator.serial ? event.target : null) || await findAuthorizedQuickTypePort();
+          if (targetPort) {
+            try {
+              await connectDevice(targetPort);
+            } catch (err) {
+              logActivity(`Hotplug auto-connect failed: ${err.message}`);
+            }
           }
         }
       });
