@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.98 (2026-07-25)
+// QuickType firmware version: 0.2.99 (2026-07-25)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -55,7 +55,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.98"; // v0.2.98: Pure UART mode without unserviced PIO USB interrupts, PIO fallback disabled
+static constexpr char FIRMWARE_VERSION[] = "0.2.99"; // v0.2.99: Auto-mount HID interface fallback on report receipt
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
@@ -2379,7 +2379,25 @@ void processBridgeHidReport(
   uint8_t const* report,
   uint16_t length
 ) {
-  HostHidInterfaceInfo* info = hostHidInterfaceInfo(bridgeInterfaceAddress(devAddr), instance);
+  uint8_t mappedAddr = bridgeInterfaceAddress(devAddr);
+  HostHidInterfaceInfo* info = hostHidInterfaceInfo(mappedAddr, instance);
+
+  if (info == nullptr || !info->mounted) {
+    rememberHostHidInterface(
+      mappedAddr,
+      instance,
+      true,
+      0,
+      false,
+      0
+    );
+    info = hostHidInterfaceInfo(mappedAddr, instance);
+    if (info != nullptr) {
+      info->uartBridge = true;
+      updateBridgeMountedState();
+    }
+  }
+
   if (info == nullptr || report == nullptr || length == 0) {
     telemetry.keyboardDecodeFailCount++;
     return;
