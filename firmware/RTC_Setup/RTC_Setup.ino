@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.112 (2026-07-26)
+// QuickType firmware version: 0.2.116 (2026-07-26)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -56,7 +56,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.112"; // v0.2.112: Real-time RED LED out-of-contact timeout handling
+static constexpr char FIRMWARE_VERSION[] = "0.2.116"; // v0.2.116: Register PC-facing HID after core USB init, then force clean enumeration
 static constexpr uint8_t NEOPIXEL_PIN = 16;
 static Adafruit_NeoPixel statusLed(1, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
@@ -477,10 +477,6 @@ void hid_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8
 }
 
 void configureUsbDeviceKeyboard() {
-  // IMPORTANT:
-  // This must be called before Serial.begin() and before delay(),
-  // so the HID and Serial interfaces exist when the PC enumerates the USB device.
-
   TinyUSBDevice.setID(0x2E8A, 0x5154); // Custom RP2040 VID:0x2E8A (11914), PID:0x5154 (20820 - 'QT')
   TinyUSBDevice.setManufacturerDescriptor("QuickType");
   TinyUSBDevice.setProductDescriptor("QuickType Configurator");
@@ -2705,13 +2701,9 @@ void serviceUsbBridge() {
     if (serialDebugConnected()) {
       Serial.println("USB Device connection state changed. Resetting bridge state.");
     }
-    // Safely clear reports, queues, buffers and LEDs on Core 0 thread
+    // Safely clear reports, queues, buffers and LEDs on Core 0 thread.
     memset(&pendingKeyboardReport, 0, sizeof(pendingKeyboardReport));
-    if (TinyUSBDevice.mounted()) {
-      pendingKeyboardReportValid = true; // Send release report
-    } else {
-      pendingKeyboardReportValid = false;
-    }
+    pendingKeyboardReportValid = TinyUSBDevice.mounted();
     memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
     activeTopRowConsumerUsage = 0;
     consumerQueueTail = 0;
@@ -4540,15 +4532,19 @@ void handleTimestampFile() {
 // ============================================================
 
 void setup() {
+  // The RP2040 core initializes TinyUSB before setup() and clears its dynamic
+  // configuration in the process. Keep the pull-up disconnected while adding
+  // HID, then reconnect with the final CDC + HID descriptor. This prevents the
+  // computer from caching the serial-only configuration during the RGB delays.
+  TinyUSBDevice.detach();
+  delay(10);
+  configureUsbDeviceKeyboard();
+  TinyUSBDevice.attach();
+
   setStatusLed(255, 0, 0); delay(200); // Boot test Red
   setStatusLed(0, 255, 0); delay(200); // Boot test Green
   setStatusLed(0, 0, 255); delay(200); // Boot test Blue
   setStatusLed(255, 0, 0); // Red until keyboard mounts
-
-  // Critical ordering:
-  // Configure HID first so the PC sees the keyboard interface
-  // when the USB device enumerates.
-  configureUsbDeviceKeyboard();
 
   Serial.begin(115200);
   serialInputLine.reserve(MAX_CONFIG_BYTES);

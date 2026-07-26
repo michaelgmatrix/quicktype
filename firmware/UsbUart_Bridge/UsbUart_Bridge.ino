@@ -2,7 +2,7 @@
 #define USE_TINYUSB_HOST
 #endif
 
-// QuickType USB-UART native host bridge build: 0.2.27 (2026-07-26)
+// QuickType USB-UART native host bridge build: 0.2.33 (2026-07-26)
 #include <Arduino.h>
 #include "QuickTypeUartProtocol.h"
 #include <Adafruit_TinyUSB.h>
@@ -19,7 +19,7 @@ static constexpr uint32_t HID_SNAPSHOT_INTERVAL_MS = 2000;
 static constexpr uint8_t MAX_HID_INTERFACES = 4;
 static constexpr uint16_t MAX_HID_DESCRIPTOR_SIZE = 1024;
 
-static constexpr char BRIDGE_FIRMWARE_VERSION[] = "0.2.27";
+static constexpr char BRIDGE_FIRMWARE_VERSION[] = "0.2.33";
 static constexpr uint32_t PRIMARY_TIMEOUT_MS = 1500;
 static uint32_t lastPrimaryPacketMs = 0;
 static constexpr uint8_t NEOPIXEL_PIN = 16;
@@ -50,9 +50,18 @@ struct HidInterfaceSnapshot {
 
 static HidInterfaceSnapshot hidInterfaces[MAX_HID_INTERFACES] = {};
 static bool hostBeginOk = false;
+static uint32_t receiveSubmitCount = 0;
+static uint32_t receiveSubmitFailCount = 0;
+static uint32_t reportCallbackCount = 0;
+static uint32_t reportForwardCount = 0;
+static uint32_t reportDropCount = 0;
+static uint8_t lastReportDevAddr = 0;
+static uint8_t lastReportInstance = 0;
+static uint16_t lastReportLength = 0;
+static uint8_t lastReportPrefix[4] = {};
 
 void updateBridgeLedState() {
-  bool primaryInContact = (millis() - lastPrimaryPacketMs <= PRIMARY_TIMEOUT_MS) || (lastPrimaryPacketMs == 0 && hostBeginOk);
+  bool primaryInContact = (lastPrimaryPacketMs != 0 && (millis() - lastPrimaryPacketMs <= PRIMARY_TIMEOUT_MS));
   bool deviceMounted = false;
   for (uint8_t i = 0; i < MAX_HID_INTERFACES; i++) {
     if (hidInterfaces[i].mounted) {
@@ -63,10 +72,10 @@ void updateBridgeLedState() {
 
   if (deviceMounted) {
     setBridgeLed(0, 255, 0); // GREEN = Keyboard connected & mounted
-  } else if (primaryInContact) {
-    setBridgeLed(0, 0, 255); // BLUE = In contact with Primary Board
+  } else if (hostBeginOk || primaryInContact) {
+    setBridgeLed(0, 0, 255); // BLUE = UART Bridge Host Active & Ready
   } else {
-    setBridgeLed(255, 0, 0); // RED = Out of contact / Disconnected
+    setBridgeLed(255, 0, 0); // RED = Host Initialization Failed
   }
 }
 
@@ -193,29 +202,43 @@ void writeLog(const char* message) {
   writePacket(QuickTypeUart::TYPE_LOG, reinterpret_cast<const uint8_t*>(message), len);
 }
 
-void writeHidReport(
+bool writeHidReport(
   uint8_t devAddr,
   uint8_t instance,
   const uint8_t* report,
   uint16_t length
 ) {
   if (report == nullptr || length > QuickTypeUart::MAX_PAYLOAD_SIZE - 2) {
-    return;
+    return false;
   }
 
   uint8_t payload[QuickTypeUart::MAX_PAYLOAD_SIZE] = { devAddr, instance };
   memcpy(payload + 2, report, length);
   writePacket(QuickTypeUart::TYPE_HID_REPORT, payload, length + 2);
+  return true;
 }
 
 void checkHardwareHostDiagnostics() {
   uint32_t sieStatus = usb_hw->sie_status;
   uint32_t mainCtrl = usb_hw->main_ctrl;
   char buf[QuickTypeUart::MAX_PAYLOAD_SIZE] = {};
-  snprintf(buf, sizeof(buf), "Host Status: ok=%d ctrl=0x%02X sie=0x%04X",
+  snprintf(buf, sizeof(buf),
+           "Host Status: ok=%d ctrl=0x%02X sie=0x%04X submit=%lu fail=%lu reports=%lu uart=%lu drop=%lu last=%u/%u:%u %02X%02X%02X%02X",
            hostBeginOk ? 1 : 0,
            static_cast<unsigned int>(mainCtrl & 0xFF),
-           static_cast<unsigned int>(sieStatus & 0xFFFF));
+           static_cast<unsigned int>(sieStatus & 0xFFFF),
+           static_cast<unsigned long>(receiveSubmitCount),
+           static_cast<unsigned long>(receiveSubmitFailCount),
+           static_cast<unsigned long>(reportCallbackCount),
+           static_cast<unsigned long>(reportForwardCount),
+           static_cast<unsigned long>(reportDropCount),
+           lastReportDevAddr,
+           lastReportInstance,
+           lastReportLength,
+           lastReportPrefix[0],
+           lastReportPrefix[1],
+           lastReportPrefix[2],
+           lastReportPrefix[3]);
   writeLog(buf);
 }
 
@@ -230,9 +253,13 @@ void setup() {
   Serial2.begin(UART_BAUD);
   writePacket(QuickTypeUart::TYPE_HEARTBEAT, nullptr, 0);
   sendBridgeVersion();
-  writeLog("⚡ UART Bridge Board Booted (v0.2.24)");
+  writeLog("⚡ UART Bridge Board Booted (v0.2.33)");
 
-  tuh_hid_set_default_protocol(HID_PROTOCOL_BOOT);
+  // Keep every interface in report protocol. Composite wireless receivers can
+  // expose a boot-capable keyboard interface but only deliver their full input
+  // stream reliably in report mode. Wired keyboards are decoded from their
+  // forwarded report descriptor, so they do not need a boot-protocol switch.
+  tuh_hid_set_default_protocol(HID_PROTOCOL_REPORT);
 
   hostBeginOk = USBHost.begin(0);
   writeLog(hostBeginOk ? "USBHost.begin(0) SUCCESS" : "USBHost.begin(0) FAILED");
@@ -246,7 +273,9 @@ void setup() {
 }
 
 void loop() {
-  USBHost.task(); // Smooth USBHost task execution
+  // Bound TinyUSB servicing so the receive-recovery poll below runs even when
+  // there is no queued host event to wake an unbounded tuh_task_ext() call.
+  USBHost.task(1);
 
   if (Serial2.available()) {
     lastPrimaryPacketMs = millis();
@@ -254,6 +283,18 @@ void loop() {
   }
 
   updateBridgeLedState();
+
+  for (uint8_t i = 0; i < MAX_HID_INTERFACES; i++) {
+    if (hidInterfaces[i].mounted) {
+      if (tuh_hid_receive_ready(hidInterfaces[i].devAddr, hidInterfaces[i].instance)) {
+        if (tuh_hid_receive_report(hidInterfaces[i].devAddr, hidInterfaces[i].instance)) {
+          receiveSubmitCount++;
+        } else {
+          receiveSubmitFailCount++;
+        }
+      }
+    }
+  }
 
   uint32_t now = millis();
   if (now - lastHeartbeatMs >= HEARTBEAT_INTERVAL_MS) {
@@ -313,12 +354,12 @@ extern "C" void tuh_hid_mount_cb(
     writeHidMount(devAddr, instance, protocol, reportDescriptor, descriptorLength);
   }
 
-  if (tuh_hid_interface_protocol(devAddr, instance) == HID_ITF_PROTOCOL_KEYBOARD) {
-    if (!tuh_hid_set_protocol(devAddr, instance, HID_PROTOCOL_BOOT)) {
-      tuh_hid_receive_report(devAddr, instance);
+  if (tuh_hid_receive_ready(devAddr, instance)) {
+    if (tuh_hid_receive_report(devAddr, instance)) {
+      receiveSubmitCount++;
+    } else {
+      receiveSubmitFailCount++;
     }
-  } else {
-    tuh_hid_receive_report(devAddr, instance);
   }
 
   setBridgeLed(0, 255, 0); // GREEN = Keyboard Device Mounted & Ready!
@@ -348,8 +389,24 @@ extern "C" void tuh_hid_report_received_cb(
   uint8_t const* report,
   uint16_t length
 ) {
+  reportCallbackCount++;
+  lastReportDevAddr = devAddr;
+  lastReportInstance = instance;
+  lastReportLength = length;
+  memset(lastReportPrefix, 0, sizeof(lastReportPrefix));
+  if (report != nullptr) {
+    memcpy(lastReportPrefix, report, min(static_cast<uint16_t>(sizeof(lastReportPrefix)), length));
+  }
   setBridgeLed(0, 255, 255); // FLASH CYAN on Keypress Report!
-  writeHidReport(devAddr, instance, report, length);
-  tuh_hid_receive_report(devAddr, instance);
+  if (writeHidReport(devAddr, instance, report, length)) {
+    reportForwardCount++;
+  } else {
+    reportDropCount++;
+  }
+  if (tuh_hid_receive_report(devAddr, instance)) {
+    receiveSubmitCount++;
+  } else {
+    receiveSubmitFailCount++;
+  }
   setBridgeLed(0, 255, 0); // Return to GREEN
 }
