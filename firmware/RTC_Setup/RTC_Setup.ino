@@ -262,6 +262,7 @@ static volatile bool deviceConnectionResetPending = false;
 static volatile bool hostStackSuspended = false;
 static volatile bool hostRemoteWakeupEnabled = false;
 static volatile bool bridgeKeyboardMounted = false;
+static char bridgeFirmwareVersion[16] = "Unknown";
 static volatile KeypadInputMode keypadInputMode = KeypadInputMode::PioUsb;
 static volatile uint32_t lastUartBridgePacketMs = 0;
 static volatile bool inputModeResetPending = false;
@@ -636,6 +637,7 @@ void addTelemetryToJson(JsonObject target) {
   target["consumerInterfaces"] = mountedConsumerInterfaceCount();
   target["keypadInputMode"] = keypadInputMode == KeypadInputMode::UartBridge ? "uart" : "pio";
   target["uartBridgeActive"] = keypadInputMode == KeypadInputMode::UartBridge;
+  target["bridgeFirmwareVersion"] = (keypadInputMode == KeypadInputMode::UartBridge) ? bridgeFirmwareVersion : "none";
   target["bridgeKeyboardMounted"] = bridgeKeyboardMounted;
   target["deviceConnected"] = (keypadInputMode == KeypadInputMode::UartBridge)
     ? bridgeKeyboardMounted
@@ -2484,6 +2486,13 @@ void handleUartPacket(uint8_t type, uint8_t const* payload, uint8_t length) {
       Serial.print("[BRIDGE LOG] ");
       Serial.println(msg);
     }
+    return;
+  }
+
+  if (type == QuickTypeUart::TYPE_VERSION && length > 0) {
+    uint8_t copyLen = min(static_cast<uint8_t>(sizeof(bridgeFirmwareVersion) - 1), length);
+    memcpy(bridgeFirmwareVersion, payload, copyLen);
+    bridgeFirmwareVersion[copyLen] = '\0';
     return;
   }
 

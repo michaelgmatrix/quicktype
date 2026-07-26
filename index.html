@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-25T18:33:10-07:00">
+  <meta name="quicktype-build" content="2026-07-25T18:35:55-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2469,6 +2469,7 @@
       const counters = data.counters || {};
       const last = data.last || {};
       const mode = (data.keypadInputMode || (data.uartBridgeActive ? "uart" : "pio")).toUpperCase();
+      const bridgeVer = data.bridgeFirmwareVersion ? ` (Bridge v${data.bridgeFirmwareVersion})` : "";
       const isConnected = data.deviceConnected !== undefined
         ? data.deviceConnected
         : (data.keyboardInterfaces > 0 || data.bridgeKeyboardMounted);
@@ -2477,7 +2478,7 @@
       const mountAge = last.bridgeMountMs ? `${Math.max(0, data.uptimeMs - last.bridgeMountMs)}ms ago` : "never";
 
       logActivity(
-        `${prefix}: [Mode: ${mode} | Keyboard Connected: ${connectedStr}]\n` +
+        `${prefix}: [Mode: ${mode}${bridgeVer} | Keyboard Connected: ${connectedStr}]\n` +
         `  • UART Stats: rxPackets=${counters.uartPackets || 0}, chkFails=${counters.uartChecksumFails || 0}, frameErrs=${counters.uartFramingErrors || 0}, lastRx=${uartAge}\n` +
         `  • Bridge Mounts: mounts=${counters.bridgeMounts || 0}, unmounts=${counters.bridgeUnmounts || 0}, lastMount=${mountAge}\n` +
         `  • HID Traffic: kbdReports=${counters.keyboardReports || 0}, fwdKbd=${counters.forwardedKeyboard || 0}, sendFails=${counters.keyboardSendFails || 0}`

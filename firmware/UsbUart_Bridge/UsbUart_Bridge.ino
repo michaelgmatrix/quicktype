@@ -15,6 +15,8 @@ static constexpr uint32_t HID_SNAPSHOT_INTERVAL_MS = 2000;
 static constexpr uint8_t MAX_HID_INTERFACES = 4;
 static constexpr uint16_t MAX_HID_DESCRIPTOR_SIZE = 1024;
 
+static constexpr char BRIDGE_FIRMWARE_VERSION[] = "0.2.1";
+
 static uint8_t packetSequence = 0;
 static uint32_t lastHeartbeatMs = 0;
 static uint32_t lastHidSnapshotMs = 0;
@@ -47,6 +49,14 @@ void writePacket(uint8_t type, const uint8_t* payload, uint8_t length) {
   if (length > 0) {
     Serial2.write(payload, length);
   }
+}
+
+void sendBridgeVersion() {
+  writePacket(
+    QuickTypeUart::TYPE_VERSION,
+    reinterpret_cast<const uint8_t*>(BRIDGE_FIRMWARE_VERSION),
+    strlen(BRIDGE_FIRMWARE_VERSION)
+  );
 }
 
 void writeHidMount(
@@ -166,6 +176,7 @@ void setup() {
   Serial2.setRX(UART_RX_PIN);
   Serial2.begin(UART_BAUD);
   writePacket(QuickTypeUart::TYPE_HEARTBEAT, nullptr, 0);
+  sendBridgeVersion();
   writeLog("Bridge booting (Native Host)");
 
   tuh_hid_set_default_protocol(HID_PROTOCOL_BOOT);
@@ -183,6 +194,7 @@ void loop() {
   }
   if (now - lastHidSnapshotMs >= HID_SNAPSHOT_INTERVAL_MS) {
     lastHidSnapshotMs = now;
+    sendBridgeVersion();
     writeMountedHidSnapshots();
   }
 }
