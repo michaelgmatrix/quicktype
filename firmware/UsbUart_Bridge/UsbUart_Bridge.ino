@@ -1,3 +1,4 @@
+#define USE_TINYUSB_HOST
 // QuickType USB-UART bridge build: 0.1.0 (2026-07-25)
 #include <Arduino.h>
 #include "QuickTypeUartProtocol.h"
