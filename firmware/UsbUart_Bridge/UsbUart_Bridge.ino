@@ -162,7 +162,7 @@ void setup() {
   Serial2.begin(UART_BAUD);
   writePacket(QuickTypeUart::TYPE_HEARTBEAT, nullptr, 0);
 
-  tuh_hid_set_default_protocol(HID_PROTOCOL_REPORT);
+  tuh_hid_set_default_protocol(HID_PROTOCOL_BOOT);
   USBHost.begin(0);
 }
 
@@ -186,9 +186,6 @@ extern "C" void tuh_hid_mount_cb(
   uint8_t const* reportDescriptor,
   uint16_t descriptorLength
 ) {
-  (void)reportDescriptor;
-  (void)descriptorLength;
-
   uint8_t protocol = tuh_hid_interface_protocol(devAddr, instance);
   HidInterfaceSnapshot* snapshot = cacheHidInterface(
     devAddr,
@@ -208,6 +205,19 @@ extern "C" void tuh_hid_mount_cb(
   } else {
     writeHidMount(devAddr, instance, protocol, reportDescriptor, descriptorLength);
   }
+
+  if (protocol == HID_ITF_PROTOCOL_KEYBOARD &&
+      tuh_hid_get_protocol(devAddr, instance) != HID_PROTOCOL_BOOT) {
+    if (tuh_hid_set_protocol(devAddr, instance, HID_PROTOCOL_BOOT)) {
+      return;
+    }
+  }
+
+  tuh_hid_receive_report(devAddr, instance);
+}
+
+extern "C" void tuh_hid_set_protocol_complete_cb(uint8_t devAddr, uint8_t instance, uint8_t protocol) {
+  (void)protocol;
   tuh_hid_receive_report(devAddr, instance);
 }
 
