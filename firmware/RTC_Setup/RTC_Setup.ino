@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.96 (2026-07-25)
+// QuickType firmware version: 0.2.97 (2026-07-25)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -55,7 +55,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.96"; // v0.2.96: Direct WebSerial log streaming without DTR restriction
+static constexpr char FIRMWARE_VERSION[] = "0.2.97"; // v0.2.97: Permanent UART mode, PIO fallback disabled
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
 static constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
@@ -263,7 +263,7 @@ static volatile bool hostStackSuspended = false;
 static volatile bool hostRemoteWakeupEnabled = false;
 static volatile bool bridgeKeyboardMounted = false;
 static char bridgeFirmwareVersion[16] = "Unknown";
-static volatile KeypadInputMode keypadInputMode = KeypadInputMode::PioUsb;
+static volatile KeypadInputMode keypadInputMode = KeypadInputMode::UartBridge;
 static volatile uint32_t lastUartBridgePacketMs = 0;
 static volatile bool inputModeResetPending = false;
 static bool uartSequenceValid = false;
@@ -4609,21 +4609,5 @@ void loop1() {
   }
 
   serviceUartBridge();
-
-  if (keypadInputMode == KeypadInputMode::UartBridge) {
-    if (millis() - lastUartBridgePacketMs <= UART_BRIDGE_TIMEOUT_MS) {
-      delay(1);
-      return;
-    }
-
-    clearBridgeInterfaces();
-    uartSequenceValid = false;
-    selectKeypadInputMode(KeypadInputMode::PioUsb);
-  }
-
-  // Return periodically so hostStackSuspended is observed promptly during
-  // flash writes. Idle interrupt-IN transfers remain pending in the HCD.
-  USBHost.task(1);
-
-  pollMountedHidReports();
+  delay(1);
 }
