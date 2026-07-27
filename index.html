@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-27T10:02:10-07:00">
+  <meta name="quicktype-build" content="2026-07-27T10:06:41-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1900,6 +1900,8 @@
       deviceInfo: null,
       connectedDeviceName: "",
       isConnected: false,
+      isConnecting: false,
+      isDisconnecting: false,
       configDirty: false,
       expansionsEnabled: true,
       keypadExpansionsEnabled: true,
@@ -2293,7 +2295,6 @@
       if (!("serial" in navigator)) return;
       navigator.serial.addEventListener("connect", async (event) => {
         logActivity("USB device connected to host.");
-        showToast("USB device connected.");
         await refreshAuthorizedDevices();
         if (appState.autoConnectEnabled && !appState.isConnected) {
           await autoConnectAvailableDevice();
@@ -2304,7 +2305,6 @@
 
       navigator.serial.addEventListener("disconnect", async (event) => {
         logActivity("USB device disconnected.");
-        showToast("USB device disconnected.");
         if (appState.isConnected && appState.port === event.port) {
           await disconnectDevice();
         }
@@ -2317,53 +2317,64 @@
         if (appState.port === port) return;
         throw new Error("Disconnect the current device before connecting another.");
       }
+      if (appState.isConnecting) return;
 
-      await port.open({ baudRate: SERIAL_BAUD_RATE, bufferSize: 65536 });
-      appState.port = port;
-      appState.writer = port.writable.getWriter();
-      appState.reader = port.readable.getReader();
-      appState.isConnected = true;
-
-      const info = port.getInfo();
-      if (info && info.usbVendorId !== undefined) {
-        try {
-          window.localStorage.setItem("quicktype-last-vid", String(info.usbVendorId));
-          window.localStorage.setItem("quicktype-last-pid", String(info.usbProductId));
-        } catch {}
-      }
-
+      appState.isConnecting = true;
       updateDeviceControls();
-      appState.readLoop = readSerialLoop();
-      logActivity("Serial port opened. Waiting for QuickType firmware...");
-
-      let response;
       try {
-        response = await sendDeviceCommand("ping", {}, 3000);
-      } catch (firstError) {
-        await delay(1000);
-        response = await sendDeviceCommand("ping", {}, 8000);
-      }
+        await port.open({ baudRate: SERIAL_BAUD_RATE, bufferSize: 65536 });
+        appState.port = port;
+        appState.writer = port.writable.getWriter();
+        appState.reader = port.readable.getReader();
+        appState.isConnected = true;
 
-      appState.deviceInfo = response.data || {};
-      appState.deviceDetails.set(port, appState.deviceInfo);
-      appState.connectedDeviceName = "";
-      appState.expansionsEnabled = appState.deviceInfo.expansionsEnabled !== false;
-      appState.keypadExpansionsEnabled = appState.deviceInfo.keypadExpansionsEnabled !== false;
-      updateDeviceControls();
-      const connMode = (appState.deviceInfo.keypadInputMode || "pio").toUpperCase();
-      const connDev = appState.deviceInfo.deviceConnected ? "YES" : "NO";
-      logActivity(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"} (Mode: ${connMode}, Keyboard Connected: ${connDev}).`);
-      showToast(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
-      await readDeviceConfiguration({ automatic: true });
-      await syncDeviceClock({ silent: true });
+        const info = port.getInfo();
+        if (info && info.usbVendorId !== undefined) {
+          try {
+            window.localStorage.setItem("quicktype-last-vid", String(info.usbVendorId));
+            window.localStorage.setItem("quicktype-last-pid", String(info.usbProductId));
+          } catch {}
+        }
+
+        updateDeviceControls();
+        appState.readLoop = readSerialLoop();
+        logActivity("Serial port opened. Waiting for QuickType firmware...");
+
+        let response;
+        try {
+          response = await sendDeviceCommand("ping", {}, 3000);
+        } catch (firstError) {
+          await delay(1000);
+          response = await sendDeviceCommand("ping", {}, 8000);
+        }
+
+        appState.deviceInfo = response.data || {};
+        appState.deviceDetails.set(port, appState.deviceInfo);
+        appState.connectedDeviceName = "";
+        appState.expansionsEnabled = appState.deviceInfo.expansionsEnabled !== false;
+        appState.keypadExpansionsEnabled = appState.deviceInfo.keypadExpansionsEnabled !== false;
+        updateDeviceControls();
+        const connMode = (appState.deviceInfo.keypadInputMode || "pio").toUpperCase();
+        const connDev = appState.deviceInfo.deviceConnected ? "YES" : "NO";
+        logActivity(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"} (Mode: ${connMode}, Keyboard Connected: ${connDev}).`);
+        showToast(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
+        await readDeviceConfiguration({ automatic: true });
+        await syncDeviceClock({ silent: true });
+      } finally {
+        appState.isConnecting = false;
+        updateDeviceControls();
+      }
     }
 
     async function disconnectDevice() {
+      if (appState.isDisconnecting) return;
       if (!appState.port) {
         logActivity("No device to disconnect.");
         return;
       }
 
+      appState.isDisconnecting = true;
+      updateDeviceControls();
       try {
         if (appState.pendingRequests.size > 0) {
           logActivity("Waiting for pending device command before disconnecting...");
@@ -2425,6 +2436,7 @@
         appState.deviceInfo = null;
         appState.connectedDeviceName = "";
         appState.isConnected = false;
+        appState.isDisconnecting = false;
         updateDeviceControls();
       }
     }
@@ -2443,9 +2455,6 @@
 
       try {
         logActivity(options.automatic ? "Loading saved configuration from device..." : "Reading configuration from device...");
-        if (options.automatic) {
-          showToast("Loading saved device configuration...");
-        }
         const response = await sendDeviceCommand("get-config");
         appState.config = normalizeImportedConfiguration(response.data);
         appState.connectedDeviceName = normalizeDeviceName(appState.config.deviceName);
@@ -2454,13 +2463,17 @@
         updateDeviceControls();
         setConfigDirty(false);
         logActivity("Device configuration loaded.");
-        showToast("Device configuration loaded.");
+        if (!options.automatic) {
+          showToast("Device configuration loaded.");
+        }
       } catch (error) {
         if (error.code === "NO_CONFIG") {
           appState.connectedDeviceName = "";
           updateDeviceControls();
           logActivity("The device has no saved configuration. The current editor draft remains open; use Write to install it.");
-          showToast(options.automatic ? "Connected. No saved configuration found." : "No saved device configuration found.");
+          if (!options.automatic) {
+            showToast("No saved device configuration found.");
+          }
         } else {
           logActivity(`Read failed: ${error.message}`);
           showToast(`Read failed: ${error.message}`, "error");
@@ -2906,9 +2919,9 @@
         : (appState.availablePorts.length > 1
           ? `${appState.availablePorts.length} serial ports available`
           : "No device connected");
-      elements.connectButton.disabled = appState.isConnected || !("serial" in navigator);
-      elements.autoConnectToggle.disabled = !("serial" in navigator);
-      elements.disconnectButton.disabled = !appState.isConnected;
+      elements.connectButton.disabled = appState.isConnected || appState.isConnecting || !("serial" in navigator);
+      elements.autoConnectToggle.disabled = appState.isConnecting || appState.isDisconnecting || !("serial" in navigator);
+      elements.disconnectButton.disabled = !appState.isConnected || appState.isDisconnecting;
       elements.readButton.disabled = !appState.isConnected;
       elements.writeButton.disabled = !appState.isConnected;
       elements.toggleExpansionsButton.disabled = !appState.isConnected;
