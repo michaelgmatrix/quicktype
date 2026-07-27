@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-27T10:16:05-07:00">
+  <meta name="quicktype-build" content="2026-07-27T12:50:57-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -3054,8 +3054,10 @@
         ? "Serial port"
         : "QuickType";
       const displayName = appState.connectedDeviceName || selectedPortType;
+      const uniqueId = normalizeDeviceUniqueId(appState.deviceInfo?.uniqueId);
+      const displayIdentity = uniqueId ? `${displayName} · ${uniqueId}` : displayName;
       elements.connectionStatus.textContent = appState.isConnected
-        ? `${displayName} connected${version ? ` · v${version}` : ""}`
+        ? `${displayIdentity} connected${version ? ` · v${version}` : ""}`
         : (appState.availablePorts.length > 1
           ? `${appState.availablePorts.length} serial ports available`
           : "No device connected");
@@ -4057,6 +4059,13 @@
         .replace(/[\u0000-\u001F\u007F]/g, "")
         .trim()
         .slice(0, 32);
+    }
+
+    function normalizeDeviceUniqueId(value) {
+      return String(value || "")
+        .replace(/[^0-9A-F]/gi, "")
+        .toUpperCase()
+        .slice(-5);
     }
 
     function normalizeDeviceColor(value) {
