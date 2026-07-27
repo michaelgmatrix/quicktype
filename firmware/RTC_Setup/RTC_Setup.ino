@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.116 (2026-07-26)
+// QuickType firmware version: 0.2.121 (2026-07-27)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -12,6 +12,8 @@
 #include <hardware/clocks.h>
 #include <pico/unique_id.h>
 #include "QuickTypeUartProtocol.h"
+
+extern "C" uint8_t const* tud_descriptor_configuration_cb(uint8_t index);
 
 // ============================================================
 // RP2040-Zero wiring
@@ -56,17 +58,65 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.116"; // v0.2.116: Register PC-facing HID after core USB init, then force clean enumeration
+static constexpr char FIRMWARE_VERSION[] = "0.2.121"; // v0.2.121: Use the correct I2C1 controller for the RTC on GPIO6/GPIO7
 static constexpr uint8_t NEOPIXEL_PIN = 16;
 static Adafruit_NeoPixel statusLed(1, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
+static bool statusLedInitialized = false;
+
+enum class StatusLedState : uint8_t {
+  Red,
+  Blue,
+  Green
+};
+
+static volatile StatusLedState requestedStatusLedState = StatusLedState::Red;
+static StatusLedState appliedStatusLedState = StatusLedState::Red;
+static bool statusLedStateApplied = false;
+
+TwoWire& rtcWire() {
+#if defined(ARDUINO_SEEED_XIAO_RP2040)
+  // The XIAO variant maps its primary Wire object to I2C1.
+  return Wire;
+#else
+  // Waveshare RP2040-Zero and generic RP2040 variants map Wire1 to I2C1.
+  return Wire1;
+#endif
+}
 
 void setStatusLed(uint8_t r, uint8_t g, uint8_t b) {
-  statusLed.begin();
+  if (!statusLedInitialized) {
+    statusLed.begin();
+    statusLed.clear();
+    statusLedInitialized = true;
+  }
   uint8_t dimR = (uint16_t)r * 40 / 255;
   uint8_t dimG = (uint16_t)g * 40 / 255;
   uint8_t dimB = (uint16_t)b * 40 / 255;
   statusLed.setPixelColor(0, statusLed.Color(dimR, dimG, dimB));
   statusLed.show();
+}
+
+void applyStatusLedState(StatusLedState state) {
+  switch (state) {
+    case StatusLedState::Green:
+      setStatusLed(0, 255, 0);
+      break;
+    case StatusLedState::Blue:
+      setStatusLed(0, 0, 255);
+      break;
+    default:
+      setStatusLed(255, 0, 0);
+      break;
+  }
+  appliedStatusLedState = state;
+  statusLedStateApplied = true;
+}
+
+void serviceStatusLed() {
+  const StatusLedState requested = requestedStatusLedState;
+  if (!statusLedStateApplied || requested != appliedStatusLedState) {
+    applyStatusLedState(requested);
+  }
 }
 //
     //          "QuickType v0.2.84 requires the PR #206-tested 240 MHz PIO host clock");
@@ -101,6 +151,10 @@ uint8_t const hidReportDescriptor[] = {
 
 // Native USB-C HID keyboard device.
 Adafruit_USBD_HID usb_hid;
+static char quickTypeBoardId[2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES + 1] = "";
+static char quickTypeUsbDeviceName[
+  sizeof("QuickType ") + 2 * PICO_UNIQUE_BOARD_ID_SIZE_BYTES
+] = "QuickType";
 
 // Track the active host keyboard LED report status (Num Lock, Caps Lock, etc.)
 static uint8_t hostLedsState = 0xFF;
@@ -477,16 +531,82 @@ void hid_report_callback(uint8_t report_id, hid_report_type_t report_type, uint8
 }
 
 void configureUsbDeviceKeyboard() {
-  TinyUSBDevice.setID(0x2E8A, 0x5154); // Custom RP2040 VID:0x2E8A (11914), PID:0x5154 (20820 - 'QT')
+  pico_get_unique_board_id_string(quickTypeBoardId, sizeof(quickTypeBoardId));
+  const size_t boardIdLength = strlen(quickTypeBoardId);
+  const char* shortBoardId = boardIdLength > 5
+    ? quickTypeBoardId + boardIdLength - 5
+    : quickTypeBoardId;
+  snprintf(
+    quickTypeUsbDeviceName,
+    sizeof(quickTypeUsbDeviceName),
+    "QuickType %s",
+    shortBoardId
+  );
+
+  // PID 0x5156 forces Windows and Chrome to create a fresh device record
+  // instead of reusing the cached "TinyUSB Serial" name from PID 0x5155.
+  TinyUSBDevice.setID(0x2E8A, 0x5156);
   TinyUSBDevice.setManufacturerDescriptor("QuickType");
-  TinyUSBDevice.setProductDescriptor("QuickType Configurator");
-  Serial.setStringDescriptor("QuickType Serial");
+  TinyUSBDevice.setProductDescriptor(quickTypeUsbDeviceName);
+  TinyUSBDevice.setSerialDescriptor(quickTypeBoardId);
 
   usb_hid.setPollInterval(2);
   usb_hid.setReportDescriptor(hidReportDescriptor, sizeof(hidReportDescriptor));
   usb_hid.setStringDescriptor("QuickType Keyboard");
   usb_hid.setReportCallback(NULL, hid_report_callback);
   usb_hid.begin();
+
+  // Adafruit_USBD_CDC::begin() has already copied "TinyUSB Serial" into the
+  // CDC control-interface descriptor. Its IAD and data-interface string indexes
+  // are zero, so they cannot be used to discover the old string index. Assign
+  // the QuickType string directly to all three CDC name fields while detached.
+  // The descriptor buffer, endpoints, and HID reports stay intact.
+  const uint8_t quickTypeSerialStringId =
+    TinyUSBDevice.addStringDescriptor(quickTypeUsbDeviceName);
+  uint8_t* configurationDescriptor =
+    const_cast<uint8_t*>(tud_descriptor_configuration_cb(0));
+  if (quickTypeSerialStringId == 0 || configurationDescriptor == nullptr) {
+    return;
+  }
+
+  const uint16_t descriptorLength =
+    (uint16_t)configurationDescriptor[2]
+    | ((uint16_t)configurationDescriptor[3] << 8);
+  if (descriptorLength < 9 || descriptorLength > 256) {
+    return;
+  }
+
+  static constexpr uint8_t USB_DESCRIPTOR_TYPE_INTERFACE = 0x04;
+  static constexpr uint8_t USB_DESCRIPTOR_TYPE_INTERFACE_ASSOCIATION = 0x0B;
+  static constexpr uint8_t USB_CLASS_CDC_CONTROL = 0x02;
+  static constexpr uint8_t USB_CLASS_CDC_DATA = 0x0A;
+
+  for (uint16_t offset = 0; offset + 2 <= descriptorLength;) {
+    const uint8_t entryLength = configurationDescriptor[offset];
+    const uint8_t descriptorType = configurationDescriptor[offset + 1];
+    if (entryLength < 2 || offset + entryLength > descriptorLength) {
+      return;
+    }
+
+    if (
+      descriptorType == USB_DESCRIPTOR_TYPE_INTERFACE_ASSOCIATION
+      && entryLength >= 8
+      && configurationDescriptor[offset + 4] == USB_CLASS_CDC_CONTROL
+    ) {
+      configurationDescriptor[offset + 7] = quickTypeSerialStringId;
+    } else if (
+      descriptorType == USB_DESCRIPTOR_TYPE_INTERFACE
+      && entryLength >= 9
+      && (
+        configurationDescriptor[offset + 5] == USB_CLASS_CDC_CONTROL
+        || configurationDescriptor[offset + 5] == USB_CLASS_CDC_DATA
+      )
+    ) {
+      configurationDescriptor[offset + 8] = quickTypeSerialStringId;
+    }
+
+    offset += entryLength;
+  }
 }
 
 bool serialDebugConnected() {
@@ -2006,7 +2126,7 @@ bool outputDiagnosticInformation() {
   if (!typeAsciiStringWithDelay(buf, keyDelayMs)) return false;
 
   // 2. USB Device (To Host PC)
-  snprintf(buf, sizeof(buf), "[USB DEVICE INTERFACE]\n* USB Vendor ID: 0x2E8A (Raspberry Pi Foundation)\n* USB Product ID: 0x5154 (QuickType Hardware)\n* CDC Serial Speed: 115200 baud (%s)\n* USB HID Keyboard: Active (Poll Interval: 2ms)\n* Host Lock State: NumLock=%s, CapsLock=%s, ScrollLock=%s\n\n",
+  snprintf(buf, sizeof(buf), "[USB DEVICE INTERFACE]\n* USB Vendor ID: 0x2E8A (Raspberry Pi Foundation)\n* USB Product ID: 0x5156 (QuickType Hardware)\n* CDC Serial Speed: 115200 baud (%s)\n* USB HID Keyboard: Active (Poll Interval: 2ms)\n* Host Lock State: NumLock=%s, CapsLock=%s, ScrollLock=%s\n\n",
            serialProtocolConnected() ? "Connected DTR=1" : "Disconnected DTR=0",
            (hostLedsState & KEYBOARD_LED_NUMLOCK) ? "ON" : "OFF",
            (hostLedsState & KEYBOARD_LED_CAPSLOCK) ? "ON" : "OFF",
@@ -2339,15 +2459,15 @@ void updateBridgeMountedState() {
     HostHidInterfaceInfo const& info = hostHidInterfaces[index];
     if (info.mounted && info.uartBridge && (info.keyboard || info.consumerControl)) {
       bridgeKeyboardMounted = true;
-      setStatusLed(0, 255, 0); // GREEN = Keyboard Connected & Active!
+      requestedStatusLedState = StatusLedState::Green; // Keyboard connected and active.
       return;
     }
   }
 
   if (uartActive) {
-    setStatusLed(0, 0, 255); // BLUE = Primary Board can talk to UART Bridge Board!
+    requestedStatusLedState = StatusLedState::Blue; // Primary can talk to the UART bridge.
   } else {
-    setStatusLed(255, 0, 0); // RED = No UART Communication / Disconnected
+    requestedStatusLedState = StatusLedState::Red; // No UART communication / disconnected.
   }
 }
 
@@ -3679,7 +3799,8 @@ void sendProtocolInfo(uint32_t id) {
   response["id"] = id;
   response["ok"] = true;
   response["type"] = "hello";
-  response["data"]["device"] = "QuickType RP2040 Zero";
+  response["data"]["device"] = quickTypeUsbDeviceName;
+  response["data"]["uniqueId"] = quickTypeBoardId;
   response["data"]["firmwareVersion"] = FIRMWARE_VERSION;
   response["data"]["configSchema"] = CONFIG_SCHEMA_VERSION;
   response["data"]["hasConfiguration"] = storedConfigurationLoaded;
@@ -4376,29 +4497,29 @@ bool parseTimestampFile(const char* filename, RtcDateTime& out) {
 }
 
 bool rtcPresent() {
-  Wire.beginTransmission(RTC_ADDR);
-  return Wire.endTransmission() == 0;
+  rtcWire().beginTransmission(RTC_ADDR);
+  return rtcWire().endTransmission() == 0;
 }
 
 uint8_t rtcReadRegister(uint8_t reg) {
-  Wire.beginTransmission(RTC_ADDR);
-  Wire.write(reg);
-  Wire.endTransmission(false);
+  rtcWire().beginTransmission(RTC_ADDR);
+  rtcWire().write(reg);
+  rtcWire().endTransmission(false);
 
-  Wire.requestFrom(RTC_ADDR, (uint8_t)1);
+  rtcWire().requestFrom(RTC_ADDR, (uint8_t)1);
 
-  if (Wire.available()) {
-    return Wire.read();
+  if (rtcWire().available()) {
+    return rtcWire().read();
   }
 
   return 0;
 }
 
 void rtcWriteRegister(uint8_t reg, uint8_t value) {
-  Wire.beginTransmission(RTC_ADDR);
-  Wire.write(reg);
-  Wire.write(value);
-  Wire.endTransmission();
+  rtcWire().beginTransmission(RTC_ADDR);
+  rtcWire().write(reg);
+  rtcWire().write(value);
+  rtcWire().endTransmission();
 }
 
 bool rtcOscillatorStopFlagSet() {
@@ -4413,41 +4534,41 @@ void rtcClearOscillatorStopFlag() {
 }
 
 void rtcSetDateTime(const RtcDateTime& dt) {
-  Wire.beginTransmission(RTC_ADDR);
+  rtcWire().beginTransmission(RTC_ADDR);
 
-  Wire.write(0x00); // Start at seconds register
+  rtcWire().write(0x00); // Start at seconds register
 
-  Wire.write(decToBcd(dt.second));
-  Wire.write(decToBcd(dt.minute));
-  Wire.write(decToBcd(dt.hour));          // 24-hour mode
-  Wire.write(decToBcd(dt.dow));           // 1..7
-  Wire.write(decToBcd(dt.day));
-  Wire.write(decToBcd(dt.month));
-  Wire.write(decToBcd(dt.year - 2000));
+  rtcWire().write(decToBcd(dt.second));
+  rtcWire().write(decToBcd(dt.minute));
+  rtcWire().write(decToBcd(dt.hour));          // 24-hour mode
+  rtcWire().write(decToBcd(dt.dow));           // 1..7
+  rtcWire().write(decToBcd(dt.day));
+  rtcWire().write(decToBcd(dt.month));
+  rtcWire().write(decToBcd(dt.year - 2000));
 
-  Wire.endTransmission();
+  rtcWire().endTransmission();
 }
 
 RtcDateTime rtcGetDateTime() {
   RtcDateTime dt = {};
 
-  Wire.beginTransmission(RTC_ADDR);
-  Wire.write(0x00);
-  Wire.endTransmission(false);
+  rtcWire().beginTransmission(RTC_ADDR);
+  rtcWire().write(0x00);
+  rtcWire().endTransmission(false);
 
-  Wire.requestFrom(RTC_ADDR, (uint8_t)7);
+  rtcWire().requestFrom(RTC_ADDR, (uint8_t)7);
 
-  if (Wire.available() < 7) {
+  if (rtcWire().available() < 7) {
     return dt;
   }
 
-  uint8_t rawSecond = Wire.read();
-  uint8_t rawMinute = Wire.read();
-  uint8_t rawHour = Wire.read();
-  uint8_t rawDow = Wire.read();
-  uint8_t rawDay = Wire.read();
-  uint8_t rawMonth = Wire.read();
-  uint8_t rawYear = Wire.read();
+  uint8_t rawSecond = rtcWire().read();
+  uint8_t rawMinute = rtcWire().read();
+  uint8_t rawHour = rtcWire().read();
+  uint8_t rawDow = rtcWire().read();
+  uint8_t rawDay = rtcWire().read();
+  uint8_t rawMonth = rtcWire().read();
+  uint8_t rawYear = rtcWire().read();
 
   dt.second = bcdToDec(rawSecond & 0x7F);
   dt.minute = bcdToDec(rawMinute & 0x7F);
@@ -4541,10 +4662,10 @@ void setup() {
   configureUsbDeviceKeyboard();
   TinyUSBDevice.attach();
 
-  setStatusLed(255, 0, 0); delay(200); // Boot test Red
-  setStatusLed(0, 255, 0); delay(200); // Boot test Green
-  setStatusLed(0, 0, 255); delay(200); // Boot test Blue
-  setStatusLed(255, 0, 0); // Red until keyboard mounts
+  applyStatusLedState(StatusLedState::Red); delay(200); // Boot test Red
+  applyStatusLedState(StatusLedState::Green); delay(200); // Boot test Green
+  applyStatusLedState(StatusLedState::Blue); delay(200); // Boot test Blue
+  applyStatusLedState(StatusLedState::Red); // Red until keyboard mounts
 
   Serial.begin(115200);
   serialInputLine.reserve(MAX_CONFIG_BYTES);
@@ -4571,9 +4692,9 @@ void setup() {
 
   // USB Host is configured on Core 1 in setup1().
 
-  Wire.setSDA(SDA_PIN);
-  Wire.setSCL(SCL_PIN);
-  Wire.begin();
+  rtcWire().setSDA(SDA_PIN);
+  rtcWire().setSCL(SCL_PIN);
+  rtcWire().begin();
 
   if (!LittleFS.begin()) {
     if (ENABLE_SERIAL_DEBUG_LOGS) {
@@ -4631,6 +4752,7 @@ void loop() {
   telemetry.loopCount++;
 
   serviceUsbBridge();
+  serviceStatusLed();
   processSerialProtocol();
   emitTelemetryHeartbeat();
 }
