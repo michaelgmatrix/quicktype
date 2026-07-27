@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-27T09:41:05-07:00">
+  <meta name="quicktype-build" content="2026-07-27T10:02:10-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1619,6 +1619,7 @@
             <button id="telemetryButton" class="secondary-button" type="button">Telemetry</button>
             <button id="readClockButton" class="secondary-button" type="button">Read Clock</button>
             <button id="syncClockButton" class="secondary-button" type="button">Sync Clock</button>
+            <button id="renameDeviceButton" class="secondary-button" type="button" title="Rename this device and save the current configuration">Rename</button>
             <button id="disconnectButton" class="secondary-button" type="button">Disconnect</button>
             <button id="exportButton" class="secondary-button" type="button">Export</button>
             <label class="secondary-button" for="importFile">Import</label>
@@ -1897,6 +1898,7 @@
       nextRequestId: 1,
       pendingRequests: new Map(),
       deviceInfo: null,
+      connectedDeviceName: "",
       isConnected: false,
       configDirty: false,
       expansionsEnabled: true,
@@ -1947,6 +1949,7 @@
       elements.toggleKeypadExpansionsButton = document.getElementById("toggleKeypadExpansionsButton");
       elements.telemetryButton = document.getElementById("telemetryButton");
       elements.readClockButton = document.getElementById("readClockButton");
+      elements.renameDeviceButton = document.getElementById("renameDeviceButton");
       elements.exportButton = document.getElementById("exportButton");
       elements.importFile = document.getElementById("importFile");
       elements.factoryResetButton = document.getElementById("factoryResetButton");
@@ -2026,6 +2029,7 @@
       elements.toggleKeypadExpansionsButton.addEventListener("click", toggleDeviceKeypadExpansions);
       elements.telemetryButton.addEventListener("click", readDeviceTelemetry);
       elements.readClockButton.addEventListener("click", readDeviceClock);
+      elements.renameDeviceButton.addEventListener("click", renameConnectedDevice);
       elements.exportButton.addEventListener("click", exportConfiguration);
       elements.importFile.addEventListener("change", importConfiguration);
       elements.factoryResetButton.addEventListener("click", restoreFactoryDefaults);
@@ -2342,6 +2346,7 @@
 
       appState.deviceInfo = response.data || {};
       appState.deviceDetails.set(port, appState.deviceInfo);
+      appState.connectedDeviceName = "";
       appState.expansionsEnabled = appState.deviceInfo.expansionsEnabled !== false;
       appState.keypadExpansionsEnabled = appState.deviceInfo.keypadExpansionsEnabled !== false;
       updateDeviceControls();
@@ -2418,6 +2423,7 @@
       } finally {
         appState.port = null;
         appState.deviceInfo = null;
+        appState.connectedDeviceName = "";
         appState.isConnected = false;
         updateDeviceControls();
       }
@@ -2442,19 +2448,64 @@
         }
         const response = await sendDeviceCommand("get-config");
         appState.config = normalizeImportedConfiguration(response.data);
+        appState.connectedDeviceName = normalizeDeviceName(appState.config.deviceName);
         selectDefaultRuleForEditor();
         renderAllConfigurationViews();
+        updateDeviceControls();
         setConfigDirty(false);
         logActivity("Device configuration loaded.");
         showToast("Device configuration loaded.");
       } catch (error) {
         if (error.code === "NO_CONFIG") {
+          appState.connectedDeviceName = "";
+          updateDeviceControls();
           logActivity("The device has no saved configuration. The current editor draft remains open; use Write to install it.");
           showToast(options.automatic ? "Connected. No saved configuration found." : "No saved device configuration found.");
         } else {
           logActivity(`Read failed: ${error.message}`);
           showToast(`Read failed: ${error.message}`, "error");
         }
+      }
+    }
+
+    async function renameConnectedDevice() {
+      if (!ensureConnected("rename device")) return;
+
+      const currentName = appState.connectedDeviceName || "QuickType";
+      const enteredName = window.prompt(
+        "Name this QuickType. Renaming also saves the current configuration to this device.",
+        currentName
+      );
+      if (enteredName === null) return;
+
+      const deviceName = normalizeDeviceName(enteredName);
+      if (!deviceName) {
+        showToast("Device name must contain at least one visible character.", "error");
+        return;
+      }
+      if (!updateCurrentMappingFromForm(false)) return;
+
+      const previousName = appState.config.deviceName || "";
+      appState.config.deviceName = deviceName;
+      setConfigDirty(true);
+
+      try {
+        const deviceConfig = buildDeviceConfiguration();
+        const payload = serializeConfiguration(deviceConfig);
+        if (payload.byteLength > MAX_CONFIG_PAYLOAD_BYTES) {
+          throw new Error(`Configuration is ${payload.byteLength} bytes; the safe limit is ${MAX_CONFIG_PAYLOAD_BYTES}.`);
+        }
+        await sendDeviceCommand("set-config", { config: deviceConfig }, 15000);
+        appState.connectedDeviceName = deviceName;
+        updateDeviceControls();
+        setConfigDirty(false);
+        logActivity(`Device renamed to "${deviceName}".`);
+        showToast(`Connected device renamed to ${deviceName}.`);
+      } catch (error) {
+        appState.config.deviceName = previousName;
+        setConfigDirty(true);
+        logActivity(`Rename failed: ${error.message}`);
+        showToast(`Rename failed: ${error.message}`, "error");
       }
     }
 
@@ -2481,6 +2532,8 @@
         logActivity(`Writing ${payload.byteLength} bytes to device...`);
         showToast("Writing configuration...");
         const response = await sendDeviceCommand("set-config", { config: deviceConfig }, 15000);
+        appState.connectedDeviceName = normalizeDeviceName(deviceConfig.deviceName);
+        updateDeviceControls();
         setConfigDirty(false);
         logActivity(`Configuration saved (${response.data?.ruleCount ?? 0} active rules).`);
         showToast(`Configuration saved (${response.data?.ruleCount ?? 0} active rules).`);
@@ -2847,8 +2900,9 @@
       const selectedPortType = activePort && !isQuickTypePort(activePort) && !appState.deviceDetails.get(activePort)
         ? "Serial port"
         : "QuickType";
+      const displayName = appState.connectedDeviceName || selectedPortType;
       elements.connectionStatus.textContent = appState.isConnected
-        ? `${selectedPortType} connected${version ? ` · v${version}` : ""}`
+        ? `${displayName} connected${version ? ` · v${version}` : ""}`
         : (appState.availablePorts.length > 1
           ? `${appState.availablePorts.length} serial ports available`
           : "No device connected");
@@ -2876,9 +2930,11 @@
       elements.telemetryButton.disabled = !appState.isConnected;
       elements.readClockButton.disabled = !appState.isConnected;
       elements.syncClockButton.disabled = !appState.isConnected;
+      elements.renameDeviceButton.disabled = !appState.isConnected;
       elements.connectButton.classList.toggle("hidden", appState.isConnected);
       [
         elements.disconnectButton,
+        elements.renameDeviceButton,
         elements.readButton,
         elements.writeButton,
         elements.toggleExpansionsButton,
@@ -3673,6 +3729,7 @@
 
     function createDefaultConfig() {
       return {
+        deviceName: "",
         profileName: "QuickType Expansions",
         version: 1,
         mode: "inline-keyboard-intercept",
@@ -3712,6 +3769,7 @@
         throw new Error("Invalid QuickType configuration file");
       }
 
+      fallback.deviceName = normalizeDeviceName(config.deviceName);
       fallback.profileName = config.profileName || fallback.profileName;
       fallback.version = config.version || fallback.version;
       fallback.targetOs = config.targetOs || "windows";
@@ -3837,6 +3895,13 @@
     function normalizeNumber(value, fallback) {
       const numberValue = Number(value);
       return Number.isFinite(numberValue) ? numberValue : fallback;
+    }
+
+    function normalizeDeviceName(value) {
+      return String(value || "")
+        .replace(/[\u0000-\u001F\u007F]/g, "")
+        .trim()
+        .slice(0, 32);
     }
 
     function clearActivityLog() {
