@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-27T10:06:41-07:00">
+  <meta name="quicktype-build" content="2026-07-27T10:16:05-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -247,6 +247,18 @@
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: var(--radius);
       padding: 14px;
+      transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .device-card.device-colorized {
+      background: color-mix(in srgb, var(--device-color) 18%, rgba(255,255,255,0.06));
+      border-color: color-mix(in srgb, var(--device-color) 68%, rgba(255,255,255,0.28));
+      box-shadow: inset 3px 0 0 color-mix(in srgb, var(--device-color) 82%, white 18%);
+    }
+
+    .device-card.device-colorized .status-dot.connected {
+      background: color-mix(in srgb, var(--device-color) 82%, white 18%);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--device-color) 25%, transparent);
     }
 
     .status-line {
@@ -1472,13 +1484,75 @@
 
     .modal {
       width: min(520px, 92vw);
-      background: #fff;
+      background: var(--panel);
       border: 1px solid var(--line);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
       padding: 18px;
       display: grid;
       gap: 12px;
+    }
+
+    .device-appearance-form {
+      display: grid;
+      gap: 16px;
+    }
+
+    .device-appearance-field {
+      display: grid;
+      gap: 7px;
+      color: var(--ink);
+      font-weight: 800;
+    }
+
+    .device-appearance-field input[type="text"] {
+      width: 100%;
+    }
+
+    .device-color-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+      background: var(--panel-soft);
+    }
+
+    .device-color-row input[type="color"] {
+      width: 52px;
+      height: 38px;
+      flex: 0 0 auto;
+      padding: 3px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--panel);
+      cursor: pointer;
+    }
+
+    .device-color-row input[type="color"]:disabled {
+      cursor: not-allowed;
+      opacity: 0.4;
+    }
+
+    .device-color-default {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .device-appearance-help {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.85rem;
+      line-height: 1.45;
+    }
+
+    .device-appearance-actions {
+      display: flex;
+      justify-content: flex-end;
     }
 
     @media (max-width: 720px) and (hover: none) and (pointer: coarse) {
@@ -1571,7 +1645,7 @@
         </div>
       </div>
 
-      <section class="device-card" aria-label="Device connection">
+      <section id="deviceCard" class="device-card" aria-label="Device connection">
         <div class="status-line">
           <span id="statusDot" class="status-dot" aria-hidden="true"></span>
           <span id="connectionStatus">No device connected</span>
@@ -1899,6 +1973,7 @@
       pendingRequests: new Map(),
       deviceInfo: null,
       connectedDeviceName: "",
+      connectedDeviceColor: "",
       isConnected: false,
       isConnecting: false,
       isDisconnecting: false,
@@ -1937,6 +2012,7 @@
 
     function cacheElements() {
       elements.statusDot = document.getElementById("statusDot");
+      elements.deviceCard = document.getElementById("deviceCard");
       elements.themeToggleButton = document.getElementById("themeToggleButton");
       elements.cheatsheetButton = document.getElementById("cheatsheetButton");
       elements.storageCapacityBadge = document.getElementById("storageCapacityBadge");
@@ -2351,6 +2427,7 @@
         appState.deviceInfo = response.data || {};
         appState.deviceDetails.set(port, appState.deviceInfo);
         appState.connectedDeviceName = "";
+        appState.connectedDeviceColor = "";
         appState.expansionsEnabled = appState.deviceInfo.expansionsEnabled !== false;
         appState.keypadExpansionsEnabled = appState.deviceInfo.keypadExpansionsEnabled !== false;
         updateDeviceControls();
@@ -2435,6 +2512,7 @@
         appState.port = null;
         appState.deviceInfo = null;
         appState.connectedDeviceName = "";
+        appState.connectedDeviceColor = "";
         appState.isConnected = false;
         appState.isDisconnecting = false;
         updateDeviceControls();
@@ -2458,6 +2536,7 @@
         const response = await sendDeviceCommand("get-config");
         appState.config = normalizeImportedConfiguration(response.data);
         appState.connectedDeviceName = normalizeDeviceName(appState.config.deviceName);
+        appState.connectedDeviceColor = normalizeDeviceColor(appState.config.deviceColor);
         selectDefaultRuleForEditor();
         renderAllConfigurationViews();
         updateDeviceControls();
@@ -2469,6 +2548,7 @@
       } catch (error) {
         if (error.code === "NO_CONFIG") {
           appState.connectedDeviceName = "";
+          appState.connectedDeviceColor = "";
           updateDeviceControls();
           logActivity("The device has no saved configuration. The current editor draft remains open; use Write to install it.");
           if (!options.automatic) {
@@ -2481,26 +2561,72 @@
       }
     }
 
-    async function renameConnectedDevice() {
+    function renameConnectedDevice() {
       if (!ensureConnected("rename device")) return;
 
       const currentName = appState.connectedDeviceName || "QuickType";
-      const enteredName = window.prompt(
-        "Name this QuickType. Renaming also saves the current configuration to this device.",
-        currentName
-      );
-      if (enteredName === null) return;
+      const currentColor = normalizeDeviceColor(appState.connectedDeviceColor);
+      showModal("Device Appearance", `
+        <form id="deviceAppearanceForm" class="device-appearance-form">
+          <label class="device-appearance-field" for="deviceNameInput">
+            Device name
+            <input id="deviceNameInput" type="text" maxlength="32" value="${escapeAttribute(currentName)}" autocomplete="off">
+          </label>
+          <div class="device-appearance-field">
+            Device color
+            <div class="device-color-row">
+              <input id="deviceColorInput" type="color" value="${currentColor || "#2f9fa3"}" ${currentColor ? "" : "disabled"} aria-label="Device color">
+              <label class="device-color-default" for="deviceUseDefaultColor">
+                <input id="deviceUseDefaultColor" type="checkbox" ${currentColor ? "" : "checked"}>
+                Use default color
+              </label>
+            </div>
+          </div>
+          <p class="device-appearance-help">The color adds a subtle accent to the connected-device panel. Default keeps the standard theme styling. Saving also writes the current configuration to this device.</p>
+          <div class="device-appearance-actions">
+            <button id="saveDeviceAppearanceButton" class="primary-button" type="submit">Save appearance</button>
+          </div>
+        </form>
+      `);
 
-      const deviceName = normalizeDeviceName(enteredName);
+      const form = document.getElementById("deviceAppearanceForm");
+      const nameInput = document.getElementById("deviceNameInput");
+      const colorInput = document.getElementById("deviceColorInput");
+      const defaultColorInput = document.getElementById("deviceUseDefaultColor");
+      defaultColorInput.addEventListener("change", () => {
+        colorInput.disabled = defaultColorInput.checked;
+      });
+      form.addEventListener("submit", saveDeviceAppearance);
+      nameInput.focus();
+      nameInput.select();
+    }
+
+    async function saveDeviceAppearance(event) {
+      event.preventDefault();
+      if (!ensureConnected("save device appearance")) return;
+
+      const deviceName = normalizeDeviceName(document.getElementById("deviceNameInput").value);
       if (!deviceName) {
         showToast("Device name must contain at least one visible character.", "error");
+        return;
+      }
+      const useDefaultColor = document.getElementById("deviceUseDefaultColor").checked;
+      const deviceColor = useDefaultColor
+        ? ""
+        : normalizeDeviceColor(document.getElementById("deviceColorInput").value);
+      if (!useDefaultColor && !deviceColor) {
+        showToast("Choose a valid device color or use the default.", "error");
         return;
       }
       if (!updateCurrentMappingFromForm(false)) return;
 
       const previousName = appState.config.deviceName || "";
+      const previousColor = appState.config.deviceColor || "";
       appState.config.deviceName = deviceName;
+      appState.config.deviceColor = deviceColor;
       setConfigDirty(true);
+      const saveButton = document.getElementById("saveDeviceAppearanceButton");
+      saveButton.disabled = true;
 
       try {
         const deviceConfig = buildDeviceConfiguration();
@@ -2510,15 +2636,19 @@
         }
         await sendDeviceCommand("set-config", { config: deviceConfig }, 15000);
         appState.connectedDeviceName = deviceName;
+        appState.connectedDeviceColor = deviceColor;
         updateDeviceControls();
         setConfigDirty(false);
-        logActivity(`Device renamed to "${deviceName}".`);
-        showToast(`Connected device renamed to ${deviceName}.`);
+        hideModal();
+        logActivity(`Device appearance saved for "${deviceName}".`);
+        showToast(`Device appearance saved for ${deviceName}.`);
       } catch (error) {
         appState.config.deviceName = previousName;
+        appState.config.deviceColor = previousColor;
         setConfigDirty(true);
-        logActivity(`Rename failed: ${error.message}`);
-        showToast(`Rename failed: ${error.message}`, "error");
+        saveButton.disabled = false;
+        logActivity(`Appearance save failed: ${error.message}`);
+        showToast(`Appearance save failed: ${error.message}`, "error");
       }
     }
 
@@ -2546,6 +2676,7 @@
         showToast("Writing configuration...");
         const response = await sendDeviceCommand("set-config", { config: deviceConfig }, 15000);
         appState.connectedDeviceName = normalizeDeviceName(deviceConfig.deviceName);
+        appState.connectedDeviceColor = normalizeDeviceColor(deviceConfig.deviceColor);
         updateDeviceControls();
         setConfigDirty(false);
         logActivity(`Configuration saved (${response.data?.ruleCount ?? 0} active rules).`);
@@ -2908,6 +3039,15 @@
 
     function updateDeviceControls() {
       elements.statusDot.classList.toggle("connected", appState.isConnected);
+      const deviceColor = appState.isConnected
+        ? normalizeDeviceColor(appState.connectedDeviceColor)
+        : "";
+      elements.deviceCard.classList.toggle("device-colorized", Boolean(deviceColor));
+      if (deviceColor) {
+        elements.deviceCard.style.setProperty("--device-color", deviceColor);
+      } else {
+        elements.deviceCard.style.removeProperty("--device-color");
+      }
       const version = appState.deviceInfo?.firmwareVersion;
       const activePort = appState.port;
       const selectedPortType = activePort && !isQuickTypePort(activePort) && !appState.deviceDetails.get(activePort)
@@ -3743,6 +3883,7 @@
     function createDefaultConfig() {
       return {
         deviceName: "",
+        deviceColor: "",
         profileName: "QuickType Expansions",
         version: 1,
         mode: "inline-keyboard-intercept",
@@ -3783,6 +3924,7 @@
       }
 
       fallback.deviceName = normalizeDeviceName(config.deviceName);
+      fallback.deviceColor = normalizeDeviceColor(config.deviceColor);
       fallback.profileName = config.profileName || fallback.profileName;
       fallback.version = config.version || fallback.version;
       fallback.targetOs = config.targetOs || "windows";
@@ -3915,6 +4057,11 @@
         .replace(/[\u0000-\u001F\u007F]/g, "")
         .trim()
         .slice(0, 32);
+    }
+
+    function normalizeDeviceColor(value) {
+      const color = String(value || "").trim().toLowerCase();
+      return /^#[0-9a-f]{6}$/.test(color) ? color : "";
     }
 
     function clearActivityLog() {
