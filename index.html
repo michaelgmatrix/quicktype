@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-27T09:10:12-07:00">
+  <meta name="quicktype-build" content="2026-07-27T09:27:48-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1615,7 +1615,6 @@
               <select id="deviceSelect" aria-label="Select QuickType device"></select>
             </label>
             <button id="connectButton" class="secondary-button" type="button">Connect</button>
-            <button id="addDeviceButton" class="secondary-button" type="button">Add Device</button>
             <label class="auto-connect-control" title="When enabled, automatically connect and show only QuickType serial ports.">
               <input id="autoConnectToggle" type="checkbox" role="switch">
               Auto-connect
@@ -1950,7 +1949,6 @@
       elements.deviceSelectControl = document.getElementById("deviceSelectControl");
       elements.deviceSelect = document.getElementById("deviceSelect");
       elements.connectButton = document.getElementById("connectButton");
-      elements.addDeviceButton = document.getElementById("addDeviceButton");
       elements.autoConnectToggle = document.getElementById("autoConnectToggle");
       elements.disconnectButton = document.getElementById("disconnectButton");
       elements.readButton = document.getElementById("readButton");
@@ -2030,7 +2028,6 @@
       });
       elements.navToggleButton.addEventListener("click", toggleNavigation);
       elements.connectButton.addEventListener("click", requestDeviceConnection);
-      elements.addDeviceButton.addEventListener("click", authorizeAdditionalDevice);
       elements.autoConnectToggle.addEventListener("change", toggleAutoConnect);
       elements.deviceSelect.addEventListener("change", switchSelectedDevice);
       elements.disconnectButton.addEventListener("click", disconnectDevice);
@@ -2235,35 +2232,6 @@
       }
     }
 
-    async function authorizeAdditionalDevice() {
-      if (!("serial" in navigator)) {
-        logActivity("Cannot add a device: Web Serial is not supported.");
-        return;
-      }
-
-      try {
-        const port = await requestSerialPort();
-        if (!port) return;
-
-        await refreshAuthorizedDevices(port);
-        if (!appState.isConnected) {
-          appState.selectedPort = port;
-          renderDeviceSelector();
-          await connectDevice(port);
-        } else {
-          showToast(`${appState.availablePorts.length} serial ports available.`);
-          logActivity("Serial port added. Use the Device selector to switch ports.");
-        }
-      } catch (error) {
-        if (error.name === "NotFoundError") {
-          logActivity("Device selection canceled.");
-          return;
-        }
-        logActivity(`Could not add device: ${error.message}`);
-        showToast(`Could not add device: ${error.message}`, "error");
-      }
-    }
-
     async function requestSerialPort() {
       showToast("Opening serial port chooser...");
       if (appState.autoConnectEnabled) {
@@ -2373,8 +2341,11 @@
         logActivity("Previously authorized QuickType port found. Connecting...");
         try {
           await connectDevice(appState.selectedPort);
-        } catch {
-          // Leave the port available for an explicit retry if it is busy.
+        } catch (error) {
+          logActivity(`Auto-connect failed: ${error.message}`);
+          if (appState.port) {
+            await disconnectDevice();
+          }
         }
       }
     }
@@ -2403,6 +2374,11 @@
     }
 
     async function connectDevice(port) {
+      if (appState.isConnected) {
+        if (appState.port === port) return;
+        throw new Error("Disconnect the current device before connecting another.");
+      }
+
       await port.open({ baudRate: SERIAL_BAUD_RATE, bufferSize: 65536 });
       appState.port = port;
       appState.writer = port.writable.getWriter();
@@ -2948,7 +2924,6 @@
           ? `${appState.availablePorts.length} serial ports available`
           : "No device connected");
       elements.connectButton.disabled = appState.isConnected || !("serial" in navigator);
-      elements.addDeviceButton.disabled = !("serial" in navigator);
       elements.autoConnectToggle.disabled = !("serial" in navigator);
       elements.deviceSelect.disabled = appState.availablePorts.length < 2;
       elements.disconnectButton.disabled = !appState.isConnected;
