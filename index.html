@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name"quicktype-build" content"2026-07-26T13:29:26-07:00">
+  <meta name"quicktype-build" content"2026-07-27T09:02:54-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,7 +23,7 @@
       fetch(checkUrl, { cache: "no-store" })
         .then((response) => response.ok ? response.text() : Promise.reject(new Error(`HTTP ${response.status}`)))
         .then((html) => {
-          const latestBuild = html.match(/<meta name"quicktype-build" content"2026-07-23T12:23:59-07:00"]+)"/)?.[1];
+          const latestBuild = html.match(/<meta name"quicktype-build" content"2026-07-27T09:02:54-07:00"]+)"/)?.[1];
           if (!latestBuild || latestBuild === currentBuild) return;
 
           const freshUrl = new URL(window.location.href);
@@ -271,6 +271,35 @@
       background: #36d17f;
       box-shadow: 0 0 0 4px rgba(54,209,127,0.16);
       animation: statusPulse 2s ease-in-out infinite;
+    }
+
+    .device-select-control {
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-small);
+      background: var(--panel);
+      color: var(--ink-muted);
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+
+    .device-select-control select {
+      max-width: 240px;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: var(--ink);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .device-select-control select:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
     }
 
     @keyframes statusPulse {
@@ -1558,7 +1587,12 @@
         <div class="topbar-controls">
           <button id="navToggleButton" class="secondary-button nav-toggle" type="button" aria-label="Collapse navigation" aria-expanded="true" title="Collapse navigation">☰</button>
           <div class="actions" aria-label="Device and configuration controls">
+            <label id="deviceSelectControl" class="device-select-control hidden" for="deviceSelect">
+              Device
+              <select id="deviceSelect" aria-label="Select QuickType device"></select>
+            </label>
             <button id="connectButton" class="secondary-button" type="button">Connect</button>
+            <button id="addDeviceButton" class="secondary-button" type="button">Add Device</button>
             <button id="readButton" class="secondary-button" type="button">Read</button>
             <button id="writeButton" class="secondary-button" type="button">Write</button>
             <button id="toggleExpansionsButton" class="secondary-button" type="button">Pause Expansions</button>
@@ -1834,6 +1868,9 @@
       selectedKeypadRule: "K_KP_NUMLOCK",
       configMode: "keyboard",
       port: null,
+      availablePorts: [],
+      selectedPort: null,
+      deviceDetails: new Map(),
       reader: null,
       writer: null,
       readLoop: null,
@@ -1871,7 +1908,7 @@
       updateDeviceControls();
       setConfigDirty(false);
       logActivity("QuickType configurator ready.");
-      checkAndAutoConnectDevice();
+      initializeDeviceDiscovery();
     }
 
     function cacheElements() {
@@ -1881,7 +1918,10 @@
       elements.storageCapacityBadge = document.getElementById("storageCapacityBadge");
       elements.navToggleButton = document.getElementById("navToggleButton");
       elements.connectionStatus = document.getElementById("connectionStatus");
+      elements.deviceSelectControl = document.getElementById("deviceSelectControl");
+      elements.deviceSelect = document.getElementById("deviceSelect");
       elements.connectButton = document.getElementById("connectButton");
+      elements.addDeviceButton = document.getElementById("addDeviceButton");
       elements.disconnectButton = document.getElementById("disconnectButton");
       elements.readButton = document.getElementById("readButton");
       elements.writeButton = document.getElementById("writeButton");
@@ -1960,6 +2000,8 @@
       });
       elements.navToggleButton.addEventListener("click", toggleNavigation);
       elements.connectButton.addEventListener("click", requestDeviceConnection);
+      elements.addDeviceButton.addEventListener("click", authorizeAdditionalDevice);
+      elements.deviceSelect.addEventListener("change", switchSelectedDevice);
       elements.disconnectButton.addEventListener("click", disconnectDevice);
       elements.readButton.addEventListener("click", readDeviceConfiguration);
       elements.writeButton.addEventListener("click", writeDeviceConfiguration);
@@ -2110,32 +2152,24 @@
       }
 
       try {
-        const authorizedPort = await findAuthorizedQuickTypePort();
-        if (authorizedPort) {
+        await refreshAuthorizedDevices();
+        if (appState.selectedPort) {
           showToast("Connecting to saved QuickType device...");
           logActivity("Connecting to previously approved QuickType serial port...");
-          try {
-            await connectDevice(authorizedPort);
-            return;
-          } catch (autoErr) {
-            logActivity(`Quick connect failed (${autoErr.message}). Opening chooser prompt...`);
-          }
+          await connectDevice(appState.selectedPort);
+          return;
         }
 
-        showToast("Opening serial port chooser...");
-        logActivity("Choose the QuickType serial port in the browser prompt.");
-        let port = null;
-        try {
-          port = await navigator.serial.requestPort({ filters: QUICKTYPE_USB_FILTERS });
-        } catch (filterErr) {
-          logActivity(`QuickType USB filter matched no device or prompt changed (${filterErr.message}). Listing all available serial ports...`);
-          showToast("Listing all available serial ports...");
-          port = await navigator.serial.requestPort({});
-        }
+        const port = await requestQuickTypePort();
         if (port) {
+          await refreshAuthorizedDevices(port);
           await connectDevice(port);
         }
       } catch (error) {
+        if (error.name === "NotFoundError") {
+          logActivity("Device selection canceled.");
+          return;
+        }
         logActivity(`Connection failed: ${error.message}`);
         showToast(`Connection failed: ${error.message}`, "error");
         if (appState.port) {
@@ -2144,49 +2178,132 @@
       }
     }
 
-    async function findAuthorizedQuickTypePort() {
-      if (!("serial" in navigator)) return null;
+    async function authorizeAdditionalDevice() {
+      if (!("serial" in navigator)) {
+        logActivity("Cannot add a device: Web Serial is not supported.");
+        return;
+      }
+
       try {
-        const ports = await navigator.serial.getPorts();
-        if (!ports || ports.length === 0) return null;
+        const port = await requestQuickTypePort();
+        if (!port) return;
 
-        let savedVid = null;
-        let savedPid = null;
-        try {
-          savedVid = window.localStorage.getItem("quicktype-last-vid");
-          savedPid = window.localStorage.getItem("quicktype-last-pid");
-        } catch {}
-
-        for (const port of ports) {
-          const info = port.getInfo();
-          if (info && info.usbVendorId !== undefined) {
-            if (info.usbVendorId === 0x2E8A && info.usbProductId === 0x5154) {
-              return port;
-            }
-            if (savedVid && String(info.usbVendorId) === savedVid &&
-                savedPid && String(info.usbProductId) === savedPid) {
-              return port;
-            }
-            if (info.usbVendorId === 0x2E8A || info.usbVendorId === 11914) {
-              return port;
-            }
-          }
+        await refreshAuthorizedDevices(port);
+        if (!appState.isConnected) {
+          appState.selectedPort = port;
+          renderDeviceSelector();
+          await connectDevice(port);
+        } else {
+          showToast(`${appState.availablePorts.length} QuickType devices available.`);
+          logActivity("QuickType device added. Use the Device selector to switch units.");
         }
-        return ports[0];
-      } catch {
-        return null;
+      } catch (error) {
+        if (error.name === "NotFoundError") {
+          logActivity("Device selection canceled.");
+          return;
+        }
+        logActivity(`Could not add device: ${error.message}`);
+        showToast(`Could not add device: ${error.message}`, "error");
       }
     }
 
-    async function checkAndAutoConnectDevice() {
-      if (!("serial" in navigator) || appState.isConnected) return;
-      const port = await findAuthorizedQuickTypePort();
-      if (port) {
+    async function requestQuickTypePort() {
+      showToast("Opening serial port chooser...");
+      logActivity("Choose a QuickType serial port in the browser prompt.");
+      return navigator.serial.requestPort({ filters: QUICKTYPE_USB_FILTERS });
+    }
+
+    function isQuickTypePort(port) {
+      const info = port.getInfo();
+      return info?.usbVendorId === 0x2E8A || info?.usbVendorId === 11914;
+    }
+
+    async function refreshAuthorizedDevices(preferredPort = null) {
+      if (!("serial" in navigator)) {
+        appState.availablePorts = [];
+        appState.selectedPort = null;
+        renderDeviceSelector();
+        return [];
+      }
+
+      const authorizedPorts = await navigator.serial.getPorts();
+      const quickTypePorts = authorizedPorts.filter(isQuickTypePort);
+      // Preserve support for older firmware whose USB identifiers predate the QuickType VID.
+      appState.availablePorts = quickTypePorts.length > 0 ? quickTypePorts : authorizedPorts;
+
+      const preferred = appState.port || preferredPort || appState.selectedPort;
+      appState.selectedPort = appState.availablePorts.includes(preferred)
+        ? preferred
+        : (appState.availablePorts[0] || null);
+      renderDeviceSelector();
+      updateDeviceControls();
+      return appState.availablePorts;
+    }
+
+    function formatPortIdentifier(port, index) {
+      const info = port.getInfo();
+      const vid = info?.usbVendorId?.toString(16).toUpperCase().padStart(4, "0");
+      const pid = info?.usbProductId?.toString(16).toUpperCase().padStart(4, "0");
+      const details = appState.deviceDetails.get(port);
+      const version = details?.firmwareVersion ? ` · v${details.firmwareVersion}` : "";
+      const usbId = vid && pid ? ` · ${vid}:${pid}` : "";
+      return `QuickType ${index + 1}${version}${usbId}`;
+    }
+
+    function renderDeviceSelector() {
+      if (!elements.deviceSelect || !elements.deviceSelectControl) return;
+
+      const selectedIndex = Math.max(0, appState.availablePorts.indexOf(appState.selectedPort));
+      elements.deviceSelect.replaceChildren();
+      appState.availablePorts.forEach((port, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = formatPortIdentifier(port, index);
+        elements.deviceSelect.appendChild(option);
+      });
+      elements.deviceSelect.value = String(selectedIndex);
+      elements.deviceSelect.disabled = appState.availablePorts.length < 2;
+      elements.deviceSelectControl.classList.toggle("hidden", appState.availablePorts.length < 2);
+    }
+
+    async function switchSelectedDevice(event) {
+      const nextPort = appState.availablePorts[Number(event.target.value)];
+      if (!nextPort || nextPort === appState.port) return;
+
+      if (appState.isConnected && appState.configDirty &&
+          !window.confirm("Switching devices loads the selected QuickType configuration and replaces unsaved editor changes. Continue?")) {
+        renderDeviceSelector();
+        return;
+      }
+
+      try {
+        if (appState.isConnected) {
+          await disconnectDevice();
+        }
+        appState.selectedPort = nextPort;
+        renderDeviceSelector();
+        await connectDevice(nextPort);
+      } catch (error) {
+        logActivity(`Device switch failed: ${error.message}`);
+        showToast(`Device switch failed: ${error.message}`, "error");
+        if (appState.port) await disconnectDevice();
+      }
+    }
+
+    async function initializeDeviceDiscovery() {
+      if (!("serial" in navigator)) return;
+      await refreshAuthorizedDevices();
+      if (appState.availablePorts.length > 1) {
+        logActivity(`${appState.availablePorts.length} QuickType devices found. Select a device, then connect.`);
+        showToast(`${appState.availablePorts.length} QuickType devices found.`);
+        return;
+      }
+      if (appState.selectedPort) {
         logActivity("Previously authorized QuickType port found. Connecting...");
         try {
-          await connectDevice(port);
+          await connectDevice(appState.selectedPort);
         } catch {
-          // Silent fallback if device is disconnected or busy
+          // Leave the port available for an explicit retry if it is busy.
         }
       }
     }
@@ -2196,14 +2313,16 @@
       navigator.serial.addEventListener("connect", async (event) => {
         logActivity("USB device connected to host.");
         showToast("USB device connected.");
+        await refreshAuthorizedDevices(event.port || null);
         if (!appState.isConnected) {
-          const targetPort = event.port || (event.target && event.target !== navigator.serial ? event.target : null) || await findAuthorizedQuickTypePort();
-          if (targetPort) {
+          if (appState.availablePorts.length === 1) {
             try {
-              await connectDevice(targetPort);
+              await connectDevice(appState.availablePorts[0]);
             } catch (err) {
               logActivity(`Hotplug auto-connect failed: ${err.message}`);
             }
+          } else if (appState.availablePorts.length > 1) {
+            logActivity(`${appState.availablePorts.length} QuickType devices are available. Select one to connect.`);
           }
         }
       });
@@ -2214,6 +2333,7 @@
         if (appState.isConnected && appState.port === event.port) {
           await disconnectDevice();
         }
+        await refreshAuthorizedDevices();
       });
     }
 
@@ -2245,8 +2365,11 @@
       }
 
       appState.deviceInfo = response.data || {};
+      appState.deviceDetails.set(port, appState.deviceInfo);
+      appState.selectedPort = port;
       appState.expansionsEnabled = appState.deviceInfo.expansionsEnabled !== false;
       appState.keypadExpansionsEnabled = appState.deviceInfo.keypadExpansionsEnabled !== false;
+      renderDeviceSelector();
       updateDeviceControls();
       const connMode = (appState.deviceInfo.keypadInputMode || "pio").toUpperCase();
       const connDev = appState.deviceInfo.deviceConnected ? "YES" : "NO";
@@ -2746,10 +2869,18 @@
     function updateDeviceControls() {
       elements.statusDot.classList.toggle("connected", appState.isConnected);
       const version = appState.deviceInfo?.firmwareVersion;
+      const selectedIndex = appState.availablePorts.indexOf(appState.port || appState.selectedPort);
+      const deviceName = selectedIndex >= 0 && appState.availablePorts.length > 1
+        ? `QuickType ${selectedIndex + 1}`
+        : "QuickType";
       elements.connectionStatus.textContent = appState.isConnected
-        ? `Connected${version ? ` · v${version}` : ""}`
-        : "No device connected";
+        ? `${deviceName} connected${version ? ` · v${version}` : ""}`
+        : (appState.availablePorts.length > 1
+          ? `${appState.availablePorts.length} devices available`
+          : "No device connected");
       elements.connectButton.disabled = appState.isConnected || !("serial" in navigator);
+      elements.addDeviceButton.disabled = !("serial" in navigator);
+      elements.deviceSelect.disabled = appState.availablePorts.length < 2;
       elements.disconnectButton.disabled = !appState.isConnected;
       elements.readButton.disabled = !appState.isConnected;
       elements.writeButton.disabled = !appState.isConnected;
