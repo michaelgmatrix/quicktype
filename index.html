@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-28T12:01:23-07:00">
+  <meta name="quicktype-build" content="2026-07-28T12:53:39-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2083,6 +2083,7 @@
     const REQUEST_TIMEOUT_MS = 8000;
     const MAX_CONFIG_PAYLOAD_BYTES = 30000;
     const MAX_CONFIG_RULES = 128;
+    const SHARED_SETS_ENABLED = false;
     const SHARED_SET_CATALOG_PATH = "./expansion-sets/catalog.json";
     const SHARED_SET_SUBSCRIPTIONS_KEY = "quicktype-shared-set-subscriptions-v1";
     const QUICKTYPE_USB_FILTERS = [
@@ -2241,6 +2242,8 @@
       elements.webSerialNotice = document.getElementById("webSerialNotice");
       elements.syncClockButton = document.getElementById("syncClockButton");
       elements.addExpansionButton = document.getElementById("addExpansionButton");
+      elements.sharedSetsNavItem = document.querySelector('[data-tab="sharedSetsTab"]')?.closest("li");
+      elements.sharedSetsTab = document.getElementById("sharedSetsTab");
       elements.refreshSharedSetsButton = document.getElementById("refreshSharedSetsButton");
       elements.sharedSetList = document.getElementById("sharedSetList");
       elements.createSharedSetButton = document.getElementById("createSharedSetButton");
@@ -2331,17 +2334,19 @@
       elements.factoryResetButton.addEventListener("click", restoreFactoryDefaults);
       elements.clearLogButton.addEventListener("click", clearActivityLog);
       elements.addExpansionButton.addEventListener("click", addExpansionRule);
-      elements.refreshSharedSetsButton.addEventListener("click", () => refreshSharedSets(false));
-      elements.createSharedSetButton.addEventListener("click", createSharedSet);
-      elements.importSharedSetFile.addEventListener("change", importSharedSetForEditing);
-      elements.downloadSharedSetButton.addEventListener("click", downloadEditedSharedSet);
-      elements.exitSharedSetEditorButton.addEventListener("click", exitSharedSetEditor);
-      [
-        elements.sharedSetEditorId,
-        elements.sharedSetEditorName,
-        elements.sharedSetEditorRevision,
-        elements.sharedSetEditorDescription
-      ].forEach((input) => input.addEventListener("input", () => setConfigDirty(true)));
+      if (SHARED_SETS_ENABLED) {
+        elements.refreshSharedSetsButton.addEventListener("click", () => refreshSharedSets(false));
+        elements.createSharedSetButton.addEventListener("click", createSharedSet);
+        elements.importSharedSetFile.addEventListener("change", importSharedSetForEditing);
+        elements.downloadSharedSetButton.addEventListener("click", downloadEditedSharedSet);
+        elements.exitSharedSetEditorButton.addEventListener("click", exitSharedSetEditor);
+        [
+          elements.sharedSetEditorId,
+          elements.sharedSetEditorName,
+          elements.sharedSetEditorRevision,
+          elements.sharedSetEditorDescription
+        ].forEach((input) => input.addEventListener("input", () => setConfigDirty(true)));
+      }
       elements.duplicateExpansionButton.addEventListener("click", duplicateExpansionRule);
       elements.deleteExpansionButton.addEventListener("click", deleteExpansionRule);
       elements.addPlaceholderButtonTab.addEventListener("click", addPlaceholderFromTab);
@@ -2448,6 +2453,13 @@
     }
 
     function initializeSharedSets() {
+      elements.sharedSetsNavItem?.classList.toggle("hidden", !SHARED_SETS_ENABLED);
+      elements.sharedSetsTab?.classList.add("hidden");
+      if (!SHARED_SETS_ENABLED) {
+        appState.sharedSetCatalog = [];
+        appState.sharedSetSubscriptions = {};
+        return;
+      }
       try {
         const saved = JSON.parse(window.localStorage.getItem(SHARED_SET_SUBSCRIPTIONS_KEY) || "{}");
         appState.sharedSetSubscriptions = saved && typeof saved === "object" && !Array.isArray(saved)
@@ -2636,6 +2648,7 @@
     }
 
     function renderSharedSets() {
+      if (!SHARED_SETS_ENABLED) return;
       const catalogById = new Map(appState.sharedSetCatalog.map((entry) => [entry.id, entry]));
       Object.values(appState.sharedSetSubscriptions).forEach((subscription) => {
         if (!catalogById.has(subscription.id)) {
@@ -3285,6 +3298,9 @@
     }
 
     function showTab(tabId) {
+      if (!SHARED_SETS_ENABLED && tabId === "sharedSetsTab") {
+        tabId = "expansionsTab";
+      }
       document.querySelectorAll("[data-tab]").forEach((button) => {
         button.classList.toggle("active", button.dataset.tab === tabId);
       });
