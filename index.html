@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-28T10:13:41-07:00">
+  <meta name="quicktype-build" content="2026-07-28T10:40:31-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -186,6 +186,11 @@
     button:disabled {
       cursor: not-allowed;
       opacity: 0.55;
+    }
+
+    .secondary-button.disabled {
+      opacity: 0.55;
+      pointer-events: none;
     }
 
     .app-shell {
@@ -977,6 +982,24 @@
       color: var(--ok);
     }
 
+    .shared-set-editor-banner {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: minmax(150px, 0.8fr) minmax(180px, 1fr) minmax(90px, 0.35fr) minmax(220px, 1.4fr) auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 0;
+    }
+
+    .shared-set-editor-banner .field {
+      gap: 4px;
+    }
+
+    .shared-set-editor-banner .actions {
+      align-self: end;
+      flex-wrap: nowrap;
+    }
+
     @media (max-width: 760px) {
       .shared-set-toolbar,
       .shared-set-card {
@@ -986,6 +1009,10 @@
 
       .shared-set-toolbar {
         flex-direction: column;
+      }
+
+      .shared-set-editor-banner {
+        grid-template-columns: 1fr;
       }
     }
 
@@ -1760,7 +1787,7 @@
             <button id="renameDeviceButton" class="secondary-button" type="button" title="Rename this device and save the current configuration">Rename</button>
             <button id="disconnectButton" class="secondary-button" type="button">Disconnect</button>
             <button id="exportButton" class="secondary-button" type="button">Export</button>
-            <label class="secondary-button" for="importFile">Import</label>
+            <label id="configImportLabel" class="secondary-button" for="importFile">Import</label>
             <input id="importFile" class="hidden" type="file" accept="application/json,.json">
           </div>
           <div class="danger-disclosure">
@@ -1781,6 +1808,28 @@
       </section>
 
       <section id="expansionsTab" class="workspace primary tab-panel">
+        <div id="sharedSetEditorBanner" class="notice shared-set-editor-banner hidden">
+          <div class="field">
+            <label for="sharedSetEditorId">Set ID</label>
+            <input id="sharedSetEditorId" type="text" maxlength="64" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="field">
+            <label for="sharedSetEditorName">Set Name</label>
+            <input id="sharedSetEditorName" type="text" maxlength="80" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="sharedSetEditorRevision">Revision</label>
+            <input id="sharedSetEditorRevision" type="number" min="1" step="1">
+          </div>
+          <div class="field">
+            <label for="sharedSetEditorDescription">Description</label>
+            <input id="sharedSetEditorDescription" type="text" maxlength="500" autocomplete="off">
+          </div>
+          <div class="actions">
+            <button id="downloadSharedSetButton" class="primary-button" type="button">Download Set</button>
+            <button id="exitSharedSetEditorButton" class="secondary-button" type="button">Exit Set Editor</button>
+          </div>
+        </div>
         <div class="panel" id="keysPanel">
           <div class="panel-header">
             <div>
@@ -1895,7 +1944,12 @@
           <div class="panel-body">
             <div class="shared-set-toolbar">
               <p class="helper-text">Applying a set changes the editor only. Use Write when you are ready to save it to the connected device.</p>
-              <button id="refreshSharedSetsButton" class="secondary-button" type="button">Check for Updates</button>
+              <div class="actions">
+                <button id="createSharedSetButton" class="primary-button" type="button">Create Set</button>
+                <label id="importSharedSetLabel" class="secondary-button" for="importSharedSetFile">Import Set</label>
+                <input id="importSharedSetFile" class="hidden" type="file" accept="application/json,.json">
+                <button id="refreshSharedSetsButton" class="secondary-button" type="button">Check for Updates</button>
+              </div>
             </div>
             <div id="sharedSetList" class="shared-set-list" aria-live="polite">
               <div class="empty-state"><strong>Loading shared sets...</strong></div>
@@ -1970,13 +2024,14 @@
     const SERIAL_BAUD_RATE = 115200;
     const REQUEST_TIMEOUT_MS = 8000;
     const MAX_CONFIG_PAYLOAD_BYTES = 30000;
+    const MAX_CONFIG_RULES = 128;
     const SHARED_SET_CATALOG_PATH = "./expansion-sets/catalog.json";
     const SHARED_SET_SUBSCRIPTIONS_KEY = "quicktype-shared-set-subscriptions-v1";
     const QUICKTYPE_USB_FILTERS = [
       { usbVendorId: 0x2E8A, usbProductId: 0x5154 }, // Specific QuickType VID 0x2E8A / PID 0x5154
       { usbVendorId: 0x2E8A }                        // RP2040 fallback
     ];
-    const RULE_COUNT = 24;
+    const RULE_COUNT = MAX_CONFIG_RULES;
     const KEYPAD_KEYS = [
       { usage: 0x53, id: "KP_NUMLOCK", label: "Num", sublabel: "Lock", row: 1, column: 1 },
       { usage: 0x54, id: "KP_SLASH", label: "/", row: 1, column: 2 },
@@ -2070,6 +2125,7 @@
       sharedSetCatalog: [],
       sharedSetSubscriptions: {},
       sharedSetCatalogError: "",
+      sharedSetEditSession: null,
       config: createDefaultConfig()
     };
 
@@ -2119,6 +2175,7 @@
       elements.readClockButton = document.getElementById("readClockButton");
       elements.renameDeviceButton = document.getElementById("renameDeviceButton");
       elements.exportButton = document.getElementById("exportButton");
+      elements.configImportLabel = document.getElementById("configImportLabel");
       elements.importFile = document.getElementById("importFile");
       elements.factoryResetButton = document.getElementById("factoryResetButton");
       elements.clearLogButton = document.getElementById("clearLogButton");
@@ -2127,6 +2184,16 @@
       elements.addExpansionButton = document.getElementById("addExpansionButton");
       elements.refreshSharedSetsButton = document.getElementById("refreshSharedSetsButton");
       elements.sharedSetList = document.getElementById("sharedSetList");
+      elements.createSharedSetButton = document.getElementById("createSharedSetButton");
+      elements.importSharedSetLabel = document.getElementById("importSharedSetLabel");
+      elements.importSharedSetFile = document.getElementById("importSharedSetFile");
+      elements.sharedSetEditorBanner = document.getElementById("sharedSetEditorBanner");
+      elements.sharedSetEditorId = document.getElementById("sharedSetEditorId");
+      elements.sharedSetEditorName = document.getElementById("sharedSetEditorName");
+      elements.sharedSetEditorRevision = document.getElementById("sharedSetEditorRevision");
+      elements.sharedSetEditorDescription = document.getElementById("sharedSetEditorDescription");
+      elements.downloadSharedSetButton = document.getElementById("downloadSharedSetButton");
+      elements.exitSharedSetEditorButton = document.getElementById("exitSharedSetEditorButton");
       elements.configModeTitle = document.getElementById("configModeTitle");
       elements.configModeDescription = document.getElementById("configModeDescription");
       elements.duplicateExpansionButton = document.getElementById("duplicateExpansionButton");
@@ -2206,6 +2273,16 @@
       elements.clearLogButton.addEventListener("click", clearActivityLog);
       elements.addExpansionButton.addEventListener("click", addExpansionRule);
       elements.refreshSharedSetsButton.addEventListener("click", () => refreshSharedSets(false));
+      elements.createSharedSetButton.addEventListener("click", createSharedSet);
+      elements.importSharedSetFile.addEventListener("change", importSharedSetForEditing);
+      elements.downloadSharedSetButton.addEventListener("click", downloadEditedSharedSet);
+      elements.exitSharedSetEditorButton.addEventListener("click", exitSharedSetEditor);
+      [
+        elements.sharedSetEditorId,
+        elements.sharedSetEditorName,
+        elements.sharedSetEditorRevision,
+        elements.sharedSetEditorDescription
+      ].forEach((input) => input.addEventListener("input", () => setConfigDirty(true)));
       elements.duplicateExpansionButton.addEventListener("click", duplicateExpansionRule);
       elements.deleteExpansionButton.addEventListener("click", deleteExpansionRule);
       elements.addPlaceholderButtonTab.addEventListener("click", addPlaceholderFromTab);
@@ -2408,8 +2485,8 @@
       if (!name || !Number.isSafeInteger(revision) || revision < 1) {
         throw new Error("set name or revision is invalid");
       }
-      if (!Array.isArray(value.expansions) || value.expansions.length > RULE_COUNT) {
-        throw new Error(`set must contain no more than ${RULE_COUNT} expansions`);
+      if (!Array.isArray(value.expansions) || value.expansions.length > MAX_CONFIG_RULES) {
+        throw new Error(`set must contain no more than ${MAX_CONFIG_RULES} expansions`);
       }
 
       const entryIds = new Set();
@@ -2514,6 +2591,7 @@
                 ? `<button class="primary-button" type="button" data-apply-shared-set="${escapeAttribute(entry.id)}" ${sharedSet ? "" : "disabled"}>${applyLabel}</button>
                    <button class="secondary-button" type="button" data-unsubscribe-shared-set="${escapeAttribute(entry.id)}">Unsubscribe</button>`
                 : `<button class="secondary-button" type="button" data-subscribe-shared-set="${escapeAttribute(entry.id)}">Subscribe</button>`}
+              <button class="secondary-button" type="button" data-edit-shared-set="${escapeAttribute(entry.id)}" ${appState.isConnected || appState.sharedSetEditSession ? "disabled" : ""} title="${appState.isConnected ? "Disconnect the device before editing a shared set" : "Edit with the existing expansion editor"}">Edit Set</button>
             </div>
           </article>
         `;
@@ -2528,9 +2606,16 @@
       elements.sharedSetList.querySelectorAll("[data-apply-shared-set]").forEach((button) => {
         button.addEventListener("click", () => applySharedSet(button.dataset.applySharedSet));
       });
+      elements.sharedSetList.querySelectorAll("[data-edit-shared-set]").forEach((button) => {
+        button.addEventListener("click", () => editPublishedSharedSet(button.dataset.editSharedSet));
+      });
     }
 
     async function subscribeSharedSet(setId) {
+      if (appState.sharedSetEditSession) {
+        showToast("Exit the set editor before changing subscriptions.", "error");
+        return;
+      }
       const catalogEntry = appState.sharedSetCatalog.find((entry) => entry.id === setId);
       if (!catalogEntry) {
         showToast("That shared set is no longer in the catalog.", "error");
@@ -2555,7 +2640,220 @@
       }
     }
 
+    function createSharedSet() {
+      if (!ensureSharedSetEditingAvailable()) return;
+      startSharedSetEditor({
+        format: "quicktype-set/v1",
+        id: "new-shared-set",
+        name: "New Shared Set",
+        description: "",
+        revision: 0,
+        updatedAt: "",
+        expansions: []
+      }, true);
+    }
+
+    async function importSharedSetForEditing(event) {
+      const file = event.target.files[0];
+      event.target.value = "";
+      if (!file || !ensureSharedSetEditingAvailable()) return;
+      try {
+        const sharedSet = normalizeSharedSet(JSON.parse(await file.text()));
+        startSharedSetEditor(sharedSet, false);
+        logActivity(`Opened shared set ${file.name} for editing.`);
+      } catch (error) {
+        showToast(`Could not open shared set: ${error.message}`, "error");
+      }
+    }
+
+    async function editPublishedSharedSet(setId) {
+      if (!ensureSharedSetEditingAvailable()) return;
+      const catalogEntry = appState.sharedSetCatalog.find((entry) => entry.id === setId);
+      const cachedSet = appState.sharedSetSubscriptions[setId]?.cachedSet;
+      try {
+        const sharedSet = cachedSet || await fetchSharedSet(catalogEntry?.url, setId);
+        startSharedSetEditor(sharedSet, false);
+        logActivity(`Opened shared set "${sharedSet.name}" for editing.`);
+      } catch (error) {
+        showToast(`Could not open shared set: ${error.message}`, "error");
+      }
+    }
+
+    function ensureSharedSetEditingAvailable() {
+      if (appState.isConnected || appState.isConnecting) {
+        showToast("Disconnect the QuickType device before managing shared set contents.", "error");
+        return false;
+      }
+      if (appState.sharedSetEditSession) {
+        showToast("Exit the current set editor before opening another set.", "error");
+        return false;
+      }
+      return true;
+    }
+
+    function startSharedSetEditor(sharedSet, isNew) {
+      appState.sharedSetEditSession = {
+        previousConfig: structuredClone(appState.config),
+        previousDirty: appState.configDirty,
+        previousSelectedRule: appState.selectedRule,
+        previousSelectedExpansionRule: appState.selectedExpansionRule,
+        previousSelectedKeypadRule: appState.selectedKeypadRule,
+        isNew
+      };
+      const editorConfig = createDefaultConfig();
+      editorConfig.profileName = sharedSet.name;
+      sharedSet.expansions.forEach((entry, index) => {
+        const ruleId = `R${String(index + 1).padStart(2, "0")}`;
+        editorConfig.rules[ruleId] = {
+          ...entry,
+          sharedSetEntryId: entry.id
+        };
+      });
+      appState.config = editorConfig;
+      appState.configMode = "keyboard";
+      appState.selectedRule = "R01";
+      appState.selectedExpansionRule = "R01";
+      elements.sharedSetEditorId.value = sharedSet.id;
+      elements.sharedSetEditorId.readOnly = !isNew;
+      elements.sharedSetEditorName.value = sharedSet.name;
+      elements.sharedSetEditorRevision.value = isNew ? 1 : sharedSet.revision + 1;
+      elements.sharedSetEditorDescription.value = sharedSet.description || "";
+      setConfigDirty(false);
+      updateSharedSetEditingUi();
+      renderAllConfigurationViews();
+      showTab("expansionsTab");
+      showToast(`${sharedSet.name} is open in the expansion editor.`);
+    }
+
+    function updateSharedSetEditingUi() {
+      const editing = Boolean(appState.sharedSetEditSession);
+      elements.sharedSetEditorBanner.classList.toggle("hidden", !editing);
+      elements.exportButton.textContent = editing ? "Download Set" : "Export";
+      elements.configImportLabel.classList.toggle("hidden", editing);
+      elements.factoryResetButton.disabled = editing;
+      elements.createSharedSetButton.disabled = editing || appState.isConnected;
+      elements.importSharedSetFile.disabled = editing || appState.isConnected;
+      elements.importSharedSetLabel.classList.toggle("disabled", editing || appState.isConnected);
+      document.querySelectorAll('[data-config-mode="keypad"]').forEach((button) => {
+        button.classList.toggle("hidden", editing);
+      });
+      const title = document.querySelector(".title-block h2");
+      const description = document.querySelector(".title-block p");
+      if (title) title.textContent = editing ? "Shared Set Editor" : "Expansion Configurator";
+      if (description) {
+        description.textContent = editing
+          ? "Edit this shared set with the normal expansion tools, then download its versioned JSON file."
+          : "Configure typed trigger strings and direct 19-key keypad actions using expansion text, placeholders, shortcuts, or clock output.";
+      }
+      updateDeviceControls();
+      renderSharedSets();
+    }
+
+    function downloadEditedSharedSet() {
+      if (!appState.sharedSetEditSession || !updateCurrentMappingFromForm(false)) return;
+      const id = elements.sharedSetEditorId.value.trim();
+      const name = elements.sharedSetEditorName.value.trim();
+      const description = elements.sharedSetEditorDescription.value.trim();
+      const revision = Number(elements.sharedSetEditorRevision.value);
+      if (!isValidSharedSetId(id)) {
+        showToast("Set ID must use letters, numbers, periods, underscores, or hyphens.", "error");
+        elements.sharedSetEditorId.focus();
+        return;
+      }
+      if (!name) {
+        showToast("Enter a name for the shared set.", "error");
+        elements.sharedSetEditorName.focus();
+        return;
+      }
+      if (!Number.isSafeInteger(revision) || revision < 1) {
+        showToast("Revision must be a whole number of 1 or greater.", "error");
+        elements.sharedSetEditorRevision.focus();
+        return;
+      }
+      const conflictMessage = validateNoTriggerConflicts();
+      if (conflictMessage) {
+        showToast(`Set cannot be downloaded: ${conflictMessage}`, "error");
+        return;
+      }
+
+      const usedIds = new Set();
+      const expansions = Object.entries(appState.config.rules)
+        .filter(([, mapping]) => isPrimaryExpansion(mapping))
+        .map(([, mapping]) => {
+          const entryId = uniqueSharedSetEntryId(
+            mapping.sharedSetEntryId || mapping.label || mapping.triggerPattern,
+            usedIds
+          );
+          mapping.sharedSetEntryId = entryId;
+          usedIds.add(entryId);
+          return {
+            id: entryId,
+            triggerPattern: mapping.triggerPattern,
+            label: mapping.label || mapping.triggerPattern,
+            text: mapping.text || "",
+            trigger: normalizeTriggerMode(mapping.trigger),
+            triggerScope: mapping.triggerScope || "any",
+            preDelay: normalizeNumber(mapping.preDelay, 0),
+            keyDelay: normalizeNumber(mapping.keyDelay, 5)
+          };
+        });
+      const sharedSet = {
+        format: "quicktype-set/v1",
+        id,
+        name,
+        description,
+        revision,
+        updatedAt: new Date().toISOString(),
+        expansions
+      };
+      const blob = new Blob([JSON.stringify(sharedSet, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${id}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setConfigDirty(false);
+      logActivity(`Downloaded shared set "${name}" revision ${revision}.`);
+      showToast(`${id}.json downloaded. Upload it to the expansion-sets folder to publish it.`);
+    }
+
+    function uniqueSharedSetEntryId(value, usedIds) {
+      const base = String(value || "expansion")
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, "-")
+        .replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, "")
+        .slice(0, 56) || "expansion";
+      let candidate = base;
+      let suffix = 2;
+      while (usedIds.has(candidate)) {
+        candidate = `${base.slice(0, 56)}-${suffix}`;
+        suffix += 1;
+      }
+      return candidate;
+    }
+
+    function exitSharedSetEditor() {
+      const session = appState.sharedSetEditSession;
+      if (!session) return;
+      if (appState.configDirty && !window.confirm("Exit the set editor without downloading the latest changes?")) return;
+      appState.config = session.previousConfig;
+      appState.selectedRule = session.previousSelectedRule;
+      appState.selectedExpansionRule = session.previousSelectedExpansionRule;
+      appState.selectedKeypadRule = session.previousSelectedKeypadRule;
+      appState.sharedSetEditSession = null;
+      setConfigDirty(session.previousDirty);
+      updateSharedSetEditingUi();
+      renderAllConfigurationViews();
+      showTab("sharedSetsTab");
+      showToast("Returned to the device configuration editor.");
+    }
+
     function unsubscribeSharedSet(setId) {
+      if (appState.sharedSetEditSession) {
+        showToast("Exit the set editor before changing subscriptions.", "error");
+        return;
+      }
       const subscription = appState.sharedSetSubscriptions[setId];
       if (!subscription) return;
       if (!window.confirm(`Unsubscribe from "${subscription.name || setId}"? Its installed expansions will be kept as personal expansions.`)) return;
@@ -2575,6 +2873,10 @@
     }
 
     function applySharedSet(setId) {
+      if (appState.sharedSetEditSession) {
+        showToast("Exit the set editor before applying subscriptions.", "error");
+        return;
+      }
       const subscription = appState.sharedSetSubscriptions[setId];
       const sharedSet = subscription?.cachedSet;
       if (!sharedSet || !updateCurrentMappingFromForm(false)) return;
@@ -2606,7 +2908,7 @@
 
         const conflictMessage = validateNoTriggerConflicts();
         if (conflictMessage) throw new Error(conflictMessage);
-        const payloadSize = serializeConfiguration(appState.config).byteLength;
+        const payloadSize = serializeConfiguration(buildDeviceConfiguration()).byteLength;
         if (payloadSize > MAX_CONFIG_PAYLOAD_BYTES) {
           throw new Error(`The resulting configuration is ${payloadSize} bytes; the safe limit is ${MAX_CONFIG_PAYLOAD_BYTES}.`);
         }
@@ -2700,6 +3002,10 @@
     }
 
     async function requestDeviceConnection() {
+      if (appState.sharedSetEditSession) {
+        showToast("Exit the shared set editor before connecting a device.", "error");
+        return;
+      }
       if (!("serial" in navigator)) {
         logActivity("Cannot connect: Web Serial is not supported.");
         return;
@@ -2813,6 +3119,9 @@
     }
 
     async function connectDevice(port) {
+      if (appState.sharedSetEditSession) {
+        throw new Error("Exit the shared set editor before connecting a device.");
+      }
       if (appState.isConnected) {
         if (appState.port === port) return;
         throw new Error("Disconnect the current device before connecting another.");
@@ -3462,6 +3771,7 @@
     }
 
     function updateDeviceControls() {
+      const editingSharedSet = Boolean(appState.sharedSetEditSession);
       elements.statusDot.classList.toggle("connected", appState.isConnected);
       const deviceColor = appState.isConnected
         ? normalizeDeviceColor(appState.connectedDeviceColor)
@@ -3485,8 +3795,9 @@
         : (appState.availablePorts.length > 1
           ? `${appState.availablePorts.length} serial ports available`
           : "No device connected");
-      elements.connectButton.disabled = appState.isConnected || appState.isConnecting || !("serial" in navigator);
-      elements.autoConnectToggle.disabled = appState.isConnecting || appState.isDisconnecting || !("serial" in navigator);
+      elements.connectButton.disabled = editingSharedSet || appState.isConnected || appState.isConnecting || !("serial" in navigator);
+      elements.connectButton.title = editingSharedSet ? "Exit the shared set editor before connecting a device." : "";
+      elements.autoConnectToggle.disabled = editingSharedSet || appState.isConnecting || appState.isDisconnecting || !("serial" in navigator);
       elements.disconnectButton.disabled = !appState.isConnected || appState.isDisconnecting;
       elements.readButton.disabled = !appState.isConnected;
       elements.writeButton.disabled = !appState.isConnected;
@@ -3510,6 +3821,9 @@
       elements.readClockButton.disabled = !appState.isConnected;
       elements.syncClockButton.disabled = !appState.isConnected;
       elements.renameDeviceButton.disabled = !appState.isConnected;
+      elements.createSharedSetButton.disabled = editingSharedSet || appState.isConnected;
+      elements.importSharedSetFile.disabled = editingSharedSet || appState.isConnected;
+      elements.importSharedSetLabel.classList.toggle("disabled", editingSharedSet || appState.isConnected);
       elements.connectButton.classList.toggle("hidden", appState.isConnected);
       [
         elements.disconnectButton,
@@ -3523,6 +3837,7 @@
         elements.syncClockButton
       ].forEach((control) => control.classList.toggle("hidden", !appState.isConnected));
       updateWriteDirtyIndicator();
+      renderSharedSets();
     }
 
     function setConfigDirty(isDirty) {
@@ -3538,16 +3853,17 @@
     function updateCapacityBadge() {
       if (!elements.storageCapacityBadge || !appState.config) return;
       try {
-        const jsonStr = JSON.stringify(appState.config);
-        const usedBytes = new Blob([jsonStr]).size;
-        const maxBytes = 30000;
+        const activeRuleCount = getActiveDeviceRuleEntries().length;
+        const compactConfig = compactDeviceConfiguration();
+        const usedBytes = serializeConfiguration(compactConfig).byteLength;
+        const maxBytes = MAX_CONFIG_PAYLOAD_BYTES;
         const remBytes = Math.max(0, maxBytes - usedBytes);
         const remPercent = Math.max(0, Math.min(100, Math.round((remBytes / maxBytes) * 100)));
         const fullLabel = elements.storageCapacityBadge.querySelector(".storage-capacity-full");
         const compactLabel = elements.storageCapacityBadge.querySelector(".storage-capacity-compact");
         if (fullLabel) fullLabel.textContent = `${remPercent}% remaining`;
         if (compactLabel) compactLabel.textContent = `${remPercent}%`;
-        elements.storageCapacityBadge.title = `${usedBytes} / ${maxBytes} bytes used (${remPercent}% storage remaining)`;
+        elements.storageCapacityBadge.title = `${activeRuleCount} / ${MAX_CONFIG_RULES} active rules; ${usedBytes} / ${maxBytes} bytes used (${remPercent}% storage remaining)`;
       } catch {}
     }
 
@@ -3588,6 +3904,10 @@
     }
 
     function selectConfiguratorMode(mode) {
+      if (appState.sharedSetEditSession && mode === "keypad") {
+        showToast("Shared sets contain typed expansions, not physical keypad assignments.", "error");
+        return;
+      }
       if (!['keyboard', 'keypad'].includes(mode) || mode === appState.configMode) return;
       if (!updateCurrentMappingFromForm(false)) return;
       appState.configMode = mode;
@@ -3603,10 +3923,12 @@
       document.querySelectorAll("[data-config-mode]").forEach((button) => {
         button.classList.toggle("active", button.dataset.configMode === appState.configMode);
       });
-      elements.configModeTitle.textContent = keypadMode ? "Numeric Keypad" : "Trigger Strings";
-      elements.configModeDescription.textContent = keypadMode
-        ? "Click a key to edit its action."
-        : "Replace trigger strings typed on a full keyboard or keypad.";
+      elements.configModeTitle.textContent = appState.sharedSetEditSession
+        ? "Shared Set Expansions"
+        : (keypadMode ? "Numeric Keypad" : "Trigger Strings");
+      elements.configModeDescription.textContent = appState.sharedSetEditSession
+        ? "Use the normal expansion editor; Download Set creates the publishable JSON file."
+        : (keypadMode ? "Click a key to edit its action." : "Replace trigger strings typed on a full keyboard or keypad.");
       elements.addExpansionButton.classList.toggle("hidden", keypadMode);
 
       if (keypadMode) {
@@ -4229,8 +4551,12 @@
     }
 
     function exportConfiguration() {
+      if (appState.sharedSetEditSession) {
+        downloadEditedSharedSet();
+        return;
+      }
       if (!updateCurrentMappingFromForm(false)) return;
-      const blob = new Blob([JSON.stringify(appState.config, null, 2)], { type: "application/json" });
+      const blob = new Blob([JSON.stringify(buildDeviceConfiguration(), null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -4467,7 +4793,24 @@
     }
 
     function buildDeviceConfiguration() {
-      return structuredClone(appState.config);
+      const activeRules = getActiveDeviceRuleEntries();
+      if (activeRules.length > MAX_CONFIG_RULES) {
+        throw new Error(`Configuration has ${activeRules.length} active rules; the firmware limit is ${MAX_CONFIG_RULES}.`);
+      }
+      return compactDeviceConfiguration(activeRules);
+    }
+
+    function compactDeviceConfiguration(activeRules = getActiveDeviceRuleEntries()) {
+      const config = structuredClone(appState.config);
+      config.rules = Object.fromEntries(activeRules.map(([ruleId, rule]) => [ruleId, structuredClone(rule)]));
+      return config;
+    }
+
+    function getActiveDeviceRuleEntries() {
+      return Object.entries(appState.config.rules || {}).filter(([, rule]) => {
+        if (!rule || rule.type === "disabled" || !String(rule.triggerPattern || "").trim()) return false;
+        return Boolean(rule.text || rule.steps?.length || rule.type === "rtc");
+      });
     }
 
     function getMapping(ruleId) {

@@ -36,7 +36,7 @@ PIO USB requires a clock that is an exact multiple of 120 MHz. This candidate us
 3. Choose **Connect Device** and select the QuickType/RP2040 serial port.
 4. Use **Read Configuration**, **Write Configuration**, or **Sync Clock to This Computer**.
 
-Until the first website configuration is written, the original hard-coded keypad mappings remain active. After a configuration is saved, unmatched keys pass through and configured physical-key or typed-trigger rules run from `/quicktype-config.json` in LittleFS. The configurator keeps up to 24 typed-trigger rules and 19 dedicated numeric-keypad assignments active together.
+Until the first website configuration is written, the original hard-coded keypad mappings remain active. After a configuration is saved, unmatched keys pass through and configured physical-key or typed-trigger rules run from `/quicktype-config.json` in LittleFS. The configurator supports up to 128 active rules shared by typed-trigger expansions and numeric-keypad assignments, subject to the 32 KB configuration storage limit.
 
 ## Serial protocol
 
