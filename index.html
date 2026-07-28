@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-28T11:50:49-07:00">
+  <meta name="quicktype-build" content="2026-07-28T12:01:23-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -429,6 +429,9 @@
     }
 
     .storage-capacity-badge {
+      display: inline-flex;
+      align-items: center;
+      margin-top: 10px;
       font-size: 0.7rem;
       font-weight: 800;
       color: #0ea5e9;
@@ -1795,15 +1798,15 @@
           <span id="statusDot" class="status-dot" aria-hidden="true"></span>
           <span id="connectionStatus">No device connected</span>
         </div>
+        <span id="storageCapacityBadge" class="storage-capacity-badge hidden" title="Remaining device storage for expansion rules">
+          <span class="storage-capacity-full">Storage: 100% remaining</span>
+          <span class="storage-capacity-compact">100%</span>
+        </span>
       </section>
 
       <nav class="sidebar-section" aria-label="Configurator sections">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+        <div style="margin-bottom:10px;">
           <h2>Workspace</h2>
-          <span id="storageCapacityBadge" class="storage-capacity-badge" title="Remaining storage for expansion rules">
-            <span class="storage-capacity-full">100% remaining</span>
-            <span class="storage-capacity-compact">100%</span>
-          </span>
         </div>
         <ul class="sidebar-list">
           <li><button class="active" type="button" data-tab="expansionsTab" title="Expansions"><span class="nav-icon" aria-hidden="true">Aa</span><span class="nav-label">Expansions</span></button></li>
@@ -2168,6 +2171,7 @@
       nextRequestId: 1,
       pendingRequests: new Map(),
       deviceInfo: null,
+      deviceStorageUsage: null,
       connectedDeviceName: "",
       connectedDeviceColor: "",
       isConnected: false,
@@ -3185,6 +3189,7 @@
           try {
             const currentDeviceResponse = await sendDeviceCommand("get-config", {}, 15000);
             appState.config = normalizeImportedConfiguration(currentDeviceResponse.data);
+            recordDeviceStorageUsage(currentDeviceResponse.data);
             appState.connectedDeviceName = normalizeDeviceName(appState.config.deviceName);
             appState.connectedDeviceColor = normalizeDeviceColor(appState.config.deviceColor);
             restoredDirty = false;
@@ -3217,6 +3222,7 @@
         throw new Error("QuickType accepted the configuration, but the shared set was not present when read back.");
       }
       appState.config = verifiedConfig;
+      recordDeviceStorageUsage(verification.data);
       appState.connectedDeviceName = normalizeDeviceName(verifiedConfig.deviceName);
       appState.connectedDeviceColor = normalizeDeviceColor(verifiedConfig.deviceColor);
       selectDefaultRuleForEditor();
@@ -3462,6 +3468,7 @@
         }
 
         appState.deviceInfo = response.data || {};
+        appState.deviceStorageUsage = null;
         appState.deviceDetails.set(port, appState.deviceInfo);
         appState.connectedDeviceName = "";
         appState.connectedDeviceColor = "";
@@ -3548,6 +3555,7 @@
       } finally {
         appState.port = null;
         appState.deviceInfo = null;
+        appState.deviceStorageUsage = null;
         appState.connectedDeviceName = "";
         appState.connectedDeviceColor = "";
         appState.isConnected = false;
@@ -3572,6 +3580,7 @@
         logActivity(options.automatic ? "Loading saved configuration from device..." : "Reading configuration from device...");
         const response = await sendDeviceCommand("get-config");
         appState.config = normalizeImportedConfiguration(response.data);
+        recordDeviceStorageUsage(response.data);
         appState.connectedDeviceName = normalizeDeviceName(appState.config.deviceName);
         appState.connectedDeviceColor = normalizeDeviceColor(appState.config.deviceColor);
         selectDefaultRuleForEditor();
@@ -3584,6 +3593,7 @@
         }
       } catch (error) {
         if (error.code === "NO_CONFIG") {
+          appState.deviceStorageUsage = { activeRuleCount: 0, usedBytes: 0 };
           appState.connectedDeviceName = "";
           appState.connectedDeviceColor = "";
           updateDeviceControls();
@@ -3672,6 +3682,7 @@
           throw new Error(`Configuration is ${payload.byteLength} bytes; the safe limit is ${MAX_CONFIG_PAYLOAD_BYTES}.`);
         }
         await sendDeviceCommand("set-config", { config: deviceConfig }, 15000);
+        recordDeviceStorageUsage(deviceConfig);
         appState.connectedDeviceName = deviceName;
         appState.connectedDeviceColor = deviceColor;
         updateDeviceControls();
@@ -3712,6 +3723,7 @@
         logActivity(`Writing ${payload.byteLength} bytes to device...`);
         showToast("Writing configuration...");
         const response = await sendDeviceCommand("set-config", { config: deviceConfig }, 15000);
+        recordDeviceStorageUsage(deviceConfig);
         appState.connectedDeviceName = normalizeDeviceName(deviceConfig.deviceName);
         appState.connectedDeviceColor = normalizeDeviceColor(deviceConfig.deviceColor);
         updateDeviceControls();
@@ -4141,6 +4153,7 @@
         elements.syncClockButton
       ].forEach((control) => control.classList.toggle("hidden", !appState.isConnected));
       updateWriteDirtyIndicator();
+      updateCapacityBadge();
       renderSharedSets();
     }
 
@@ -4155,20 +4168,37 @@
     }
 
     function updateCapacityBadge() {
-      if (!elements.storageCapacityBadge || !appState.config) return;
+      if (!elements.storageCapacityBadge) return;
+      const usage = appState.deviceStorageUsage;
+      const showCapacity = appState.isConnected && Boolean(usage);
+      elements.storageCapacityBadge.classList.toggle("hidden", !showCapacity);
+      if (!showCapacity) return;
       try {
-        const activeRuleCount = getActiveDeviceRuleEntries().length;
-        const compactConfig = compactDeviceConfiguration();
-        const usedBytes = serializeConfiguration(compactConfig).byteLength;
+        const activeRuleCount = usage.activeRuleCount;
+        const usedBytes = usage.usedBytes;
         const maxBytes = MAX_CONFIG_PAYLOAD_BYTES;
-        const remBytes = Math.max(0, maxBytes - usedBytes);
-        const remPercent = Math.max(0, Math.min(100, Math.round((remBytes / maxBytes) * 100)));
+        const byteRatio = Math.max(0, (maxBytes - usedBytes) / maxBytes);
+        const ruleRatio = Math.max(0, (MAX_CONFIG_RULES - activeRuleCount) / MAX_CONFIG_RULES);
+        const remPercent = Math.max(0, Math.min(100, Math.floor(Math.min(byteRatio, ruleRatio) * 100)));
         const fullLabel = elements.storageCapacityBadge.querySelector(".storage-capacity-full");
         const compactLabel = elements.storageCapacityBadge.querySelector(".storage-capacity-compact");
-        if (fullLabel) fullLabel.textContent = `${remPercent}% remaining`;
+        if (fullLabel) fullLabel.textContent = `Storage: ${remPercent}% remaining`;
         if (compactLabel) compactLabel.textContent = `${remPercent}%`;
-        elements.storageCapacityBadge.title = `${activeRuleCount} / ${MAX_CONFIG_RULES} active rules; ${usedBytes} / ${maxBytes} bytes used (${remPercent}% storage remaining)`;
+        elements.storageCapacityBadge.title = `On device: ${activeRuleCount} / ${MAX_CONFIG_RULES} active rules; ${usedBytes} / ${maxBytes} bytes used (${remPercent}% capacity remaining)`;
       } catch {}
+    }
+
+    function recordDeviceStorageUsage(config) {
+      const activeRules = getActiveRuleEntriesForConfig(config);
+      const compactConfig = structuredClone(config);
+      compactConfig.rules = Object.fromEntries(
+        activeRules.map(([ruleId, rule]) => [ruleId, structuredClone(rule)])
+      );
+      appState.deviceStorageUsage = {
+        activeRuleCount: activeRules.length,
+        usedBytes: serializeConfiguration(compactConfig).byteLength
+      };
+      updateCapacityBadge();
     }
 
     function updateWriteDirtyIndicator() {
@@ -4917,6 +4947,7 @@
       if (appState.isConnected) {
         try {
           const response = await sendDeviceCommand("set-config", { config: buildDeviceConfiguration() }, 15000);
+          recordDeviceStorageUsage(buildDeviceConfiguration());
           setConfigDirty(false);
           logActivity(`Blank expansion configuration saved to the device (${response.data?.ruleCount ?? 0} active rules).`);
           showToast("Blank expansion configuration saved to the device.");
@@ -5117,7 +5148,11 @@
     }
 
     function getActiveDeviceRuleEntries() {
-      return Object.entries(appState.config.rules || {}).filter(([, rule]) => {
+      return getActiveRuleEntriesForConfig(appState.config);
+    }
+
+    function getActiveRuleEntriesForConfig(config) {
+      return Object.entries(config?.rules || {}).filter(([, rule]) => {
         if (!rule || rule.type === "disabled" || !String(rule.triggerPattern || "").trim()) return false;
         return Boolean(rule.text || rule.steps?.length || rule.type === "rtc");
       });
