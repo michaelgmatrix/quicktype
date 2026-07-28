@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-28T10:40:31-07:00">
+  <meta name="quicktype-build" content="2026-07-28T11:39:25-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1000,6 +1000,51 @@
       flex-wrap: nowrap;
     }
 
+    .shared-set-install-form,
+    .shared-set-placeholder-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .shared-set-placeholder-heading,
+    .shared-set-placeholder-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .shared-set-placeholder-heading p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    .shared-set-placeholder-row {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+      background: var(--panel-soft);
+    }
+
+    .shared-set-placeholder-row > span {
+      display: grid;
+      gap: 3px;
+    }
+
+    .shared-set-placeholder-row code,
+    .shared-set-placeholder-row small {
+      color: var(--muted);
+    }
+
+    .shared-set-placeholder-row input {
+      width: min(300px, 50%);
+    }
+
+    .shared-set-install-actions {
+      justify-content: flex-end;
+    }
+
     @media (max-width: 760px) {
       .shared-set-toolbar,
       .shared-set-card {
@@ -1013,6 +1058,16 @@
 
       .shared-set-editor-banner {
         grid-template-columns: 1fr;
+      }
+
+      .shared-set-placeholder-heading,
+      .shared-set-placeholder-row {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .shared-set-placeholder-row input {
+        width: 100%;
       }
     }
 
@@ -1943,7 +1998,7 @@
           </div>
           <div class="panel-body">
             <div class="shared-set-toolbar">
-              <p class="helper-text">Applying a set changes the editor only. Use Write when you are ready to save it to the connected device.</p>
+              <p class="helper-text">A set replaces the complete typed and keypad profile after you review personalization values. When connected, Install writes it to QuickType and verifies it by reading the configuration back. When disconnected, Apply replaces the browser editor profile.</p>
               <div class="actions">
                 <button id="createSharedSetButton" class="primary-button" type="button">Create Set</button>
                 <label id="importSharedSetLabel" class="secondary-button" for="importSharedSetFile">Import Set</label>
@@ -2473,7 +2528,7 @@
     }
 
     function normalizeSharedSet(value, expectedId = "") {
-      if (value?.format !== "quicktype-set/v1") {
+      if (!["quicktype-set/v1", "quicktype-set/v2"].includes(value?.format)) {
         throw new Error("set format is not supported");
       }
       const id = String(value.id || "").trim();
@@ -2485,50 +2540,91 @@
       if (!name || !Number.isSafeInteger(revision) || revision < 1) {
         throw new Error("set name or revision is invalid");
       }
-      if (!Array.isArray(value.expansions) || value.expansions.length > MAX_CONFIG_RULES) {
-        throw new Error(`set must contain no more than ${MAX_CONFIG_RULES} expansions`);
+      const typedSource = value.format === "quicktype-set/v1" ? value.expansions : value.typedExpansions;
+      const keypadSource = value.format === "quicktype-set/v1" ? [] : value.keypadExpansions;
+      if (!Array.isArray(typedSource) || !Array.isArray(keypadSource) ||
+          typedSource.length + keypadSource.length > MAX_CONFIG_RULES) {
+        throw new Error(`set must contain no more than ${MAX_CONFIG_RULES} active typed and keypad rules`);
       }
 
       const entryIds = new Set();
-      const expansions = value.expansions.map((entry, index) => {
+      const keypadKeys = new Set();
+      const normalizeEntry = (entry, index, kind) => {
         const entryId = String(entry?.id || "").trim();
-        const triggerPattern = String(entry?.triggerPattern || "").trim();
+        const keypadKey = kind === "keypad" ? String(entry?.key || entry?.triggerPattern || "").trim() : "";
+        const triggerPattern = kind === "keypad" ? keypadKey : String(entry?.triggerPattern || "").trim();
         const text = String(entry?.text || "");
         if (!isValidSharedSetId(entryId) || entryIds.has(entryId)) {
-          throw new Error(`expansion ${index + 1} has an invalid or duplicate ID`);
+          throw new Error(`${kind} expansion ${index + 1} has an invalid or duplicate ID`);
         }
-        if (!triggerPattern || triggerPattern.length > 48) {
+        if (kind === "keypad" && !KEYPAD_KEYS.some((key) => key.id === keypadKey)) {
+          throw new Error(`keypad expansion "${entryId}" has an invalid keypad key`);
+        }
+        if (kind === "keypad" && keypadKeys.has(keypadKey)) {
+          throw new Error(`keypad key "${keypadKey}" is assigned more than once`);
+        }
+        if (kind === "typed" && (!triggerPattern || triggerPattern.length > 48)) {
           throw new Error(`expansion "${entryId}" needs a trigger of at most 48 characters`);
         }
         if (text.length > 1024) {
           throw new Error(`expansion "${entryId}" exceeds the 1024-character template limit`);
         }
+        const type = normalizeActionType(entry.type || "expansion");
+        if (type === "disabled") {
+          throw new Error(`expansion "${entryId}" must contain an active action`);
+        }
         entryIds.add(entryId);
+        if (kind === "keypad") keypadKeys.add(keypadKey);
         return {
           id: entryId,
-          type: "expansion",
-          trigger: ["suffix", "delimiter", "instant"].includes(entry.trigger) ? entry.trigger : "suffix",
+          type,
+          trigger: kind === "keypad"
+            ? "key"
+            : (["suffix", "delimiter", "instant"].includes(entry.trigger) ? entry.trigger : "suffix"),
           triggerPattern,
-          triggerScope: ["any", "keyboard", "numpad"].includes(entry.triggerScope) ? entry.triggerScope : "any",
+          triggerScope: kind === "keypad"
+            ? "numpad"
+            : (["any", "keyboard", "numpad"].includes(entry.triggerScope) ? entry.triggerScope : "any"),
           label: String(entry.label || triggerPattern).trim().slice(0, 32),
           text,
           preDelay: Math.max(0, Math.min(5000, normalizeNumber(entry.preDelay, 0))),
           keyDelay: Math.max(0, Math.min(1000, normalizeNumber(entry.keyDelay, 5))),
-          steps: [],
+          steps: Array.isArray(entry.steps) ? structuredClone(entry.steps) : [],
           replacementStrategy: "erase-trigger-then-type",
           enabled: true
         };
-      });
+      };
+      const typedExpansions = typedSource.map((entry, index) => normalizeEntry(entry, index, "typed"));
+      const keypadExpansions = keypadSource.map((entry, index) => normalizeEntry(entry, index, "keypad"));
+      const placeholderDefinitions = normalizeSharedSetPlaceholders(value.placeholders);
 
       return {
-        format: "quicktype-set/v1",
+        format: "quicktype-set/v2",
         id,
         name: name.slice(0, 80),
         description: String(value.description || "").slice(0, 500),
         revision,
         updatedAt: String(value.updatedAt || ""),
-        expansions
+        typedExpansions,
+        keypadExpansions,
+        placeholderDefinitions
       };
+    }
+
+    function normalizeSharedSetPlaceholders(placeholders) {
+      const normalized = {};
+      Object.entries(placeholders || {}).forEach(([rawName, definition]) => {
+        const name = sanitizePlaceholderName(rawName);
+        if (!name) return;
+        const objectDefinition = definition && typeof definition === "object" && !Array.isArray(definition);
+        normalized[name] = {
+          label: String(objectDefinition ? definition.label || name : name).trim().slice(0, 80) || name,
+          default: String(objectDefinition ? definition.default ?? "" : definition ?? "").slice(0, 80),
+          required: Boolean(objectDefinition && definition.required),
+          personalized: objectDefinition ? definition.personalized !== false : true
+        };
+      });
+      return normalized;
     }
 
     function isValidSharedSetId(value) {
@@ -2561,9 +2657,14 @@
         const subscription = appState.sharedSetSubscriptions[entry.id];
         const sharedSet = subscription?.cachedSet;
         const installedRevision = getInstalledSharedSetRevision(entry.id);
-        const applyLabel = !installedRevision
-          ? "Apply Set"
-          : installedRevision < (sharedSet?.revision || 0) ? "Apply Update" : "Reapply";
+        const applyLabel = appState.isConnected
+          ? (!installedRevision
+            ? "Install on Device"
+            : installedRevision < (sharedSet?.revision || 0) ? "Install Update" : "Reinstall")
+          : (!installedRevision
+            ? "Apply Set"
+            : installedRevision < (sharedSet?.revision || 0) ? "Apply Update" : "Reapply");
+        const installedLocation = appState.isConnected ? "device" : "editor";
         let status = "Available";
         let statusClass = "";
         if (subscription?.error) {
@@ -2572,11 +2673,11 @@
           status = "Subscribed; waiting for first download";
         } else if (sharedSet && installedRevision < sharedSet.revision) {
           status = installedRevision
-            ? `Revision ${sharedSet.revision} available; editor has revision ${installedRevision}`
-            : `Revision ${sharedSet.revision} ready to apply`;
+            ? `Revision ${sharedSet.revision} available; ${installedLocation} has revision ${installedRevision}`
+            : `Revision ${sharedSet.revision} ready to ${appState.isConnected ? "install" : "apply"}`;
           statusClass = "update";
         } else if (sharedSet) {
-          status = `Revision ${sharedSet.revision} is loaded in the editor`;
+          status = `Revision ${sharedSet.revision} is loaded on the ${installedLocation}`;
           statusClass = "current";
         }
         return `
@@ -2604,7 +2705,11 @@
         button.addEventListener("click", () => unsubscribeSharedSet(button.dataset.unsubscribeSharedSet));
       });
       elements.sharedSetList.querySelectorAll("[data-apply-shared-set]").forEach((button) => {
-        button.addEventListener("click", () => applySharedSet(button.dataset.applySharedSet));
+        button.addEventListener("click", () => {
+          button.disabled = true;
+          applySharedSet(button.dataset.applySharedSet);
+          button.disabled = false;
+        });
       });
       elements.sharedSetList.querySelectorAll("[data-edit-shared-set]").forEach((button) => {
         button.addEventListener("click", () => editPublishedSharedSet(button.dataset.editSharedSet));
@@ -2634,7 +2739,7 @@
         saveSharedSetSubscriptions();
         renderSharedSets();
         logActivity(`Subscribed to shared set "${sharedSet.name}".`);
-        showToast(`Subscribed to ${sharedSet.name}. Choose Apply Set to add its expansions.`);
+        showToast(`Subscribed to ${sharedSet.name}. Choose ${appState.isConnected ? "Install on Device" : "Apply Set"} to preview its profile.`);
       } catch (error) {
         showToast(`Could not subscribe: ${error.message}`, "error");
       }
@@ -2643,13 +2748,15 @@
     function createSharedSet() {
       if (!ensureSharedSetEditingAvailable()) return;
       startSharedSetEditor({
-        format: "quicktype-set/v1",
+        format: "quicktype-set/v2",
         id: "new-shared-set",
         name: "New Shared Set",
         description: "",
         revision: 0,
         updatedAt: "",
-        expansions: []
+        typedExpansions: [],
+        keypadExpansions: [],
+        placeholderDefinitions: {}
       }, true);
     }
 
@@ -2698,13 +2805,24 @@
         previousSelectedRule: appState.selectedRule,
         previousSelectedExpansionRule: appState.selectedExpansionRule,
         previousSelectedKeypadRule: appState.selectedKeypadRule,
+        placeholderDefinitions: structuredClone(sharedSet.placeholderDefinitions || {}),
         isNew
       };
       const editorConfig = createDefaultConfig();
       editorConfig.profileName = sharedSet.name;
-      sharedSet.expansions.forEach((entry, index) => {
+      editorConfig.placeholders = Object.fromEntries(
+        Object.entries(sharedSet.placeholderDefinitions || {}).map(([name, definition]) => [name, definition.default || ""])
+      );
+      sharedSet.typedExpansions.forEach((entry, index) => {
         const ruleId = `R${String(index + 1).padStart(2, "0")}`;
         editorConfig.rules[ruleId] = {
+          ...entry,
+          sharedSetEntryId: entry.id
+        };
+      });
+      sharedSet.keypadExpansions.forEach((entry) => {
+        editorConfig.rules[keypadRuleId(entry.triggerPattern)] = {
+          ...createKeypadRule(entry.triggerPattern),
           ...entry,
           sharedSetEntryId: entry.id
         };
@@ -2734,15 +2852,12 @@
       elements.createSharedSetButton.disabled = editing || appState.isConnected;
       elements.importSharedSetFile.disabled = editing || appState.isConnected;
       elements.importSharedSetLabel.classList.toggle("disabled", editing || appState.isConnected);
-      document.querySelectorAll('[data-config-mode="keypad"]').forEach((button) => {
-        button.classList.toggle("hidden", editing);
-      });
       const title = document.querySelector(".title-block h2");
       const description = document.querySelector(".title-block p");
       if (title) title.textContent = editing ? "Shared Set Editor" : "Expansion Configurator";
       if (description) {
         description.textContent = editing
-          ? "Edit this shared set with the normal expansion tools, then download its versioned JSON file."
+          ? "Edit this full profile's typed expansions, keypad assignments, and placeholder defaults, then download its versioned JSON file."
           : "Configure typed trigger strings and direct 19-key keypad actions using expansion text, placeholders, shortcuts, or clock output.";
       }
       updateDeviceControls();
@@ -2777,34 +2892,61 @@
       }
 
       const usedIds = new Set();
-      const expansions = Object.entries(appState.config.rules)
-        .filter(([, mapping]) => isPrimaryExpansion(mapping))
-        .map(([, mapping]) => {
-          const entryId = uniqueSharedSetEntryId(
-            mapping.sharedSetEntryId || mapping.label || mapping.triggerPattern,
-            usedIds
-          );
-          mapping.sharedSetEntryId = entryId;
-          usedIds.add(entryId);
-          return {
-            id: entryId,
-            triggerPattern: mapping.triggerPattern,
-            label: mapping.label || mapping.triggerPattern,
-            text: mapping.text || "",
+      const serializeEntry = (mapping, includeTrigger) => {
+        const entryId = uniqueSharedSetEntryId(
+          mapping.sharedSetEntryId || mapping.label || mapping.triggerPattern,
+          usedIds
+        );
+        mapping.sharedSetEntryId = entryId;
+        usedIds.add(entryId);
+        return {
+          id: entryId,
+          ...(includeTrigger ? { triggerPattern: mapping.triggerPattern } : { key: mapping.triggerPattern }),
+          label: mapping.label || mapping.triggerPattern,
+          type: normalizeActionType(mapping.type),
+          text: mapping.text || "",
+          steps: Array.isArray(mapping.steps) ? structuredClone(mapping.steps) : [],
+          ...(includeTrigger ? {
             trigger: normalizeTriggerMode(mapping.trigger),
-            triggerScope: mapping.triggerScope || "any",
-            preDelay: normalizeNumber(mapping.preDelay, 0),
-            keyDelay: normalizeNumber(mapping.keyDelay, 5)
-          };
-        });
+            triggerScope: mapping.triggerScope || "any"
+          } : {}),
+          preDelay: normalizeNumber(mapping.preDelay, 0),
+          keyDelay: normalizeNumber(mapping.keyDelay, 5)
+        };
+      };
+      const activeMappings = getActiveDeviceRuleEntries().map(([, mapping]) => mapping);
+      const typedExpansions = activeMappings
+        .filter((mapping) => mapping.trigger !== "key")
+        .map((mapping) => serializeEntry(mapping, true));
+      const keypadExpansions = activeMappings
+        .filter((mapping) => mapping.trigger === "key")
+        .map((mapping) => serializeEntry(mapping, false));
+      if (typedExpansions.length + keypadExpansions.length > MAX_CONFIG_RULES) {
+        showToast(`Set cannot be downloaded: only ${MAX_CONFIG_RULES} total active typed and keypad rules are supported.`, "error");
+        return;
+      }
+      const priorDefinitions = appState.sharedSetEditSession.placeholderDefinitions || {};
+      const placeholders = Object.fromEntries(
+        Object.entries(appState.config.placeholders || {}).map(([placeholderName, defaultValue]) => [
+          placeholderName,
+          {
+            label: priorDefinitions[placeholderName]?.label || placeholderName,
+            default: String(defaultValue || ""),
+            required: Boolean(priorDefinitions[placeholderName]?.required),
+            personalized: priorDefinitions[placeholderName]?.personalized !== false
+          }
+        ])
+      );
       const sharedSet = {
-        format: "quicktype-set/v1",
+        format: "quicktype-set/v2",
         id,
         name,
         description,
         revision,
         updatedAt: new Date().toISOString(),
-        expansions
+        typedExpansions,
+        keypadExpansions,
+        placeholders
       };
       const blob = new Blob([JSON.stringify(sharedSet, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -2864,6 +3006,10 @@
           detached = true;
         }
       });
+      if (appState.config.sharedSetInstallation?.setId === setId) {
+        delete appState.config.sharedSetInstallation;
+        detached = true;
+      }
       delete appState.sharedSetSubscriptions[setId];
       saveSharedSetSubscriptions();
       if (detached) setConfigDirty(true);
@@ -2880,68 +3026,226 @@
       const subscription = appState.sharedSetSubscriptions[setId];
       const sharedSet = subscription?.cachedSet;
       if (!sharedSet || !updateCurrentMappingFromForm(false)) return;
-      const previousConfig = structuredClone(appState.config);
-      try {
-        const desiredEntryIds = new Set(sharedSet.expansions.map((entry) => entry.id));
-        const existingRules = new Map();
-        Object.entries(appState.config.rules).forEach(([ruleId, rule]) => {
-          if (rule.sharedSet?.setId !== setId) return;
-          if (desiredEntryIds.has(rule.sharedSet.entryId)) {
-            existingRules.set(rule.sharedSet.entryId, ruleId);
-          } else {
-            appState.config.rules[ruleId] = createBlankRule();
-          }
-        });
+      showSharedSetInstallPreview(sharedSet);
+    }
 
-        sharedSet.expansions.forEach((entry) => {
-          const ruleId = existingRules.get(entry.id) || findAvailableSharedSetRuleId();
-          if (!ruleId) throw new Error(`There is not enough room for this set. QuickType supports ${RULE_COUNT} typed expansions.`);
-          appState.config.rules[ruleId] = {
-            ...entry,
-            sharedSet: {
-              setId,
-              entryId: entry.id,
-              revision: sharedSet.revision
-            }
+    function showSharedSetInstallPreview(sharedSet) {
+      const currentPlaceholders = normalizePlaceholders(appState.config.placeholders || {});
+      const definitions = sharedSet.placeholderDefinitions || {};
+      const placeholderNames = Array.from(new Set([
+        ...Object.keys(currentPlaceholders),
+        ...Object.keys(definitions)
+      ])).sort((left, right) => left.localeCompare(right));
+      const placeholderRows = placeholderNames.length
+        ? placeholderNames.map((name) => {
+          const definition = definitions[name] || {
+            label: name,
+            default: "",
+            required: false,
+            personalized: true
           };
+          const hasCurrentValue = Object.prototype.hasOwnProperty.call(currentPlaceholders, name);
+          const selectedValue = definition.personalized !== false && hasCurrentValue
+            ? currentPlaceholders[name]
+            : definition.default;
+          return `
+            <label class="shared-set-placeholder-row">
+              <span>
+                <strong>${escapeHtml(definition.label || name)}</strong>
+                <code>{${escapeHtml(name)}}</code>
+                ${definition.required ? '<small>Required</small>' : ""}
+              </span>
+              <input type="text" maxlength="80"
+                data-shared-placeholder="${escapeAttribute(name)}"
+                data-device-value="${escapeAttribute(currentPlaceholders[name] ?? "")}"
+                data-set-default="${escapeAttribute(definition.default || "")}"
+                value="${escapeAttribute(selectedValue || "")}"
+                ${definition.required ? "required" : ""}>
+            </label>
+          `;
+        }).join("")
+        : '<p class="helper-text">This set does not use any personalization placeholders.</p>';
+      const action = appState.isConnected ? "Install on Device" : "Apply to Editor";
+      showModal(`${action}: ${sharedSet.name}`, `
+        <form id="sharedSetInstallForm" class="shared-set-install-form">
+          <div class="notice">
+            <strong>This replaces the complete expansion profile.</strong>
+            <span>${sharedSet.typedExpansions.length} typed expansion${sharedSet.typedExpansions.length === 1 ? "" : "s"} and ${sharedSet.keypadExpansions.length} keypad assignment${sharedSet.keypadExpansions.length === 1 ? "" : "s"} will replace the current rules. Unlisted keypad keys will be cleared. Device name and color will be preserved.</span>
+          </div>
+          <div class="shared-set-placeholder-heading">
+            <div>
+              <strong>Personalization</strong>
+              <p>Current personalization values are selected when available. Review or edit them before continuing.</p>
+            </div>
+            ${placeholderNames.length ? `
+              <div class="actions">
+                <button class="secondary-button" type="button" id="useDevicePlaceholderValues">Use Current Values</button>
+                <button class="secondary-button" type="button" id="useSetPlaceholderDefaults">Use Set Defaults</button>
+              </div>
+            ` : ""}
+          </div>
+          <div class="shared-set-placeholder-list">${placeholderRows}</div>
+          <div class="actions shared-set-install-actions">
+            <button class="primary-button" type="submit">${action}</button>
+            <button class="secondary-button" type="button" id="cancelSharedSetInstall">Cancel</button>
+          </div>
+        </form>
+      `);
+      const form = document.getElementById("sharedSetInstallForm");
+      const placeholderInputs = Array.from(form.querySelectorAll("[data-shared-placeholder]"));
+      document.getElementById("useDevicePlaceholderValues")?.addEventListener("click", () => {
+        placeholderInputs.forEach((input) => {
+          input.value = input.dataset.deviceValue || input.dataset.setDefault || "";
         });
+      });
+      document.getElementById("useSetPlaceholderDefaults")?.addEventListener("click", () => {
+        placeholderInputs.forEach((input) => {
+          input.value = input.dataset.setDefault || "";
+        });
+      });
+      document.getElementById("cancelSharedSetInstall").addEventListener("click", hideModal);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+        const placeholders = Object.fromEntries(
+          placeholderInputs.map((input) => [input.dataset.sharedPlaceholder, input.value])
+        );
+        form.querySelectorAll("button, input").forEach((control) => {
+          control.disabled = true;
+        });
+        hideModal();
+        await performSharedSetReplacement(sharedSet, placeholders);
+      });
+    }
 
+    function buildConfigurationFromSharedSet(sharedSet, placeholders, currentConfig) {
+      const replacement = createDefaultConfig();
+      replacement.deviceName = normalizeDeviceName(currentConfig.deviceName);
+      replacement.deviceColor = normalizeDeviceColor(currentConfig.deviceColor);
+      replacement.profileName = sharedSet.name;
+      replacement.targetOs = currentConfig.targetOs || "windows";
+      replacement.placeholders = normalizePlaceholders(placeholders);
+      replacement.sharedSetInstallation = {
+        setId: sharedSet.id,
+        revision: sharedSet.revision
+      };
+      sharedSet.typedExpansions.forEach((entry, index) => {
+        const ruleId = `R${String(index + 1).padStart(2, "0")}`;
+        replacement.rules[ruleId] = {
+          ...entry,
+          sharedSet: {
+            setId: sharedSet.id,
+            entryId: entry.id,
+            revision: sharedSet.revision
+          }
+        };
+      });
+      sharedSet.keypadExpansions.forEach((entry) => {
+        replacement.rules[keypadRuleId(entry.triggerPattern)] = {
+          ...createKeypadRule(entry.triggerPattern),
+          ...entry,
+          sharedSet: {
+            setId: sharedSet.id,
+            entryId: entry.id,
+            revision: sharedSet.revision
+          }
+        };
+      });
+      return replacement;
+    }
+
+    async function performSharedSetReplacement(sharedSet, placeholders) {
+      const previousConfig = structuredClone(appState.config);
+      const previousDirty = appState.configDirty;
+      let installationStarted = false;
+      try {
+        appState.config = buildConfigurationFromSharedSet(sharedSet, placeholders, previousConfig);
         const conflictMessage = validateNoTriggerConflicts();
         if (conflictMessage) throw new Error(conflictMessage);
         const payloadSize = serializeConfiguration(buildDeviceConfiguration()).byteLength;
         if (payloadSize > MAX_CONFIG_PAYLOAD_BYTES) {
           throw new Error(`The resulting configuration is ${payloadSize} bytes; the safe limit is ${MAX_CONFIG_PAYLOAD_BYTES}.`);
         }
-        selectDefaultRuleForEditor();
-        renderAllConfigurationViews();
-        updateCapacityBadge();
         setConfigDirty(true);
-        renderSharedSets();
-        logActivity(`Applied "${sharedSet.name}" revision ${sharedSet.revision} to the editor.`);
-        showToast(`${sharedSet.name} applied. Use Write to save it to the device.`);
-        showTab("expansionsTab");
+        if (appState.isConnected) {
+          installationStarted = true;
+          await installSharedSetOnDevice(sharedSet);
+        } else {
+          selectDefaultRuleForEditor();
+          renderAllConfigurationViews();
+          updateCapacityBadge();
+          logActivity(`Replaced the editor profile with "${sharedSet.name}" revision ${sharedSet.revision}.`);
+          showToast(`${sharedSet.name} replaced the editor profile.`);
+          showTab("expansionsTab");
+        }
       } catch (error) {
         appState.config = previousConfig;
+        let restoredDirty = previousDirty;
+        if (installationStarted && appState.isConnected) {
+          try {
+            const currentDeviceResponse = await sendDeviceCommand("get-config", {}, 15000);
+            appState.config = normalizeImportedConfiguration(currentDeviceResponse.data);
+            appState.connectedDeviceName = normalizeDeviceName(appState.config.deviceName);
+            appState.connectedDeviceColor = normalizeDeviceColor(appState.config.deviceColor);
+            restoredDirty = false;
+          } catch {
+            restoredDirty = true;
+          }
+        }
+        selectDefaultRuleForEditor();
         renderAllConfigurationViews();
+        setConfigDirty(restoredDirty);
         renderSharedSets();
-        logActivity(`Could not apply shared set: ${error.message}`);
-        showToast(`Could not apply shared set: ${error.message}`, "error");
+        const action = appState.isConnected ? "install" : "apply";
+        logActivity(`Could not ${action} shared set: ${error.message}`);
+        showToast(`Could not ${action} shared set: ${error.message}`, "error");
       }
     }
 
-    function findAvailableSharedSetRuleId() {
-      for (let index = 1; index <= RULE_COUNT; index += 1) {
-        const ruleId = `R${String(index).padStart(2, "0")}`;
-        if (!isPrimaryExpansion(appState.config.rules[ruleId])) return ruleId;
+    async function installSharedSetOnDevice(sharedSet) {
+      const deviceConfig = buildDeviceConfiguration();
+      const payload = serializeConfiguration(deviceConfig);
+      if (payload.byteLength > MAX_CONFIG_PAYLOAD_BYTES) {
+        throw new Error(`The resulting configuration is ${payload.byteLength} bytes; the safe limit is ${MAX_CONFIG_PAYLOAD_BYTES}.`);
       }
-      return "";
+      logActivity(`Installing "${sharedSet.name}" revision ${sharedSet.revision} (${payload.byteLength} bytes)...`);
+      showToast(`Installing ${sharedSet.name} on QuickType...`);
+      const response = await sendDeviceCommand("set-config", { config: deviceConfig }, 15000);
+      const verification = await sendDeviceCommand("get-config", {}, 15000);
+      const verifiedConfig = normalizeImportedConfiguration(verification.data);
+      if (!sharedSetIsPresentInConfiguration(verifiedConfig, sharedSet)) {
+        throw new Error("QuickType accepted the configuration, but the shared set was not present when read back.");
+      }
+      appState.config = verifiedConfig;
+      appState.connectedDeviceName = normalizeDeviceName(verifiedConfig.deviceName);
+      appState.connectedDeviceColor = normalizeDeviceColor(verifiedConfig.deviceColor);
+      selectDefaultRuleForEditor();
+      renderAllConfigurationViews();
+      updateDeviceControls();
+      setConfigDirty(false);
+      logActivity(`Installed and verified "${sharedSet.name}" revision ${sharedSet.revision} (${response.data?.ruleCount ?? 0} active rules).`);
+      showToast(`${sharedSet.name} installed and verified on QuickType.`);
+      showTab("sharedSetsTab");
+    }
+
+    function sharedSetIsPresentInConfiguration(config, sharedSet) {
+      const installation = config.sharedSetInstallation;
+      if (installation?.setId !== sharedSet.id || Number(installation.revision) !== sharedSet.revision) {
+        return false;
+      }
+      const installedEntries = new Map(
+        Object.values(config.rules || {})
+          .filter((rule) => rule.sharedSet?.setId === sharedSet.id)
+          .map((rule) => [rule.sharedSet.entryId, Number(rule.sharedSet.revision) || 0])
+      );
+      const expectedEntries = [...sharedSet.typedExpansions, ...sharedSet.keypadExpansions];
+      return installedEntries.size === expectedEntries.length &&
+        expectedEntries.every((entry) => installedEntries.get(entry.id) === sharedSet.revision);
     }
 
     function getInstalledSharedSetRevision(setId) {
-      const revisions = Object.values(appState.config.rules)
-        .filter((rule) => rule.sharedSet?.setId === setId)
-        .map((rule) => Number(rule.sharedSet.revision) || 0);
-      return revisions.length ? Math.min(...revisions) : 0;
+      const installation = appState.config.sharedSetInstallation;
+      return installation?.setId === setId ? Number(installation.revision) || 0 : 0;
     }
 
     async function toggleAutoConnect(event) {
@@ -3904,10 +4208,6 @@
     }
 
     function selectConfiguratorMode(mode) {
-      if (appState.sharedSetEditSession && mode === "keypad") {
-        showToast("Shared sets contain typed expansions, not physical keypad assignments.", "error");
-        return;
-      }
       if (!['keyboard', 'keypad'].includes(mode) || mode === appState.configMode) return;
       if (!updateCurrentMappingFromForm(false)) return;
       appState.configMode = mode;
@@ -3924,10 +4224,12 @@
         button.classList.toggle("active", button.dataset.configMode === appState.configMode);
       });
       elements.configModeTitle.textContent = appState.sharedSetEditSession
-        ? "Shared Set Expansions"
+        ? (keypadMode ? "Shared Set Keypad" : "Shared Set Typed Expansions")
         : (keypadMode ? "Numeric Keypad" : "Trigger Strings");
       elements.configModeDescription.textContent = appState.sharedSetEditSession
-        ? "Use the normal expansion editor; Download Set creates the publishable JSON file."
+        ? (keypadMode
+          ? "These keypad assignments are included in the profile; unassigned keys will be cleared when the set is installed."
+          : "These typed expansions are included in the profile; Download Set creates the publishable JSON file.")
         : (keypadMode ? "Click a key to edit its action." : "Replace trigger strings typed on a full keyboard or keypad.");
       elements.addExpansionButton.classList.toggle("hidden", keypadMode);
 
@@ -4682,6 +4984,14 @@
       fallback.version = config.version || fallback.version;
       fallback.targetOs = config.targetOs || "windows";
       fallback.placeholders = normalizePlaceholders(config.placeholders || fallback.placeholders);
+      if (isValidSharedSetId(String(config.sharedSetInstallation?.setId || "")) &&
+          Number.isSafeInteger(Number(config.sharedSetInstallation?.revision)) &&
+          Number(config.sharedSetInstallation.revision) >= 1) {
+        fallback.sharedSetInstallation = {
+          setId: String(config.sharedSetInstallation.setId),
+          revision: Number(config.sharedSetInstallation.revision)
+        };
+      }
 
       if (config.rules) {
         Object.keys(fallback.rules).forEach((ruleId) => {

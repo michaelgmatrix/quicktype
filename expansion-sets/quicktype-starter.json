@@ -1,11 +1,11 @@
 {
-  "format": "quicktype-set/v1",
+  "format": "quicktype-set/v2",
   "id": "quicktype-starter",
   "name": "QuickType Starter Set",
   "description": "Common writing helpers and examples for getting started with shared sets.",
-  "revision": 1,
-  "updatedAt": "2026-07-28T10:04:11-07:00",
-  "expansions": [
+  "revision": 2,
+  "updatedAt": "2026-07-28T11:39:25-07:00",
+  "typedExpansions": [
     {
       "id": "today",
       "triggerPattern": ";today",
@@ -24,5 +24,14 @@
       "label": "Thank you",
       "text": "Thank you,"
     }
-  ]
+  ],
+  "keypadExpansions": [],
+  "placeholders": {
+    "initials": {
+      "label": "Your initials",
+      "default": "",
+      "required": false,
+      "personalized": true
+    }
+  }
 }
