@@ -1,0 +1,28 @@
+{
+  "format": "quicktype-set/v1",
+  "id": "quicktype-starter",
+  "name": "QuickType Starter Set",
+  "description": "Common writing helpers and examples for getting started with shared sets.",
+  "revision": 1,
+  "updatedAt": "2026-07-28T10:04:11-07:00",
+  "expansions": [
+    {
+      "id": "today",
+      "triggerPattern": ";today",
+      "label": "Today's date",
+      "text": "{date}"
+    },
+    {
+      "id": "current-time",
+      "triggerPattern": ";time",
+      "label": "Current time",
+      "text": "{time}"
+    },
+    {
+      "id": "thanks",
+      "triggerPattern": ";thanks",
+      "label": "Thank you",
+      "text": "Thank you,"
+    }
+  ]
+}

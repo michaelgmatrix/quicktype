@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-27T12:50:57-07:00">
+  <meta name="quicktype-build" content="2026-07-28T10:13:41-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -926,6 +926,69 @@
       background: #fff;
     }
 
+    .shared-set-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .shared-set-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .shared-set-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+      background: var(--panel-soft);
+    }
+
+    .shared-set-card h4,
+    .shared-set-card p {
+      margin: 0;
+    }
+
+    .shared-set-card p {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    .shared-set-card .actions {
+      justify-content: flex-end;
+    }
+
+    .shared-set-status {
+      font-weight: 700;
+    }
+
+    .shared-set-status.update {
+      color: var(--warn);
+    }
+
+    .shared-set-status.current {
+      color: var(--ok);
+    }
+
+    @media (max-width: 760px) {
+      .shared-set-toolbar,
+      .shared-set-card {
+        align-items: stretch;
+        grid-template-columns: 1fr;
+      }
+
+      .shared-set-toolbar {
+        flex-direction: column;
+      }
+    }
+
     .expansion-header,
     .key-button {
       display: grid;
@@ -1662,6 +1725,7 @@
         </div>
         <ul class="sidebar-list">
           <li><button class="active" type="button" data-tab="expansionsTab" title="Expansions"><span class="nav-icon" aria-hidden="true">Aa</span><span class="nav-label">Expansions</span></button></li>
+          <li><button type="button" data-tab="sharedSetsTab" title="Shared Sets"><span class="nav-icon" aria-hidden="true">Sets</span><span class="nav-label">Shared Sets</span></button></li>
           <li><button type="button" data-tab="placeholdersTab" title="Placeholders"><span class="nav-icon" aria-hidden="true">{ }</span><span class="nav-label">Placeholders</span></button></li>
           <li><button type="button" data-tab="rtcTab" title="Date/Time Functions"><span class="nav-icon" aria-hidden="true">DT</span><span class="nav-label">Date/Time Functions</span></button></li>
           <li><button type="button" data-tab="activityTab" title="Device Activity"><span class="nav-icon" aria-hidden="true">Log</span><span class="nav-label">Device Activity</span></button></li>
@@ -1820,6 +1884,26 @@
         </div>
       </section>
 
+      <section id="sharedSetsTab" class="workspace single tab-panel hidden">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3>Shared Expansion Sets</h3>
+              <p>Subscribe to sets published with this configurator and check for new revisions.</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="shared-set-toolbar">
+              <p class="helper-text">Applying a set changes the editor only. Use Write when you are ready to save it to the connected device.</p>
+              <button id="refreshSharedSetsButton" class="secondary-button" type="button">Check for Updates</button>
+            </div>
+            <div id="sharedSetList" class="shared-set-list" aria-live="polite">
+              <div class="empty-state"><strong>Loading shared sets...</strong></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section id="rtcTab" class="workspace single tab-panel hidden">
         <div class="panel" id="rtcPanel">
           <div class="panel-header">
@@ -1886,6 +1970,8 @@
     const SERIAL_BAUD_RATE = 115200;
     const REQUEST_TIMEOUT_MS = 8000;
     const MAX_CONFIG_PAYLOAD_BYTES = 30000;
+    const SHARED_SET_CATALOG_PATH = "./expansion-sets/catalog.json";
+    const SHARED_SET_SUBSCRIPTIONS_KEY = "quicktype-shared-set-subscriptions-v1";
     const QUICKTYPE_USB_FILTERS = [
       { usbVendorId: 0x2E8A, usbProductId: 0x5154 }, // Specific QuickType VID 0x2E8A / PID 0x5154
       { usbVendorId: 0x2E8A }                        // RP2040 fallback
@@ -1981,6 +2067,9 @@
       expansionsEnabled: true,
       keypadExpansionsEnabled: true,
       expansionSort: { key: "trigger", direction: "asc" },
+      sharedSetCatalog: [],
+      sharedSetSubscriptions: {},
+      sharedSetCatalogError: "",
       config: createDefaultConfig()
     };
 
@@ -1994,6 +2083,7 @@
       initializeTheme();
       initializeNavigation();
       initializeConnectionPreferences();
+      initializeSharedSets();
       bindEvents();
       validateWebSerialSupport();
       setupWebSerialHotplugListeners();
@@ -2035,6 +2125,8 @@
       elements.webSerialNotice = document.getElementById("webSerialNotice");
       elements.syncClockButton = document.getElementById("syncClockButton");
       elements.addExpansionButton = document.getElementById("addExpansionButton");
+      elements.refreshSharedSetsButton = document.getElementById("refreshSharedSetsButton");
+      elements.sharedSetList = document.getElementById("sharedSetList");
       elements.configModeTitle = document.getElementById("configModeTitle");
       elements.configModeDescription = document.getElementById("configModeDescription");
       elements.duplicateExpansionButton = document.getElementById("duplicateExpansionButton");
@@ -2113,6 +2205,7 @@
       elements.factoryResetButton.addEventListener("click", restoreFactoryDefaults);
       elements.clearLogButton.addEventListener("click", clearActivityLog);
       elements.addExpansionButton.addEventListener("click", addExpansionRule);
+      elements.refreshSharedSetsButton.addEventListener("click", () => refreshSharedSets(false));
       elements.duplicateExpansionButton.addEventListener("click", duplicateExpansionRule);
       elements.deleteExpansionButton.addEventListener("click", deleteExpansionRule);
       elements.addPlaceholderButtonTab.addEventListener("click", addPlaceholderFromTab);
@@ -2216,6 +2309,337 @@
       } catch {}
       appState.autoConnectEnabled = savedPreference === "true";
       elements.autoConnectToggle.checked = appState.autoConnectEnabled;
+    }
+
+    function initializeSharedSets() {
+      try {
+        const saved = JSON.parse(window.localStorage.getItem(SHARED_SET_SUBSCRIPTIONS_KEY) || "{}");
+        appState.sharedSetSubscriptions = saved && typeof saved === "object" && !Array.isArray(saved)
+          ? saved
+          : {};
+      } catch {
+        appState.sharedSetSubscriptions = {};
+      }
+      refreshSharedSets(true);
+    }
+
+    function saveSharedSetSubscriptions() {
+      try {
+        window.localStorage.setItem(
+          SHARED_SET_SUBSCRIPTIONS_KEY,
+          JSON.stringify(appState.sharedSetSubscriptions)
+        );
+      } catch {
+        showToast("Shared set subscriptions could not be saved in this browser.", "error");
+      }
+    }
+
+    async function refreshSharedSets(silent = false) {
+      elements.refreshSharedSetsButton.disabled = true;
+      appState.sharedSetCatalogError = "";
+      try {
+        const catalogUrl = new URL(SHARED_SET_CATALOG_PATH, window.location.href);
+        const response = await fetch(catalogUrl, { cache: "no-store" });
+        if (!response.ok) throw new Error(`catalog returned HTTP ${response.status}`);
+        const catalog = await response.json();
+        if (catalog?.format !== "quicktype-catalog/v1" || !Array.isArray(catalog.sets)) {
+          throw new Error("catalog format is not supported");
+        }
+        const ids = new Set();
+        appState.sharedSetCatalog = catalog.sets.map((entry) => {
+          const id = String(entry?.id || "").trim();
+          const name = String(entry?.name || "").trim();
+          if (!isValidSharedSetId(id) || ids.has(id) || !name || !entry.url) {
+            throw new Error("catalog contains an invalid or duplicate set");
+          }
+          ids.add(id);
+          return {
+            id,
+            name: name.slice(0, 80),
+            description: String(entry.description || "").slice(0, 300),
+            url: new URL(entry.url, catalogUrl).href
+          };
+        });
+
+        await Promise.all(Object.values(appState.sharedSetSubscriptions).map(async (subscription) => {
+          const catalogEntry = appState.sharedSetCatalog.find((entry) => entry.id === subscription.id);
+          const setUrl = catalogEntry?.url || subscription.url;
+          if (!setUrl) return;
+          try {
+            const sharedSet = await fetchSharedSet(setUrl, subscription.id);
+            subscription.url = setUrl;
+            subscription.name = sharedSet.name;
+            subscription.cachedSet = sharedSet;
+            subscription.checkedAt = new Date().toISOString();
+            subscription.error = "";
+          } catch (error) {
+            subscription.checkedAt = new Date().toISOString();
+            subscription.error = error.message;
+          }
+        }));
+        saveSharedSetSubscriptions();
+        if (!silent) showToast("Shared sets checked for updates.");
+      } catch (error) {
+        appState.sharedSetCatalogError = error.message;
+        if (!silent) showToast(`Could not load shared sets: ${error.message}`, "error");
+        logActivity(`Shared set catalog unavailable: ${error.message}`);
+      } finally {
+        elements.refreshSharedSetsButton.disabled = false;
+        renderSharedSets();
+      }
+    }
+
+    async function fetchSharedSet(url, expectedId) {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) throw new Error(`set returned HTTP ${response.status}`);
+      return normalizeSharedSet(await response.json(), expectedId);
+    }
+
+    function normalizeSharedSet(value, expectedId = "") {
+      if (value?.format !== "quicktype-set/v1") {
+        throw new Error("set format is not supported");
+      }
+      const id = String(value.id || "").trim();
+      const name = String(value.name || "").trim();
+      const revision = Number(value.revision);
+      if (!isValidSharedSetId(id) || (expectedId && id !== expectedId)) {
+        throw new Error("set ID does not match its catalog entry");
+      }
+      if (!name || !Number.isSafeInteger(revision) || revision < 1) {
+        throw new Error("set name or revision is invalid");
+      }
+      if (!Array.isArray(value.expansions) || value.expansions.length > RULE_COUNT) {
+        throw new Error(`set must contain no more than ${RULE_COUNT} expansions`);
+      }
+
+      const entryIds = new Set();
+      const expansions = value.expansions.map((entry, index) => {
+        const entryId = String(entry?.id || "").trim();
+        const triggerPattern = String(entry?.triggerPattern || "").trim();
+        const text = String(entry?.text || "");
+        if (!isValidSharedSetId(entryId) || entryIds.has(entryId)) {
+          throw new Error(`expansion ${index + 1} has an invalid or duplicate ID`);
+        }
+        if (!triggerPattern || triggerPattern.length > 48) {
+          throw new Error(`expansion "${entryId}" needs a trigger of at most 48 characters`);
+        }
+        if (text.length > 1024) {
+          throw new Error(`expansion "${entryId}" exceeds the 1024-character template limit`);
+        }
+        entryIds.add(entryId);
+        return {
+          id: entryId,
+          type: "expansion",
+          trigger: ["suffix", "delimiter", "instant"].includes(entry.trigger) ? entry.trigger : "suffix",
+          triggerPattern,
+          triggerScope: ["any", "keyboard", "numpad"].includes(entry.triggerScope) ? entry.triggerScope : "any",
+          label: String(entry.label || triggerPattern).trim().slice(0, 32),
+          text,
+          preDelay: Math.max(0, Math.min(5000, normalizeNumber(entry.preDelay, 0))),
+          keyDelay: Math.max(0, Math.min(1000, normalizeNumber(entry.keyDelay, 5))),
+          steps: [],
+          replacementStrategy: "erase-trigger-then-type",
+          enabled: true
+        };
+      });
+
+      return {
+        format: "quicktype-set/v1",
+        id,
+        name: name.slice(0, 80),
+        description: String(value.description || "").slice(0, 500),
+        revision,
+        updatedAt: String(value.updatedAt || ""),
+        expansions
+      };
+    }
+
+    function isValidSharedSetId(value) {
+      return /^[a-z0-9][a-z0-9._-]{0,63}$/i.test(value);
+    }
+
+    function renderSharedSets() {
+      const catalogById = new Map(appState.sharedSetCatalog.map((entry) => [entry.id, entry]));
+      Object.values(appState.sharedSetSubscriptions).forEach((subscription) => {
+        if (!catalogById.has(subscription.id)) {
+          catalogById.set(subscription.id, {
+            id: subscription.id,
+            name: subscription.name || subscription.id,
+            description: subscription.cachedSet?.description || "",
+            url: subscription.url || ""
+          });
+        }
+      });
+      const entries = Array.from(catalogById.values());
+
+      if (!entries.length) {
+        const message = appState.sharedSetCatalogError
+          ? `Shared sets could not be loaded: ${appState.sharedSetCatalogError}. If this page was opened as a local file, use a web-hosted copy instead.`
+          : "No shared expansion sets are currently published.";
+        elements.sharedSetList.innerHTML = `<div class="empty-state"><strong>Shared sets unavailable</strong><span>${escapeHtml(message)}</span></div>`;
+        return;
+      }
+
+      elements.sharedSetList.innerHTML = entries.map((entry) => {
+        const subscription = appState.sharedSetSubscriptions[entry.id];
+        const sharedSet = subscription?.cachedSet;
+        const installedRevision = getInstalledSharedSetRevision(entry.id);
+        const applyLabel = !installedRevision
+          ? "Apply Set"
+          : installedRevision < (sharedSet?.revision || 0) ? "Apply Update" : "Reapply";
+        let status = "Available";
+        let statusClass = "";
+        if (subscription?.error) {
+          status = `Update check failed; cached revision ${sharedSet?.revision || "unavailable"}`;
+        } else if (subscription && !sharedSet) {
+          status = "Subscribed; waiting for first download";
+        } else if (sharedSet && installedRevision < sharedSet.revision) {
+          status = installedRevision
+            ? `Revision ${sharedSet.revision} available; editor has revision ${installedRevision}`
+            : `Revision ${sharedSet.revision} ready to apply`;
+          statusClass = "update";
+        } else if (sharedSet) {
+          status = `Revision ${sharedSet.revision} is loaded in the editor`;
+          statusClass = "current";
+        }
+        return `
+          <article class="shared-set-card">
+            <div>
+              <h4>${escapeHtml(sharedSet?.name || entry.name)}</h4>
+              <p>${escapeHtml(sharedSet?.description || entry.description || "")}</p>
+              <p class="shared-set-status ${statusClass}">${escapeHtml(status)}</p>
+            </div>
+            <div class="actions">
+              ${subscription
+                ? `<button class="primary-button" type="button" data-apply-shared-set="${escapeAttribute(entry.id)}" ${sharedSet ? "" : "disabled"}>${applyLabel}</button>
+                   <button class="secondary-button" type="button" data-unsubscribe-shared-set="${escapeAttribute(entry.id)}">Unsubscribe</button>`
+                : `<button class="secondary-button" type="button" data-subscribe-shared-set="${escapeAttribute(entry.id)}">Subscribe</button>`}
+            </div>
+          </article>
+        `;
+      }).join("");
+
+      elements.sharedSetList.querySelectorAll("[data-subscribe-shared-set]").forEach((button) => {
+        button.addEventListener("click", () => subscribeSharedSet(button.dataset.subscribeSharedSet));
+      });
+      elements.sharedSetList.querySelectorAll("[data-unsubscribe-shared-set]").forEach((button) => {
+        button.addEventListener("click", () => unsubscribeSharedSet(button.dataset.unsubscribeSharedSet));
+      });
+      elements.sharedSetList.querySelectorAll("[data-apply-shared-set]").forEach((button) => {
+        button.addEventListener("click", () => applySharedSet(button.dataset.applySharedSet));
+      });
+    }
+
+    async function subscribeSharedSet(setId) {
+      const catalogEntry = appState.sharedSetCatalog.find((entry) => entry.id === setId);
+      if (!catalogEntry) {
+        showToast("That shared set is no longer in the catalog.", "error");
+        return;
+      }
+      try {
+        const sharedSet = await fetchSharedSet(catalogEntry.url, setId);
+        appState.sharedSetSubscriptions[setId] = {
+          id: setId,
+          name: sharedSet.name,
+          url: catalogEntry.url,
+          cachedSet: sharedSet,
+          checkedAt: new Date().toISOString(),
+          error: ""
+        };
+        saveSharedSetSubscriptions();
+        renderSharedSets();
+        logActivity(`Subscribed to shared set "${sharedSet.name}".`);
+        showToast(`Subscribed to ${sharedSet.name}. Choose Apply Set to add its expansions.`);
+      } catch (error) {
+        showToast(`Could not subscribe: ${error.message}`, "error");
+      }
+    }
+
+    function unsubscribeSharedSet(setId) {
+      const subscription = appState.sharedSetSubscriptions[setId];
+      if (!subscription) return;
+      if (!window.confirm(`Unsubscribe from "${subscription.name || setId}"? Its installed expansions will be kept as personal expansions.`)) return;
+      let detached = false;
+      Object.values(appState.config.rules).forEach((rule) => {
+        if (rule.sharedSet?.setId === setId) {
+          delete rule.sharedSet;
+          detached = true;
+        }
+      });
+      delete appState.sharedSetSubscriptions[setId];
+      saveSharedSetSubscriptions();
+      if (detached) setConfigDirty(true);
+      renderSharedSets();
+      logActivity(`Unsubscribed from shared set "${subscription.name || setId}".`);
+      showToast(`Unsubscribed from ${subscription.name || setId}.`);
+    }
+
+    function applySharedSet(setId) {
+      const subscription = appState.sharedSetSubscriptions[setId];
+      const sharedSet = subscription?.cachedSet;
+      if (!sharedSet || !updateCurrentMappingFromForm(false)) return;
+      const previousConfig = structuredClone(appState.config);
+      try {
+        const desiredEntryIds = new Set(sharedSet.expansions.map((entry) => entry.id));
+        const existingRules = new Map();
+        Object.entries(appState.config.rules).forEach(([ruleId, rule]) => {
+          if (rule.sharedSet?.setId !== setId) return;
+          if (desiredEntryIds.has(rule.sharedSet.entryId)) {
+            existingRules.set(rule.sharedSet.entryId, ruleId);
+          } else {
+            appState.config.rules[ruleId] = createBlankRule();
+          }
+        });
+
+        sharedSet.expansions.forEach((entry) => {
+          const ruleId = existingRules.get(entry.id) || findAvailableSharedSetRuleId();
+          if (!ruleId) throw new Error(`There is not enough room for this set. QuickType supports ${RULE_COUNT} typed expansions.`);
+          appState.config.rules[ruleId] = {
+            ...entry,
+            sharedSet: {
+              setId,
+              entryId: entry.id,
+              revision: sharedSet.revision
+            }
+          };
+        });
+
+        const conflictMessage = validateNoTriggerConflicts();
+        if (conflictMessage) throw new Error(conflictMessage);
+        const payloadSize = serializeConfiguration(appState.config).byteLength;
+        if (payloadSize > MAX_CONFIG_PAYLOAD_BYTES) {
+          throw new Error(`The resulting configuration is ${payloadSize} bytes; the safe limit is ${MAX_CONFIG_PAYLOAD_BYTES}.`);
+        }
+        selectDefaultRuleForEditor();
+        renderAllConfigurationViews();
+        updateCapacityBadge();
+        setConfigDirty(true);
+        renderSharedSets();
+        logActivity(`Applied "${sharedSet.name}" revision ${sharedSet.revision} to the editor.`);
+        showToast(`${sharedSet.name} applied. Use Write to save it to the device.`);
+        showTab("expansionsTab");
+      } catch (error) {
+        appState.config = previousConfig;
+        renderAllConfigurationViews();
+        renderSharedSets();
+        logActivity(`Could not apply shared set: ${error.message}`);
+        showToast(`Could not apply shared set: ${error.message}`, "error");
+      }
+    }
+
+    function findAvailableSharedSetRuleId() {
+      for (let index = 1; index <= RULE_COUNT; index += 1) {
+        const ruleId = `R${String(index).padStart(2, "0")}`;
+        if (!isPrimaryExpansion(appState.config.rules[ruleId])) return ruleId;
+      }
+      return "";
+    }
+
+    function getInstalledSharedSetRevision(setId) {
+      const revisions = Object.values(appState.config.rules)
+        .filter((rule) => rule.sharedSet?.setId === setId)
+        .map((rule) => Number(rule.sharedSet.revision) || 0);
+      return revisions.length ? Math.min(...revisions) : 0;
     }
 
     async function toggleAutoConnect(event) {
@@ -3880,6 +4304,7 @@
       renderPlaceholderList();
       renderTokenGroups();
       updateEditor();
+      renderSharedSets();
     }
 
     function createDefaultConfig() {
