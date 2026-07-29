@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-29T14:47:03-07:00">
+  <meta name="quicktype-build" content="2026-07-29T14:55:25-07:00">
   <title>GhostLever Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -215,8 +215,9 @@
 
     .brand {
       display: flex;
-      align-items: center;
-      gap: 12px;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
       padding: 0 4px 4px;
     }
 
@@ -232,6 +233,22 @@
       font-weight: 900;
       letter-spacing: 0;
       box-shadow: 0 12px 28px rgba(0,0,0,0.24);
+      display: none;
+    }
+
+    .brand-logo-frame {
+      width: 100%;
+      overflow: hidden;
+      border-radius: 10px;
+      background: #091725;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.24);
+      line-height: 0;
+    }
+
+    .brand-logo {
+      display: block;
+      width: 100%;
+      height: auto;
     }
 
     .brand h1 {
@@ -504,6 +521,15 @@
 
     body.nav-collapsed .brand {
       padding: 0;
+      align-items: center;
+    }
+
+    body.nav-collapsed .brand-mark {
+      display: grid;
+    }
+
+    body.nav-collapsed .brand-logo-frame {
+      display: none;
     }
 
     body.nav-collapsed .brand-copy,
@@ -1906,8 +1932,10 @@
     <aside class="sidebar" aria-label="GhostLever navigation">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">GL</div>
+        <div class="brand-logo-frame">
+          <img class="brand-logo" src="./assets/ghostlever-logo.png" alt="GhostLever">
+        </div>
         <div class="brand-copy">
-          <h1>GhostLever</h1>
           <p>More from every input.</p>
         </div>
       </div>
