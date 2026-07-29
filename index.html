@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-29T08:19:50-07:00">
+  <meta name="quicktype-build" content="2026-07-29T08:36:34-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1796,6 +1796,8 @@
       #webSerialNotice,
       .tab-panel:not(#referenceTab),
       .reference-toolbar,
+      .reference-summary,
+      #referenceTab .panel-header p,
       .toast-stack,
       .modal-backdrop {
         display: none !important;
@@ -1816,6 +1818,15 @@
 
       #referenceTab .panel-header {
         padding: 0 0 12px !important;
+      }
+
+      #referenceTab .panel-header h3 {
+        font-size: 0;
+      }
+
+      #referenceTab .panel-header h3::after {
+        content: "QuickType Reference";
+        font-size: 18pt;
       }
 
       .reference-table-wrap {
