@@ -4,8 +4,9 @@
     {
       "id": "quicktype-starter",
       "name": "QuickType Starter Set",
-      "description": "A small example set demonstrating shared expansion updates.",
-      "url": "./quicktype-starter.json"
+      "description": "A small example set demonstrating common expansion updates.",
+      "url": "./quicktype-starter.json",
+      "required": false
     }
   ]
 }

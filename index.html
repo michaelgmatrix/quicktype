@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-29T08:42:26-07:00">
+  <meta name="quicktype-build" content="2026-07-29T13:28:12-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1761,6 +1761,29 @@
       white-space: nowrap;
     }
 
+    .common-rule-badge {
+      display: inline-flex;
+      margin-left: 6px;
+      padding: 2px 5px;
+      border-radius: 999px;
+      color: var(--accent-strong);
+      background: var(--accent-soft);
+      font-size: 0.62rem;
+      font-weight: 900;
+      vertical-align: middle;
+    }
+
+    .managed-rule-notice {
+      margin: 0 0 10px;
+      border-left: 4px solid var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      padding: 9px 10px;
+      border-radius: 0 var(--radius-small) var(--radius-small) 0;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
     .reference-template {
       max-width: 520px;
       white-space: pre-wrap;
@@ -1907,7 +1930,7 @@
         <ul class="sidebar-list">
           <li><button class="active" type="button" data-tab="expansionsTab" title="Expansions"><span class="nav-icon" aria-hidden="true">Aa</span><span class="nav-label">Expansions</span></button></li>
           <li><button type="button" data-tab="referenceTab" title="Expansion Reference"><span class="nav-icon" aria-hidden="true">Ref</span><span class="nav-label">Reference</span></button></li>
-          <li><button type="button" data-tab="sharedSetsTab" title="Shared Sets"><span class="nav-icon" aria-hidden="true">Sets</span><span class="nav-label">Shared Sets</span></button></li>
+          <li><button type="button" data-tab="sharedSetsTab" title="Common Expansions"><span class="nav-icon" aria-hidden="true">Com</span><span class="nav-label">Common Expansions</span></button></li>
           <li><button type="button" data-tab="placeholdersTab" title="Placeholders"><span class="nav-icon" aria-hidden="true">{ }</span><span class="nav-label">Placeholders</span></button></li>
           <li><button type="button" data-tab="rtcTab" title="Date/Time Functions"><span class="nav-icon" aria-hidden="true">DT</span><span class="nav-label">Date/Time Functions</span></button></li>
           <li><button type="button" data-tab="activityTab" title="Device Activity"><span class="nav-icon" aria-hidden="true">Log</span><span class="nav-label">Device Activity</span></button></li>
@@ -1981,7 +2004,7 @@
             <input id="sharedSetEditorDescription" type="text" maxlength="500" autocomplete="off">
           </div>
           <div class="actions">
-            <button id="downloadSharedSetButton" class="primary-button" type="button">Download Set</button>
+            <button id="downloadSharedSetButton" class="primary-button" type="button">Export Common Set</button>
             <button id="exitSharedSetEditorButton" class="secondary-button" type="button">Exit Set Editor</button>
           </div>
         </div>
@@ -2013,10 +2036,11 @@
             <div class="editor-actions">
               <button id="duplicateExpansionButton" class="editor-button" type="button">Duplicate</button>
               <button id="deleteExpansionButton" class="editor-button delete" type="button">Delete</button>
-              <button class="editor-button save" type="submit" form="mappingForm">Save</button>
+              <button id="saveExpansionButton" class="editor-button save" type="submit" form="mappingForm">Save</button>
             </div>
           </div>
           <div class="panel-body">
+            <p id="managedRuleNotice" class="managed-rule-notice hidden">This is a managed common expansion. It is read-only here so common updates cannot overwrite personal edits. Use Clone as Personal to customize it.</p>
             <form id="mappingForm" class="form-grid editor-form" autocomplete="off">
               <div class="two-column editor-fields">
                 <div class="field" id="triggerPatternField">
@@ -2122,22 +2146,22 @@
         <div class="panel">
           <div class="panel-header">
             <div>
-              <h3>Shared Expansion Sets</h3>
-              <p>Subscribe to sets published with this configurator and check for new revisions.</p>
+              <h3>Common Expansions</h3>
+              <p>Load, edit, export, and install a managed set while keeping personal expansions separate.</p>
             </div>
           </div>
           <div class="panel-body">
             <div class="shared-set-toolbar">
-              <p class="helper-text">A set replaces the complete typed and keypad profile after you review personalization values. When connected, Install writes it to QuickType and verifies it by reading the configuration back. When disconnected, Apply replaces the browser editor profile.</p>
+              <p class="helper-text">Installing a common set replaces only expansions previously managed by that set. Personal expansions, keypad actions, device identity, and personalization values are preserved.</p>
               <div class="actions">
-                <button id="createSharedSetButton" class="primary-button" type="button">Create Set</button>
-                <label id="importSharedSetLabel" class="secondary-button" for="importSharedSetFile">Import Set</label>
+                <button id="createSharedSetButton" class="primary-button" type="button">Create Common Set</button>
+                <label id="importSharedSetLabel" class="secondary-button" for="importSharedSetFile">Edit Local Set</label>
                 <input id="importSharedSetFile" class="hidden" type="file" accept="application/json,.json">
-                <button id="refreshSharedSetsButton" class="secondary-button" type="button">Check for Updates</button>
+                <button id="refreshSharedSetsButton" class="secondary-button" type="button">Check Server Sets</button>
               </div>
             </div>
             <div id="sharedSetList" class="shared-set-list" aria-live="polite">
-              <div class="empty-state"><strong>Loading shared sets...</strong></div>
+              <div class="empty-state"><strong>Loading common sets...</strong></div>
             </div>
           </div>
         </div>
@@ -2210,7 +2234,7 @@
     const REQUEST_TIMEOUT_MS = 8000;
     const MAX_CONFIG_PAYLOAD_BYTES = 30000;
     const MAX_CONFIG_RULES = 128;
-    const SHARED_SETS_ENABLED = false;
+    const SHARED_SETS_ENABLED = true;
     const SHARED_SET_CATALOG_PATH = "./expansion-sets/catalog.json";
     const SHARED_SET_SUBSCRIPTIONS_KEY = "quicktype-shared-set-subscriptions-v1";
     const QUICKTYPE_USB_FILTERS = [
@@ -2394,6 +2418,8 @@
       elements.configModeDescription = document.getElementById("configModeDescription");
       elements.duplicateExpansionButton = document.getElementById("duplicateExpansionButton");
       elements.deleteExpansionButton = document.getElementById("deleteExpansionButton");
+      elements.saveExpansionButton = document.getElementById("saveExpansionButton");
+      elements.managedRuleNotice = document.getElementById("managedRuleNotice");
       elements.placeholderNameTab = document.getElementById("placeholderNameTab");
       elements.placeholderValueTab = document.getElementById("placeholderValueTab");
       elements.addPlaceholderButtonTab = document.getElementById("addPlaceholderButtonTab");
@@ -2616,7 +2642,7 @@
           JSON.stringify(appState.sharedSetSubscriptions)
         );
       } catch {
-        showToast("Shared set subscriptions could not be saved in this browser.", "error");
+        showToast("Common set subscriptions could not be saved in this browser.", "error");
       }
     }
 
@@ -2643,9 +2669,25 @@
             id,
             name: name.slice(0, 80),
             description: String(entry.description || "").slice(0, 300),
-            url: new URL(entry.url, catalogUrl).href
+            url: new URL(entry.url, catalogUrl).href,
+            required: entry.required === true
           };
         });
+
+        appState.sharedSetCatalog
+          .filter((entry) => entry.required)
+          .forEach((entry) => {
+            if (!appState.sharedSetSubscriptions[entry.id]) {
+              appState.sharedSetSubscriptions[entry.id] = {
+                id: entry.id,
+                name: entry.name,
+                url: entry.url,
+                cachedSet: null,
+                checkedAt: "",
+                error: ""
+              };
+            }
+          });
 
         await Promise.all(Object.values(appState.sharedSetSubscriptions).map(async (subscription) => {
           const catalogEntry = appState.sharedSetCatalog.find((entry) => entry.id === subscription.id);
@@ -2664,11 +2706,11 @@
           }
         }));
         saveSharedSetSubscriptions();
-        if (!silent) showToast("Shared sets checked for updates.");
+        if (!silent) showToast("Common sets checked for updates.");
       } catch (error) {
         appState.sharedSetCatalogError = error.message;
-        if (!silent) showToast(`Could not load shared sets: ${error.message}`, "error");
-        logActivity(`Shared set catalog unavailable: ${error.message}`);
+        if (!silent) showToast(`Could not load common sets: ${error.message}`, "error");
+        logActivity(`Common set catalog unavailable: ${error.message}`);
       } finally {
         elements.refreshSharedSetsButton.disabled = false;
         renderSharedSets();
@@ -2802,9 +2844,9 @@
 
       if (!entries.length) {
         const message = appState.sharedSetCatalogError
-          ? `Shared sets could not be loaded: ${appState.sharedSetCatalogError}. If this page was opened as a local file, use a web-hosted copy instead.`
-          : "No shared expansion sets are currently published.";
-        elements.sharedSetList.innerHTML = `<div class="empty-state"><strong>Shared sets unavailable</strong><span>${escapeHtml(message)}</span></div>`;
+          ? `Common sets could not be loaded: ${appState.sharedSetCatalogError}. If this page was opened as a local file, use a web-hosted copy instead.`
+          : "No common expansion sets are currently published.";
+        elements.sharedSetList.innerHTML = `<div class="empty-state"><strong>Common sets unavailable</strong><span>${escapeHtml(message)}</span></div>`;
         return;
       }
 
@@ -2812,13 +2854,14 @@
         const subscription = appState.sharedSetSubscriptions[entry.id];
         const sharedSet = subscription?.cachedSet;
         const installedRevision = getInstalledSharedSetRevision(entry.id);
+        const installedMatches = sharedSet ? sharedSetIsPresentInConfiguration(appState.config, sharedSet) : false;
         const applyLabel = appState.isConnected
           ? (!installedRevision
             ? "Install on Device"
-            : installedRevision < (sharedSet?.revision || 0) ? "Install Update" : "Reinstall")
+            : !installedMatches ? "Install Update" : "Reinstall")
           : (!installedRevision
             ? "Apply Set"
-            : installedRevision < (sharedSet?.revision || 0) ? "Apply Update" : "Reapply");
+            : !installedMatches ? "Apply Update" : "Reapply");
         const installedLocation = appState.isConnected ? "device" : "editor";
         let status = "Available";
         let statusClass = "";
@@ -2826,10 +2869,10 @@
           status = `Update check failed; cached revision ${sharedSet?.revision || "unavailable"}`;
         } else if (subscription && !sharedSet) {
           status = "Subscribed; waiting for first download";
-        } else if (sharedSet && installedRevision < sharedSet.revision) {
+        } else if (sharedSet && !installedMatches) {
           status = installedRevision
-            ? `Revision ${sharedSet.revision} available; ${installedLocation} has revision ${installedRevision}`
-            : `Revision ${sharedSet.revision} ready to ${appState.isConnected ? "install" : "apply"}`;
+            ? `A changed common set is available; ${installedLocation} has revision ${installedRevision}`
+            : `Common set ready to ${appState.isConnected ? "install" : "apply"}`;
           statusClass = "update";
         } else if (sharedSet) {
           status = `Revision ${sharedSet.revision} is loaded on the ${installedLocation}`;
@@ -2845,9 +2888,9 @@
             <div class="actions">
               ${subscription
                 ? `<button class="primary-button" type="button" data-apply-shared-set="${escapeAttribute(entry.id)}" ${sharedSet ? "" : "disabled"}>${applyLabel}</button>
-                   <button class="secondary-button" type="button" data-unsubscribe-shared-set="${escapeAttribute(entry.id)}">Unsubscribe</button>`
+                   ${entry.required ? "" : `<button class="secondary-button" type="button" data-unsubscribe-shared-set="${escapeAttribute(entry.id)}">Unsubscribe</button>`}`
                 : `<button class="secondary-button" type="button" data-subscribe-shared-set="${escapeAttribute(entry.id)}">Subscribe</button>`}
-              <button class="secondary-button" type="button" data-edit-shared-set="${escapeAttribute(entry.id)}" ${appState.isConnected || appState.sharedSetEditSession ? "disabled" : ""} title="${appState.isConnected ? "Disconnect the device before editing a shared set" : "Edit with the existing expansion editor"}">Edit Set</button>
+              <button class="secondary-button" type="button" data-edit-shared-set="${escapeAttribute(entry.id)}" ${appState.isConnected || appState.sharedSetEditSession ? "disabled" : ""} title="${appState.isConnected ? "Disconnect the device before editing a common set" : "Edit with the existing expansion editor"}">Edit Set</button>
             </div>
           </article>
         `;
@@ -2878,7 +2921,7 @@
       }
       const catalogEntry = appState.sharedSetCatalog.find((entry) => entry.id === setId);
       if (!catalogEntry) {
-        showToast("That shared set is no longer in the catalog.", "error");
+        showToast("That common set is no longer in the catalog.", "error");
         return;
       }
       try {
@@ -2893,7 +2936,7 @@
         };
         saveSharedSetSubscriptions();
         renderSharedSets();
-        logActivity(`Subscribed to shared set "${sharedSet.name}".`);
+        logActivity(`Subscribed to common set "${sharedSet.name}".`);
         showToast(`Subscribed to ${sharedSet.name}. Choose ${appState.isConnected ? "Install on Device" : "Apply Set"} to preview its profile.`);
       } catch (error) {
         showToast(`Could not subscribe: ${error.message}`, "error");
@@ -2904,8 +2947,8 @@
       if (!ensureSharedSetEditingAvailable()) return;
       startSharedSetEditor({
         format: "quicktype-set/v2",
-        id: "new-shared-set",
-        name: "New Shared Set",
+        id: "new-common-set",
+        name: "New Common Set",
         description: "",
         revision: 0,
         updatedAt: "",
@@ -2922,9 +2965,9 @@
       try {
         const sharedSet = normalizeSharedSet(JSON.parse(await file.text()));
         startSharedSetEditor(sharedSet, false);
-        logActivity(`Opened shared set ${file.name} for editing.`);
+        logActivity(`Opened common set ${file.name} for editing.`);
       } catch (error) {
-        showToast(`Could not open shared set: ${error.message}`, "error");
+        showToast(`Could not open common set: ${error.message}`, "error");
       }
     }
 
@@ -2935,15 +2978,15 @@
       try {
         const sharedSet = cachedSet || await fetchSharedSet(catalogEntry?.url, setId);
         startSharedSetEditor(sharedSet, false);
-        logActivity(`Opened shared set "${sharedSet.name}" for editing.`);
+        logActivity(`Opened common set "${sharedSet.name}" for editing.`);
       } catch (error) {
-        showToast(`Could not open shared set: ${error.message}`, "error");
+        showToast(`Could not open common set: ${error.message}`, "error");
       }
     }
 
     function ensureSharedSetEditingAvailable() {
       if (appState.isConnected || appState.isConnecting) {
-        showToast("Disconnect the QuickType device before managing shared set contents.", "error");
+        showToast("Disconnect the QuickType device before managing common set contents.", "error");
         return false;
       }
       if (appState.sharedSetEditSession) {
@@ -3001,7 +3044,7 @@
     function updateSharedSetEditingUi() {
       const editing = Boolean(appState.sharedSetEditSession);
       elements.sharedSetEditorBanner.classList.toggle("hidden", !editing);
-      elements.exportButton.textContent = editing ? "Download Set" : "Export";
+      elements.exportButton.textContent = editing ? "Export Common Set" : "Export";
       elements.configImportLabel.classList.toggle("hidden", editing);
       elements.factoryResetButton.disabled = editing;
       elements.createSharedSetButton.disabled = editing || appState.isConnected;
@@ -3009,10 +3052,10 @@
       elements.importSharedSetLabel.classList.toggle("disabled", editing || appState.isConnected);
       const title = document.querySelector(".title-block h2");
       const description = document.querySelector(".title-block p");
-      if (title) title.textContent = editing ? "Shared Set Editor" : "Expansion Configurator";
+      if (title) title.textContent = editing ? "Common Set Editor" : "Expansion Configurator";
       if (description) {
         description.textContent = editing
-          ? "Edit this full profile's typed expansions, keypad assignments, and placeholder defaults, then download its versioned JSON file."
+          ? "Edit managed common expansions and placeholder defaults, then export one publishable JSON file."
           : "Configure typed trigger strings and direct 19-key keypad actions using expansion text, placeholders, shortcuts, or clock output.";
       }
       updateDeviceControls();
@@ -3031,7 +3074,7 @@
         return;
       }
       if (!name) {
-        showToast("Enter a name for the shared set.", "error");
+        showToast("Enter a name for the common set.", "error");
         elements.sharedSetEditorName.focus();
         return;
       }
@@ -3111,8 +3154,8 @@
       link.click();
       URL.revokeObjectURL(url);
       setConfigDirty(false);
-      logActivity(`Downloaded shared set "${name}" revision ${revision}.`);
-      showToast(`${id}.json downloaded. Upload it to the expansion-sets folder to publish it.`);
+      logActivity(`Exported common set "${name}" revision ${revision}.`);
+      showToast(`${id}.json exported and ready to publish.`);
     }
 
     function uniqueSharedSetEntryId(value, usedIds) {
@@ -3169,7 +3212,7 @@
       saveSharedSetSubscriptions();
       if (detached) setConfigDirty(true);
       renderSharedSets();
-      logActivity(`Unsubscribed from shared set "${subscription.name || setId}".`);
+      logActivity(`Unsubscribed from common set "${subscription.name || setId}".`);
       showToast(`Unsubscribed from ${subscription.name || setId}.`);
     }
 
@@ -3224,8 +3267,8 @@
       showModal(`${action}: ${sharedSet.name}`, `
         <form id="sharedSetInstallForm" class="shared-set-install-form">
           <div class="notice">
-            <strong>This replaces the complete expansion profile.</strong>
-            <span>${sharedSet.typedExpansions.length} typed expansion${sharedSet.typedExpansions.length === 1 ? "" : "s"} and ${sharedSet.keypadExpansions.length} keypad assignment${sharedSet.keypadExpansions.length === 1 ? "" : "s"} will replace the current rules. Unlisted keypad keys will be cleared. Device name and color will be preserved.</span>
+            <strong>This updates only managed common expansions.</strong>
+            <span>${sharedSet.typedExpansions.length} typed expansion${sharedSet.typedExpansions.length === 1 ? "" : "s"} and ${sharedSet.keypadExpansions.length} keypad assignment${sharedSet.keypadExpansions.length === 1 ? "" : "s"} belong to this common set. Personal expansions, unrelated keypad actions, device name, and color will be preserved.</span>
           </div>
           <div class="shared-set-placeholder-heading">
             <div>
@@ -3274,19 +3317,37 @@
     }
 
     function buildConfigurationFromSharedSet(sharedSet, placeholders, currentConfig) {
-      const replacement = createDefaultConfig();
-      replacement.deviceName = normalizeDeviceName(currentConfig.deviceName);
-      replacement.deviceColor = normalizeDeviceColor(currentConfig.deviceColor);
-      replacement.profileName = sharedSet.name;
-      replacement.targetOs = currentConfig.targetOs || "windows";
-      replacement.placeholders = normalizePlaceholders(placeholders);
-      replacement.sharedSetInstallation = {
+      const merged = structuredClone(currentConfig);
+      merged.placeholders = normalizePlaceholders(placeholders);
+      merged.sharedSetInstallation = {
         setId: sharedSet.id,
         revision: sharedSet.revision
       };
-      sharedSet.typedExpansions.forEach((entry, index) => {
-        const ruleId = `R${String(index + 1).padStart(2, "0")}`;
-        replacement.rules[ruleId] = {
+
+      const priorSlots = new Map();
+      Object.entries(merged.rules || {}).forEach(([ruleId, rule]) => {
+        if (rule?.sharedSet?.setId !== sharedSet.id) return;
+        if (rule.sharedSet.entryId) priorSlots.set(rule.sharedSet.entryId, ruleId);
+        merged.rules[ruleId] = rule.trigger === "key"
+          ? createKeypadRule(rule.triggerPattern)
+          : createBlankRule();
+      });
+
+      const reserveTypedSlot = (entry) => {
+        const priorRuleId = priorSlots.get(entry.id);
+        if (priorRuleId?.startsWith("R") && !isPrimaryExpansion(merged.rules[priorRuleId])) {
+          return priorRuleId;
+        }
+        for (let index = 1; index <= RULE_COUNT; index += 1) {
+          const ruleId = `R${String(index).padStart(2, "0")}`;
+          if (!isPrimaryExpansion(merged.rules[ruleId])) return ruleId;
+        }
+        throw new Error(`There is no free rule slot for common expansion "${entry.label || entry.id}".`);
+      };
+
+      sharedSet.typedExpansions.forEach((entry) => {
+        const ruleId = reserveTypedSlot(entry);
+        merged.rules[ruleId] = {
           ...entry,
           sharedSet: {
             setId: sharedSet.id,
@@ -3296,7 +3357,13 @@
         };
       });
       sharedSet.keypadExpansions.forEach((entry) => {
-        replacement.rules[keypadRuleId(entry.triggerPattern)] = {
+        const ruleId = keypadRuleId(entry.triggerPattern);
+        const currentRule = merged.rules[ruleId];
+        const currentIsActive = currentRule && currentRule.type !== "disabled";
+        if (currentIsActive && currentRule.sharedSet?.setId !== sharedSet.id) {
+          throw new Error(`Numpad key "${referenceTriggerLabel(entry)}" already has a personal assignment.`);
+        }
+        merged.rules[ruleId] = {
           ...createKeypadRule(entry.triggerPattern),
           ...entry,
           sharedSet: {
@@ -3306,7 +3373,7 @@
           }
         };
       });
-      return replacement;
+      return merged;
     }
 
     async function performSharedSetReplacement(sharedSet, placeholders) {
@@ -3329,8 +3396,8 @@
           selectDefaultRuleForEditor();
           renderAllConfigurationViews();
           updateCapacityBadge();
-          logActivity(`Replaced the editor profile with "${sharedSet.name}" revision ${sharedSet.revision}.`);
-          showToast(`${sharedSet.name} replaced the editor profile.`);
+          logActivity(`Updated common expansions from "${sharedSet.name}" revision ${sharedSet.revision}; personal rules were preserved.`);
+          showToast(`${sharedSet.name} updated; personal expansions were preserved.`);
           showTab("expansionsTab");
         }
       } catch (error) {
@@ -3353,8 +3420,8 @@
         setConfigDirty(restoredDirty);
         renderSharedSets();
         const action = appState.isConnected ? "install" : "apply";
-        logActivity(`Could not ${action} shared set: ${error.message}`);
-        showToast(`Could not ${action} shared set: ${error.message}`, "error");
+        logActivity(`Could not ${action} common set: ${error.message}`);
+        showToast(`Could not ${action} common set: ${error.message}`, "error");
       }
     }
 
@@ -3370,7 +3437,7 @@
       const verification = await sendDeviceCommand("get-config", {}, 15000);
       const verifiedConfig = normalizeImportedConfiguration(verification.data);
       if (!sharedSetIsPresentInConfiguration(verifiedConfig, sharedSet)) {
-        throw new Error("QuickType accepted the configuration, but the shared set was not present when read back.");
+        throw new Error("QuickType accepted the configuration, but the common set was not present when read back.");
       }
       appState.config = verifiedConfig;
       recordDeviceStorageUsage(verification.data);
@@ -3387,17 +3454,33 @@
 
     function sharedSetIsPresentInConfiguration(config, sharedSet) {
       const installation = config.sharedSetInstallation;
-      if (installation?.setId !== sharedSet.id || Number(installation.revision) !== sharedSet.revision) {
+      if (installation?.setId !== sharedSet.id) {
         return false;
       }
       const installedEntries = new Map(
         Object.values(config.rules || {})
           .filter((rule) => rule.sharedSet?.setId === sharedSet.id)
-          .map((rule) => [rule.sharedSet.entryId, Number(rule.sharedSet.revision) || 0])
+          .map((rule) => [rule.sharedSet.entryId, comparableCommonRule(rule)])
       );
       const expectedEntries = [...sharedSet.typedExpansions, ...sharedSet.keypadExpansions];
       return installedEntries.size === expectedEntries.length &&
-        expectedEntries.every((entry) => installedEntries.get(entry.id) === sharedSet.revision);
+        expectedEntries.every((entry) =>
+          JSON.stringify(installedEntries.get(entry.id)) === JSON.stringify(comparableCommonRule(entry))
+        );
+    }
+
+    function comparableCommonRule(rule) {
+      return {
+        type: normalizeActionType(rule.type),
+        trigger: normalizeTriggerMode(rule.trigger),
+        triggerPattern: String(rule.triggerPattern || ""),
+        triggerScope: String(rule.triggerScope || "any"),
+        label: String(rule.label || ""),
+        text: String(rule.text || ""),
+        steps: Array.isArray(rule.steps) ? rule.steps : [],
+        preDelay: normalizeNumber(rule.preDelay, 0),
+        keyDelay: normalizeNumber(rule.keyDelay, 5)
+      };
     }
 
     function getInstalledSharedSetRevision(setId) {
@@ -3484,7 +3567,7 @@
 
     async function requestDeviceConnection() {
       if (appState.sharedSetEditSession) {
-        showToast("Exit the shared set editor before connecting a device.", "error");
+        showToast("Exit the common set editor before connecting a device.", "error");
         return;
       }
       if (!("serial" in navigator)) {
@@ -3601,7 +3684,7 @@
 
     async function connectDevice(port) {
       if (appState.sharedSetEditSession) {
-        throw new Error("Exit the shared set editor before connecting a device.");
+        throw new Error("Exit the common set editor before connecting a device.");
       }
       if (appState.isConnected) {
         if (appState.port === port) return;
@@ -3652,10 +3735,29 @@
         logActivity(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"} (Mode: ${connMode}, Keyboard Connected: ${connDev}).`);
         showToast(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
         await readDeviceConfiguration({ automatic: true });
+        await syncRequiredCommonSets();
         await syncDeviceClock({ silent: true });
       } finally {
         appState.isConnecting = false;
         updateDeviceControls();
+      }
+    }
+
+    async function syncRequiredCommonSets() {
+      if (!SHARED_SETS_ENABLED || !appState.isConnected) return;
+      await refreshSharedSets(true);
+      const requiredEntries = appState.sharedSetCatalog.filter((entry) => entry.required);
+      for (const entry of requiredEntries) {
+        const sharedSet = appState.sharedSetSubscriptions[entry.id]?.cachedSet;
+        if (!sharedSet || sharedSetIsPresentInConfiguration(appState.config, sharedSet)) continue;
+        const placeholders = {
+          ...Object.fromEntries(
+            Object.entries(sharedSet.placeholderDefinitions || {}).map(([name, definition]) => [name, definition.default || ""])
+          ),
+          ...normalizePlaceholders(appState.config.placeholders || {})
+        };
+        logActivity(`Common expansion update found: "${sharedSet.name}" revision ${sharedSet.revision}.`);
+        await performSharedSetReplacement(sharedSet, placeholders);
       }
     }
 
@@ -4285,7 +4387,7 @@
           ? `${appState.availablePorts.length} serial ports available`
           : "No device connected");
       elements.connectButton.disabled = editingSharedSet || appState.isConnected || appState.isConnecting || !("serial" in navigator);
-      elements.connectButton.title = editingSharedSet ? "Exit the shared set editor before connecting a device." : "";
+      elements.connectButton.title = editingSharedSet ? "Exit the common set editor before connecting a device." : "";
       elements.autoConnectToggle.disabled = editingSharedSet || appState.isConnecting || appState.isDisconnecting || !("serial" in navigator);
       elements.disconnectButton.disabled = !appState.isConnected || appState.isDisconnecting;
       elements.readButton.disabled = !appState.isConnected;
@@ -4427,12 +4529,12 @@
         button.classList.toggle("active", button.dataset.configMode === appState.configMode);
       });
       elements.configModeTitle.textContent = appState.sharedSetEditSession
-        ? (keypadMode ? "Shared Set Keypad" : "Shared Set Typed Expansions")
+        ? (keypadMode ? "Common Set Keypad" : "Common Set Typed Expansions")
         : (keypadMode ? "Numeric Keypad" : "Trigger Strings");
       elements.configModeDescription.textContent = appState.sharedSetEditSession
         ? (keypadMode
           ? "These keypad assignments are included in the profile; unassigned keys will be cleared when the set is installed."
-          : "These typed expansions are included in the profile; Download Set creates the publishable JSON file.")
+          : "These typed expansions are included in the set; Export Common Set creates the publishable JSON file.")
         : (keypadMode ? "Click a key to edit its action." : "Replace trigger strings typed on a full keyboard or keypad.");
       elements.addExpansionButton.classList.toggle("hidden", keypadMode);
 
@@ -4471,9 +4573,12 @@
         button.className = "key-button";
         button.classList.toggle("active", ruleId === appState.selectedRule);
         const missingTrigger = !mapping.triggerPattern;
+        const managedBadge = mapping.sharedSet?.setId
+          ? `<span class="common-rule-badge" title="Managed by ${escapeAttribute(mapping.sharedSet.setId)}">Common</span>`
+          : "";
         button.innerHTML = `
           <span class="key-number${missingTrigger ? " missing" : ""}">${escapeHtml(mapping.triggerPattern || "Needs trigger")}</span>
-          <span class="key-meta">${escapeHtml(mapping.label || "Unassigned")}</span>
+          <span class="key-meta">${escapeHtml(mapping.label || "Unassigned")}${managedBadge}</span>
           <span class="key-action">${escapeHtml(compactSnippet(mapping.text || mapping.steps?.map((step) => step.value).join(" ") || ""))}</span>
         `;
         button.addEventListener("click", () => selectKey(ruleId));
@@ -4688,6 +4793,10 @@
     function addExpansionRule() {
       const ruleId = findFirstAvailableRuleId();
       const mapping = getMapping(ruleId);
+      if (isPrimaryExpansion(mapping)) {
+        showToast(`All ${RULE_COUNT} typed expansion slots are in use. Delete an expansion before adding another.`, "error");
+        return;
+      }
       mapping.type = "expansion";
       mapping.trigger = "suffix";
       mapping.triggerPattern = "";
@@ -4710,7 +4819,17 @@
     function duplicateExpansionRule() {
       if (appState.configMode === "keypad") return;
       const source = structuredClone(getMapping(appState.selectedRule));
+      const copyingManagedRule = isManagedCommonRule(source) && !appState.sharedSetEditSession;
+      if (copyingManagedRule) {
+        delete source.sharedSet;
+        delete source.sharedSetEntryId;
+        delete source.id;
+      }
       const ruleId = findFirstAvailableRuleId();
+      if (isPrimaryExpansion(getMapping(ruleId))) {
+        showToast(`All ${RULE_COUNT} typed expansion slots are in use. Delete an expansion before cloning another.`, "error");
+        return;
+      }
       appState.config.rules[ruleId] = {
         ...source,
         triggerPattern: "",
@@ -4721,11 +4840,17 @@
       renderAllConfigurationViews();
       elements.triggerPattern.focus();
       setConfigDirty(true);
-      showToast("Expansion duplicated. Add a new trigger string before saving.");
+      showToast(copyingManagedRule
+        ? "Common expansion cloned as personal. Add a new trigger string before saving."
+        : "Expansion duplicated. Add a new trigger string before saving.");
     }
 
     function deleteExpansionRule() {
       const mapping = getMapping(appState.selectedRule);
+      if (isManagedCommonRule(mapping) && !appState.sharedSetEditSession) {
+        showToast("Managed common expansions cannot be deleted here.", "error");
+        return;
+      }
       const keypadMode = appState.configMode === "keypad";
       const displayName = keypadMode ? mapping.triggerPattern : expansionDisplayName(mapping);
       if (!window.confirm(`${keypadMode ? "Clear" : "Delete"} "${displayName}"?`)) {
@@ -4929,6 +5054,7 @@
     function updateEditor() {
       const mapping = getMapping(appState.selectedRule);
       const keypadMode = appState.configMode === "keypad";
+      const managedAndLocked = isManagedCommonRule(mapping) && !appState.sharedSetEditSession;
       const keypadKey = KEYPAD_KEYS.find((key) => key.id === mapping.triggerPattern);
       elements.editorTitle.textContent = keypadMode
         ? `${keypadKey?.label || mapping.triggerPattern} Key Action`
@@ -4946,7 +5072,27 @@
       elements.triggerModeField.classList.toggle("hidden", keypadMode);
       elements.triggerScopeField.classList.toggle("hidden", keypadMode);
       elements.duplicateExpansionButton.classList.toggle("hidden", keypadMode);
+      elements.duplicateExpansionButton.textContent = managedAndLocked ? "Clone as Personal" : "Duplicate";
       elements.deleteExpansionButton.textContent = keypadMode ? "Clear Key" : "Delete";
+      elements.managedRuleNotice.classList.toggle("hidden", !managedAndLocked);
+      [
+        elements.triggerMode,
+        elements.triggerPattern,
+        elements.triggerScope,
+        elements.macroName,
+        elements.macroText,
+        elements.insertFieldSelect,
+        elements.scrubBulletsButton,
+        elements.preDelay,
+        elements.keyDelay,
+        elements.deleteExpansionButton,
+        elements.saveExpansionButton
+      ].forEach((control) => {
+        if (control) control.disabled = managedAndLocked;
+      });
+      document.querySelectorAll(".insert-bullet-btn").forEach((button) => {
+        button.disabled = managedAndLocked;
+      });
       updateEditorHints();
     }
 
@@ -4962,6 +5108,10 @@
 
     function updateCurrentMappingFromForm(announceSave) {
       const mapping = getMapping(appState.selectedRule);
+      if (isManagedCommonRule(mapping) && !appState.sharedSetEditSession) {
+        if (announceSave) showToast("Managed common expansions are read-only.", "error");
+        return !announceSave;
+      }
       const before = JSON.stringify(mapping);
       const hasAction = Boolean(elements.macroText.value.trim());
       mapping.type = hasAction ? "expansion" : "disabled";
@@ -4999,6 +5149,10 @@
         showToast(appState.configMode === "keypad" ? "Key action saved." : "Expansion saved.");
       }
       return true;
+    }
+
+    function isManagedCommonRule(mapping) {
+      return Boolean(mapping?.sharedSet?.setId && mapping.sharedSet?.entryId);
     }
 
     function validateNoTriggerConflicts() {

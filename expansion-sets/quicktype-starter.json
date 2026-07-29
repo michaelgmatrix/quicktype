@@ -2,9 +2,9 @@
   "format": "quicktype-set/v2",
   "id": "quicktype-starter",
   "name": "QuickType Starter Set",
-  "description": "Common writing helpers and examples for getting started with shared sets.",
-  "revision": 2,
-  "updatedAt": "2026-07-28T11:39:25-07:00",
+  "description": "Common writing helpers and examples for getting started with common sets.",
+  "revision": 3,
+  "updatedAt": "2026-07-29T13:27:58-07:00",
   "typedExpansions": [
     {
       "id": "today",
