@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-29T08:39:54-07:00">
+  <meta name="quicktype-build" content="2026-07-29T08:42:26-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1722,7 +1722,7 @@
 
     .reference-table {
       width: 100%;
-      min-width: 880px;
+      min-width: 640px;
       border-collapse: collapse;
       text-align: left;
       font-size: 0.82rem;
@@ -1766,11 +1766,6 @@
       white-space: pre-wrap;
       overflow-wrap: anywhere;
       line-height: 1.45;
-    }
-
-    .reference-meta {
-      color: var(--muted);
-      white-space: nowrap;
     }
 
     @media print {
@@ -1840,11 +1835,6 @@
 
       .reference-table th {
         position: static;
-      }
-
-      .reference-activation,
-      .reference-timing {
-        display: none !important;
       }
 
       .reference-section + .reference-section {
@@ -4602,23 +4592,16 @@
                     <th>${group.triggerHeading}</th>
                     <th>Label</th>
                     <th>Expansion Template</th>
-                    <th class="reference-activation">Activation</th>
-                    <th class="reference-timing">Timing</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${group.entries.map(({ mapping, kind }) => {
+                  ${group.entries.map(({ mapping }) => {
                     const template = mapping.text || mapping.steps?.map((step) => step.value).join(" ") || "(no contents)";
-                    const activation = kind === "keypad"
-                      ? "Key press · Numpad"
-                      : `${referenceTriggerModeLabel(mapping.trigger)} · ${referenceScopeLabel(mapping.triggerScope)}`;
                     return `
                       <tr>
                         <td><span class="reference-trigger">${escapeHtml(referenceTriggerLabel(mapping))}</span></td>
                         <td>${escapeHtml(mapping.label || "Unlabeled")}</td>
                         <td><div class="reference-template">${escapeHtml(template)}</div></td>
-                        <td class="reference-meta reference-activation">${escapeHtml(activation)}</td>
-                        <td class="reference-meta reference-timing">Pre ${normalizeNumber(mapping.preDelay, 0)}ms<br>Keys ${normalizeNumber(mapping.keyDelay, 5)}ms</td>
                       </tr>
                     `;
                   }).join("")}
@@ -4633,22 +4616,6 @@
       if (mapping.trigger !== "key") return mapping.triggerPattern || "(missing trigger)";
       const key = KEYPAD_KEYS.find((entry) => entry.id === mapping.triggerPattern);
       return key ? `${key.label}${key.sublabel ? ` ${key.sublabel}` : ""}` : mapping.triggerPattern;
-    }
-
-    function referenceTriggerModeLabel(mode) {
-      return {
-        suffix: "After trigger",
-        delimiter: "After delimiter",
-        instant: "Immediately"
-      }[normalizeTriggerMode(mode)] || "After trigger";
-    }
-
-    function referenceScopeLabel(scope) {
-      return {
-        any: "Any keyboard",
-        keyboard: "Regular keyboard",
-        numpad: "Numpad"
-      }[scope] || "Any keyboard";
     }
 
     function keypadRuleId(keyName) {
