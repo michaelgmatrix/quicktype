@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-29T08:02:48-07:00">
+  <meta name="quicktype-build" content="2026-07-29T08:19:50-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1710,6 +1710,16 @@
       border-radius: var(--radius-small);
     }
 
+    .reference-section + .reference-section {
+      margin-top: 18px;
+    }
+
+    .reference-section h4 {
+      margin: 0 0 8px;
+      color: var(--ink);
+      font-size: 0.92rem;
+    }
+
     .reference-table {
       width: 100%;
       min-width: 880px;
@@ -1819,6 +1829,16 @@
 
       .reference-table th {
         position: static;
+      }
+
+      .reference-activation,
+      .reference-timing {
+        display: none !important;
+      }
+
+      .reference-section + .reference-section {
+        margin-top: 22px;
+        break-before: page;
       }
     }
 
@@ -4539,38 +4559,60 @@
         return;
       }
 
-      elements.referenceContent.innerHTML = `
-        <div class="reference-table-wrap">
-          <table class="reference-table">
-            <thead>
-              <tr>
-                <th>Trigger / Key</th>
-                <th>Label</th>
-                <th>Expansion Template</th>
-                <th>Activation</th>
-                <th>Timing</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${visibleEntries.map(({ mapping, kind }) => {
-                const template = mapping.text || mapping.steps?.map((step) => step.value).join(" ") || "(no contents)";
-                const activation = kind === "keypad"
-                  ? "Key press · Numpad"
-                  : `${referenceTriggerModeLabel(mapping.trigger)} · ${referenceScopeLabel(mapping.triggerScope)}`;
-                return `
+      const groups = [
+        {
+          kind: "typed",
+          title: "Typed Expansions",
+          triggerHeading: "Trigger"
+        },
+        {
+          kind: "keypad",
+          title: "Numpad Actions",
+          triggerHeading: "Numpad Key"
+        }
+      ];
+
+      elements.referenceContent.innerHTML = groups
+        .map((group) => ({
+          ...group,
+          entries: visibleEntries.filter((entry) => entry.kind === group.kind)
+        }))
+        .filter((group) => group.entries.length)
+        .map((group) => `
+          <section class="reference-section" data-reference-kind="${group.kind}">
+            <h4>${group.title}</h4>
+            <div class="reference-table-wrap">
+              <table class="reference-table">
+                <thead>
                   <tr>
-                    <td><span class="reference-trigger">${escapeHtml(referenceTriggerLabel(mapping))}</span></td>
-                    <td>${escapeHtml(mapping.label || "Unlabeled")}</td>
-                    <td><div class="reference-template">${escapeHtml(template)}</div></td>
-                    <td class="reference-meta">${escapeHtml(activation)}</td>
-                    <td class="reference-meta">Pre ${normalizeNumber(mapping.preDelay, 0)}ms<br>Keys ${normalizeNumber(mapping.keyDelay, 5)}ms</td>
+                    <th>${group.triggerHeading}</th>
+                    <th>Label</th>
+                    <th>Expansion Template</th>
+                    <th class="reference-activation">Activation</th>
+                    <th class="reference-timing">Timing</th>
                   </tr>
-                `;
-              }).join("")}
-            </tbody>
-          </table>
-        </div>
-      `;
+                </thead>
+                <tbody>
+                  ${group.entries.map(({ mapping, kind }) => {
+                    const template = mapping.text || mapping.steps?.map((step) => step.value).join(" ") || "(no contents)";
+                    const activation = kind === "keypad"
+                      ? "Key press · Numpad"
+                      : `${referenceTriggerModeLabel(mapping.trigger)} · ${referenceScopeLabel(mapping.triggerScope)}`;
+                    return `
+                      <tr>
+                        <td><span class="reference-trigger">${escapeHtml(referenceTriggerLabel(mapping))}</span></td>
+                        <td>${escapeHtml(mapping.label || "Unlabeled")}</td>
+                        <td><div class="reference-template">${escapeHtml(template)}</div></td>
+                        <td class="reference-meta reference-activation">${escapeHtml(activation)}</td>
+                        <td class="reference-meta reference-timing">Pre ${normalizeNumber(mapping.preDelay, 0)}ms<br>Keys ${normalizeNumber(mapping.keyDelay, 5)}ms</td>
+                      </tr>
+                    `;
+                  }).join("")}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        `).join("");
     }
 
     function referenceTriggerLabel(mapping) {
