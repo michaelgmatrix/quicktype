@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.122 (2026-07-29)
+// QuickType firmware version: 0.2.121 (2026-07-27)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -58,7 +58,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.122"; // v0.2.122: Pass keys through when numpad expansions are disabled
+static constexpr char FIRMWARE_VERSION[] = "0.2.121"; // v0.2.121: Use the correct I2C1 controller for the RTC on GPIO6/GPIO7
 static constexpr uint8_t NEOPIXEL_PIN = 16;
 static Adafruit_NeoPixel statusLed(1, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 static bool statusLedInitialized = false;
@@ -2335,12 +2335,12 @@ void handleKeyboardReport(hid_keyboard_report_t const* report) {
       continue;
     }
 
-    if (storedConfigurationLoaded) {
-      if (expansionsEnabled && keypadExpansionsEnabled && processPhysicalKeyRule(keycode)) {
+    if (storedConfigurationLoaded && expansionsEnabled && keypadExpansionsEnabled) {
+      if (processPhysicalKeyRule(keycode)) {
         interceptedPhysicalKey = true;
         break;
       }
-    } else if (expansionsEnabled && handleLegacyKey(keycode)) {
+    } else if (handleLegacyKey(keycode)) {
       interceptedPhysicalKey = true;
       break;
     }
