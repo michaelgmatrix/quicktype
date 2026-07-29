@@ -7,8 +7,8 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-29T13:28:12-07:00">
-  <title>QuickType Configurator</title>
+  <meta name="quicktype-build" content="2026-07-29T14:47:03-07:00">
+  <title>GhostLever Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
@@ -1843,7 +1843,7 @@
       }
 
       #referenceTab .panel-header h3::after {
-        content: "QuickType Reference";
+        content: "GhostLever Reference";
         font-size: 18pt;
       }
 
@@ -1903,12 +1903,12 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar" aria-label="QuickType navigation">
+    <aside class="sidebar" aria-label="GhostLever navigation">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">QT</div>
+        <div class="brand-mark" aria-hidden="true">GL</div>
         <div class="brand-copy">
-          <h1>QuickType</h1>
-          <p>USB Text Expansion Device</p>
+          <h1>GhostLever</h1>
+          <p>More from every input.</p>
         </div>
       </div>
 
@@ -2117,7 +2117,7 @@
           <div class="panel-header">
             <div>
               <h3>Expansion Reference</h3>
-              <p>Live documentation generated from the configuration currently loaded in QuickType.</p>
+              <p>Live documentation generated from the configuration currently loaded in GhostLever.</p>
             </div>
           </div>
           <div class="panel-body">
@@ -2222,7 +2222,7 @@
   <div id="toastStack" class="toast-stack" aria-live="polite"></div>
   <div id="modalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
     <div class="modal">
-      <h3 id="modalTitle" style="margin:0;">QuickType</h3>
+      <h3 id="modalTitle" style="margin:0;">GhostLever</h3>
       <div id="modalBody"></div>
       <button id="modalCloseButton" class="secondary-button" type="button">Close</button>
     </div>
@@ -2364,7 +2364,7 @@
       updateCapacityBadge();
       updateDeviceControls();
       setConfigDirty(false);
-      logActivity("QuickType configurator ready.");
+      logActivity("GhostLever configurator ready.");
       initializeRequestedView();
       initializeDeviceDiscovery();
     }
@@ -2986,7 +2986,7 @@
 
     function ensureSharedSetEditingAvailable() {
       if (appState.isConnected || appState.isConnecting) {
-        showToast("Disconnect the QuickType device before managing common set contents.", "error");
+        showToast("Disconnect the GhostLever device before managing common set contents.", "error");
         return false;
       }
       if (appState.sharedSetEditSession) {
@@ -3432,12 +3432,12 @@
         throw new Error(`The resulting configuration is ${payload.byteLength} bytes; the safe limit is ${MAX_CONFIG_PAYLOAD_BYTES}.`);
       }
       logActivity(`Installing "${sharedSet.name}" revision ${sharedSet.revision} (${payload.byteLength} bytes)...`);
-      showToast(`Installing ${sharedSet.name} on QuickType...`);
+      showToast(`Installing ${sharedSet.name} on GhostLever...`);
       const response = await sendDeviceCommand("set-config", { config: deviceConfig }, 15000);
       const verification = await sendDeviceCommand("get-config", {}, 15000);
       const verifiedConfig = normalizeImportedConfiguration(verification.data);
       if (!sharedSetIsPresentInConfiguration(verifiedConfig, sharedSet)) {
-        throw new Error("QuickType accepted the configuration, but the common set was not present when read back.");
+        throw new Error("GhostLever accepted the configuration, but the common set was not present when read back.");
       }
       appState.config = verifiedConfig;
       recordDeviceStorageUsage(verification.data);
@@ -3448,7 +3448,7 @@
       updateDeviceControls();
       setConfigDirty(false);
       logActivity(`Installed and verified "${sharedSet.name}" revision ${sharedSet.revision} (${response.data?.ruleCount ?? 0} active rules).`);
-      showToast(`${sharedSet.name} installed and verified on QuickType.`);
+      showToast(`${sharedSet.name} installed and verified on GhostLever.`);
       showTab("sharedSetsTab");
     }
 
@@ -3597,7 +3597,7 @@
     async function requestSerialPort() {
       showToast("Opening serial port chooser...");
       if (appState.autoConnectEnabled) {
-        logActivity("Choose a QuickType serial port in the browser prompt.");
+        logActivity("Choose a GhostLever serial port in the browser prompt.");
         return navigator.serial.requestPort({ filters: QUICKTYPE_USB_FILTERS });
       }
       logActivity("Choose any serial port in the browser prompt.");
@@ -3649,7 +3649,7 @@
           String(info?.usbProductId) === savedPid;
       }) || appState.availablePorts[0];
       if (port) {
-        logActivity("Saved QuickType port found. Connecting automatically...");
+        logActivity("Saved GhostLever port found. Connecting automatically...");
         try {
           await connectDevice(port);
         } catch (error) {
@@ -3711,7 +3711,7 @@
 
         updateDeviceControls();
         appState.readLoop = readSerialLoop();
-        logActivity("Serial port opened. Waiting for QuickType firmware...");
+        logActivity("Serial port opened. Waiting for GhostLever firmware...");
 
         let response;
         try {
@@ -3732,8 +3732,8 @@
         renderExpansionReference();
         const connMode = (appState.deviceInfo.keypadInputMode || "pio").toUpperCase();
         const connDev = appState.deviceInfo.deviceConnected ? "YES" : "NO";
-        logActivity(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"} (Mode: ${connMode}, Keyboard Connected: ${connDev}).`);
-        showToast(`Connected to QuickType firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
+        logActivity(`Connected to GhostLever firmware ${appState.deviceInfo.firmwareVersion || "unknown"} (Mode: ${connMode}, Keyboard Connected: ${connDev}).`);
+        showToast(`Connected to GhostLever firmware ${appState.deviceInfo.firmwareVersion || "unknown"}.`);
         await readDeviceConfiguration({ automatic: true });
         await syncRequiredCommonSets();
         await syncDeviceClock({ silent: true });
@@ -3885,7 +3885,7 @@
     function renameConnectedDevice() {
       if (!ensureConnected("rename device")) return;
 
-      const currentName = appState.connectedDeviceName || "QuickType";
+      const currentName = appState.connectedDeviceName || "GhostLever";
       const currentColor = normalizeDeviceColor(appState.connectedDeviceColor);
       showModal("Device Appearance", `
         <form id="deviceAppearanceForm" class="device-appearance-form">
@@ -4047,7 +4047,7 @@
 
     async function readDeviceClock() {
       if (!ensureConnected("read the clock")) {
-        showToast("Connect QuickType before reading the clock.", "error");
+        showToast("Connect GhostLever before reading the clock.", "error");
         return;
       }
 
@@ -4057,7 +4057,7 @@
         const clock = response.data?.clock;
         if (!clock) throw new Error("Device did not return a clock value.");
         const text = `${clock.year}-${String(clock.month).padStart(2, "0")}-${String(clock.day).padStart(2, "0")} ${String(clock.hour).padStart(2, "0")}:${String(clock.minute).padStart(2, "0")}:${String(clock.second).padStart(2, "0")}`;
-        showModal("QuickType Clock", `<p>Device clock reads:</p><p><strong>${escapeHtml(text)}</strong></p>`);
+        showModal("GhostLever Clock", `<p>Device clock reads:</p><p><strong>${escapeHtml(text)}</strong></p>`);
         logActivity(`Clock read: ${text}`);
       } catch (error) {
         showToast(`Clock read failed: ${error.message}`, "error");
@@ -4067,7 +4067,7 @@
 
     async function readDeviceTelemetry() {
       if (!ensureConnected("read telemetry")) {
-        showToast("Connect QuickType before reading telemetry.", "error");
+        showToast("Connect GhostLever before reading telemetry.", "error");
         return;
       }
 
@@ -4240,7 +4240,7 @@
           <p style="margin:4px 0 0; font-size:0.78rem; color:var(--muted);">Click any token to insert into the active macro editor field.</p>
         </div>
       `;
-      showModal("QuickType Token & Placeholder Cheatsheet", html);
+      showModal("GhostLever Token & Placeholder Cheatsheet", html);
     }
 
     async function sendDeviceCommand(command, payload = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
@@ -4377,7 +4377,7 @@
       const activePort = appState.port;
       const selectedPortType = activePort && !isQuickTypePort(activePort) && !appState.deviceDetails.get(activePort)
         ? "Serial port"
-        : "QuickType";
+        : "GhostLever";
       const displayName = appState.connectedDeviceName || selectedPortType;
       const uniqueId = normalizeDeviceUniqueId(appState.deviceInfo?.uniqueId);
       const displayIdentity = uniqueId ? `${displayName} · ${uniqueId}` : displayName;
@@ -4397,7 +4397,7 @@
       elements.toggleExpansionsButton.classList.toggle("expansions-paused", !appState.expansionsEnabled);
       elements.toggleExpansionsButton.setAttribute("aria-pressed", String(!appState.expansionsEnabled));
       elements.toggleExpansionsButton.title = appState.expansionsEnabled
-        ? "Temporarily stop QuickType from converting triggers. Saved rules are unchanged."
+        ? "Temporarily stop GhostLever from converting triggers. Saved rules are unchanged."
         : "Expansion triggers are paused; click to resume them.";
       elements.toggleKeypadExpansionsButton.disabled = !appState.isConnected;
       elements.toggleKeypadExpansionsButton.textContent = appState.keypadExpansionsEnabled
@@ -4436,9 +4436,9 @@
       appState.configDirty = Boolean(isDirty);
       elements.writeButton.classList.toggle("write-dirty", appState.configDirty);
       elements.writeButton.title = appState.configDirty
-        ? "Unsaved changes: Click Write to upload to QuickType hardware"
+        ? "Unsaved changes: Click Write to upload to GhostLever hardware"
         : "Configuration synced with device";
-      elements.writeButton.setAttribute("aria-label", appState.configDirty ? "Write unwritten configuration to QuickType" : "Write configuration");
+      elements.writeButton.setAttribute("aria-label", appState.configDirty ? "Write unwritten configuration to GhostLever" : "Write configuration");
       updateCapacityBadge();
     }
 
@@ -4480,9 +4480,9 @@
       if (!elements.writeButton) return;
       elements.writeButton.classList.toggle("write-dirty", appState.configDirty);
       elements.writeButton.title = appState.configDirty
-        ? "Configuration has local changes that have not been written to QuickType."
+        ? "Configuration has local changes that have not been written to GhostLever."
         : "";
-      elements.writeButton.setAttribute("aria-label", appState.configDirty ? "Write unwritten configuration to QuickType" : "Write configuration");
+      elements.writeButton.setAttribute("aria-label", appState.configDirty ? "Write unwritten configuration to GhostLever" : "Write configuration");
     }
 
     function delay(milliseconds) {
@@ -4551,7 +4551,7 @@
         elements.keyGrid.innerHTML = `
           <div class="empty-state">
             <strong>No expansions yet</strong>
-            <span>Add an expansion, give it a trigger string, then write the configuration to QuickType.</span>
+            <span>Add an expansion, give it a trigger string, then write the configuration to GhostLever.</span>
           </div>
         `;
         return;
@@ -4662,7 +4662,7 @@
             <strong>${allEntries.length ? "No matching expansions" : "No active expansions"}</strong>
             <span>${allEntries.length
               ? "Change the search text or filter to show more entries."
-              : "Read a configuration from QuickType, import one, or add expansions in the editor."}</span>
+              : "Read a configuration from GhostLever, import one, or add expansions in the editor."}</span>
           </div>
         `;
         return;
@@ -5329,7 +5329,7 @@
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "quicktype-config.json";
+      link.download = "ghostlever-config.json";
       link.click();
       URL.revokeObjectURL(url);
       logActivity("Configuration exported.");
@@ -5367,7 +5367,7 @@
     }
 
     async function restoreFactoryDefaults() {
-      if (!window.confirm("Factory Reset clears the editor configuration and, if connected, writes the blank configuration to QuickType. Continue?")) {
+      if (!window.confirm("Factory Reset clears the editor configuration and, if connected, writes the blank configuration to GhostLever. Continue?")) {
         return;
       }
 
@@ -5409,7 +5409,7 @@
       return {
         deviceName: "",
         deviceColor: "",
-        profileName: "QuickType Expansions",
+        profileName: "GhostLever Expansions",
         version: 1,
         mode: "inline-keyboard-intercept",
         targetOs: "windows",
@@ -5445,7 +5445,7 @@
     function normalizeImportedConfiguration(config) {
       const fallback = createDefaultConfig();
       if (!config || (!config.rules && !Array.isArray(config.layers))) {
-        throw new Error("Invalid QuickType configuration file");
+        throw new Error("Invalid GhostLever configuration file");
       }
 
       fallback.deviceName = normalizeDeviceName(config.deviceName);

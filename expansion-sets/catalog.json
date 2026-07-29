@@ -3,7 +3,7 @@
   "sets": [
     {
       "id": "quicktype-starter",
-      "name": "QuickType Starter Set",
+      "name": "GhostLever Starter Set",
       "description": "A small example set demonstrating common expansion updates.",
       "url": "./quicktype-starter.json",
       "required": false
