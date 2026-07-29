@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-07-29T07:48:01-07:00">
+  <meta name="quicktype-build" content="2026-07-29T08:02:48-07:00">
   <title>QuickType Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1679,6 +1679,149 @@
       justify-content: flex-end;
     }
 
+    .reference-toolbar {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) minmax(150px, 220px) auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+
+    .reference-summary {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .reference-badge {
+      padding: 5px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 800;
+    }
+
+    .reference-table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-small);
+    }
+
+    .reference-table {
+      width: 100%;
+      min-width: 880px;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.82rem;
+    }
+
+    .reference-table th,
+    .reference-table td {
+      padding: 9px 10px;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .reference-table th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .reference-table tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .reference-trigger,
+    .reference-template {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+    }
+
+    .reference-trigger {
+      color: var(--accent-strong);
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .reference-template {
+      max-width: 520px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      line-height: 1.45;
+    }
+
+    .reference-meta {
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    @media print {
+      html,
+      body {
+        overflow: visible !important;
+      }
+
+      body {
+        zoom: 1 !important;
+        width: auto !important;
+        height: auto !important;
+        background: #fff !important;
+      }
+
+      .app-shell {
+        display: block;
+        height: auto !important;
+      }
+
+      .sidebar,
+      .topbar,
+      #webSerialNotice,
+      .tab-panel:not(#referenceTab),
+      .reference-toolbar,
+      .toast-stack,
+      .modal-backdrop {
+        display: none !important;
+      }
+
+      .main,
+      #referenceTab,
+      #referenceTab .panel,
+      #referenceTab .panel-body {
+        display: block !important;
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        border: 0 !important;
+      }
+
+      #referenceTab .panel-header {
+        padding: 0 0 12px !important;
+      }
+
+      .reference-table-wrap {
+        overflow: visible;
+      }
+
+      .reference-table {
+        min-width: 0;
+        font-size: 9pt;
+      }
+
+      .reference-table th {
+        position: static;
+      }
+    }
+
     /* Preserve the desktop application layout and scale it as one surface. */
     @media (max-width: 1279px), (max-height: 719px) {
       body {
@@ -1742,6 +1885,7 @@
         </div>
         <ul class="sidebar-list">
           <li><button class="active" type="button" data-tab="expansionsTab" title="Expansions"><span class="nav-icon" aria-hidden="true">Aa</span><span class="nav-label">Expansions</span></button></li>
+          <li><button type="button" data-tab="referenceTab" title="Expansion Reference"><span class="nav-icon" aria-hidden="true">Ref</span><span class="nav-label">Reference</span></button></li>
           <li><button type="button" data-tab="sharedSetsTab" title="Shared Sets"><span class="nav-icon" aria-hidden="true">Sets</span><span class="nav-label">Shared Sets</span></button></li>
           <li><button type="button" data-tab="placeholdersTab" title="Placeholders"><span class="nav-icon" aria-hidden="true">{ }</span><span class="nav-label">Placeholders</span></button></li>
           <li><button type="button" data-tab="rtcTab" title="Date/Time Functions"><span class="nav-icon" aria-hidden="true">DT</span><span class="nav-label">Date/Time Functions</span></button></li>
@@ -1919,6 +2063,36 @@
                 </div>
               </details>
             </form>
+          </div>
+        </div>
+      </section>
+
+      <section id="referenceTab" class="workspace single tab-panel hidden">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3>Expansion Reference</h3>
+              <p>Live documentation generated from the configuration currently loaded in QuickType.</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="reference-toolbar">
+              <div class="field">
+                <label for="referenceSearch">Search</label>
+                <input id="referenceSearch" type="search" placeholder="Trigger, label, or expansion text" autocomplete="off">
+              </div>
+              <div class="field">
+                <label for="referenceTypeFilter">Show</label>
+                <select id="referenceTypeFilter">
+                  <option value="all">All active expansions</option>
+                  <option value="typed">Typed expansions</option>
+                  <option value="keypad">Keypad actions</option>
+                </select>
+              </div>
+              <button id="printReferenceButton" class="secondary-button" type="button">Print / Save PDF</button>
+            </div>
+            <div id="referenceSummary" class="reference-summary" aria-live="polite"></div>
+            <div id="referenceContent" aria-live="polite"></div>
           </div>
         </div>
       </section>
@@ -2141,10 +2315,12 @@
       renderTokenGroups();
       renderRtcFunctions();
       updateEditor();
+      renderExpansionReference();
       updateCapacityBadge();
       updateDeviceControls();
       setConfigDirty(false);
       logActivity("QuickType configurator ready.");
+      initializeRequestedView();
       initializeDeviceDiscovery();
     }
 
@@ -2174,6 +2350,11 @@
       elements.webSerialNotice = document.getElementById("webSerialNotice");
       elements.syncClockButton = document.getElementById("syncClockButton");
       elements.addExpansionButton = document.getElementById("addExpansionButton");
+      elements.referenceSearch = document.getElementById("referenceSearch");
+      elements.referenceTypeFilter = document.getElementById("referenceTypeFilter");
+      elements.printReferenceButton = document.getElementById("printReferenceButton");
+      elements.referenceSummary = document.getElementById("referenceSummary");
+      elements.referenceContent = document.getElementById("referenceContent");
       elements.sharedSetsNavItem = document.querySelector('[data-tab="sharedSetsTab"]')?.closest("li");
       elements.sharedSetsTab = document.getElementById("sharedSetsTab");
       elements.refreshSharedSetsButton = document.getElementById("refreshSharedSetsButton");
@@ -2251,6 +2432,10 @@
         }
       });
       elements.navToggleButton.addEventListener("click", toggleNavigation);
+      elements.referenceSearch.addEventListener("input", renderExpansionReference);
+      elements.referenceTypeFilter.addEventListener("change", renderExpansionReference);
+      elements.printReferenceButton.addEventListener("click", () => window.print());
+      window.addEventListener("popstate", initializeRequestedView);
       elements.connectButton.addEventListener("click", requestDeviceConnection);
       elements.autoConnectToggle.addEventListener("change", toggleAutoConnect);
       elements.disconnectButton.addEventListener("click", disconnectDevice);
@@ -3229,7 +3414,12 @@
       }
     }
 
-    function showTab(tabId) {
+    function initializeRequestedView() {
+      const requestedView = new URLSearchParams(window.location.search).get("view");
+      showTab(requestedView === "reference" ? "referenceTab" : "expansionsTab", false);
+    }
+
+    function showTab(tabId, updateUrl = true) {
       if (!SHARED_SETS_ENABLED && tabId === "sharedSetsTab") {
         tabId = "expansionsTab";
       }
@@ -3239,6 +3429,18 @@
       document.querySelectorAll(".tab-panel").forEach((panel) => {
         panel.classList.toggle("hidden", panel.id !== tabId);
       });
+      if (tabId === "referenceTab") {
+        renderExpansionReference();
+      }
+      if (updateUrl) {
+        const url = new URL(window.location.href);
+        if (tabId === "referenceTab") {
+          url.searchParams.set("view", "reference");
+        } else {
+          url.searchParams.delete("view");
+        }
+        window.history.replaceState({}, "", url);
+      }
     }
 
     function showToast(message, type = "info") {
@@ -4284,6 +4486,115 @@
       });
     }
 
+    function renderExpansionReference() {
+      if (!elements.referenceContent) return;
+
+      const query = elements.referenceSearch.value.trim().toLocaleLowerCase();
+      const typeFilter = elements.referenceTypeFilter.value;
+      const allEntries = getActiveDeviceRuleEntries()
+        .map(([ruleId, mapping]) => ({
+          ruleId,
+          mapping,
+          kind: mapping.trigger === "key" ? "keypad" : "typed"
+        }))
+        .sort((left, right) => {
+          if (left.kind !== right.kind) return left.kind.localeCompare(right.kind);
+          return referenceTriggerLabel(left.mapping).localeCompare(
+            referenceTriggerLabel(right.mapping),
+            undefined,
+            { sensitivity: "base", numeric: true }
+          );
+        });
+
+      const typedCount = allEntries.filter((entry) => entry.kind === "typed").length;
+      const keypadCount = allEntries.length - typedCount;
+      const visibleEntries = allEntries.filter(({ ruleId, mapping, kind }) => {
+        if (typeFilter !== "all" && typeFilter !== kind) return false;
+        if (!query) return true;
+        return [
+          ruleId,
+          referenceTriggerLabel(mapping),
+          mapping.label,
+          mapping.text,
+          mapping.steps?.map((step) => step.value).join(" ")
+        ].some((value) => String(value || "").toLocaleLowerCase().includes(query));
+      });
+
+      elements.referenceSummary.innerHTML = `
+        <span class="reference-badge">${allEntries.length} active total</span>
+        <span class="reference-badge">${typedCount} typed</span>
+        <span class="reference-badge">${keypadCount} keypad</span>
+        <span class="reference-badge">${visibleEntries.length} shown</span>
+      `;
+
+      if (!visibleEntries.length) {
+        elements.referenceContent.innerHTML = `
+          <div class="empty-state">
+            <strong>${allEntries.length ? "No matching expansions" : "No active expansions"}</strong>
+            <span>${allEntries.length
+              ? "Change the search text or filter to show more entries."
+              : "Read a configuration from QuickType, import one, or add expansions in the editor."}</span>
+          </div>
+        `;
+        return;
+      }
+
+      elements.referenceContent.innerHTML = `
+        <div class="reference-table-wrap">
+          <table class="reference-table">
+            <thead>
+              <tr>
+                <th>Trigger / Key</th>
+                <th>Label</th>
+                <th>Expansion Template</th>
+                <th>Activation</th>
+                <th>Timing</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${visibleEntries.map(({ mapping, kind }) => {
+                const template = mapping.text || mapping.steps?.map((step) => step.value).join(" ") || "(no contents)";
+                const activation = kind === "keypad"
+                  ? "Key press · Numpad"
+                  : `${referenceTriggerModeLabel(mapping.trigger)} · ${referenceScopeLabel(mapping.triggerScope)}`;
+                return `
+                  <tr>
+                    <td><span class="reference-trigger">${escapeHtml(referenceTriggerLabel(mapping))}</span></td>
+                    <td>${escapeHtml(mapping.label || "Unlabeled")}</td>
+                    <td><div class="reference-template">${escapeHtml(template)}</div></td>
+                    <td class="reference-meta">${escapeHtml(activation)}</td>
+                    <td class="reference-meta">Pre ${normalizeNumber(mapping.preDelay, 0)}ms<br>Keys ${normalizeNumber(mapping.keyDelay, 5)}ms</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function referenceTriggerLabel(mapping) {
+      if (mapping.trigger !== "key") return mapping.triggerPattern || "(missing trigger)";
+      const key = KEYPAD_KEYS.find((entry) => entry.id === mapping.triggerPattern);
+      return key ? `${key.label}${key.sublabel ? ` ${key.sublabel}` : ""}` : mapping.triggerPattern;
+    }
+
+    function referenceTriggerModeLabel(mode) {
+      return {
+        suffix: "After trigger",
+        delimiter: "After delimiter",
+        instant: "Immediately"
+      }[normalizeTriggerMode(mode)] || "After trigger";
+    }
+
+    function referenceScopeLabel(scope) {
+      return {
+        any: "Any keyboard",
+        keyboard: "Regular keyboard",
+        numpad: "Numpad"
+      }[scope] || "Any keyboard";
+    }
+
     function keypadRuleId(keyName) {
       return `K_${keyName}`;
     }
@@ -4656,6 +4967,7 @@
       }
       renderKeyGrid();
       updateEditor();
+      renderExpansionReference();
       if (before !== JSON.stringify(mapping)) {
         setConfigDirty(true);
       }
@@ -4860,6 +5172,7 @@
         const conflictMessage = validateNoTriggerConflicts();
         renderKeyGrid();
         updateEditor();
+        renderExpansionReference();
         setConfigDirty(true);
         logActivity(`Imported ${file.name}.`);
         if (conflictMessage) {
@@ -4912,6 +5225,7 @@
       renderTokenGroups();
       updateEditor();
       renderSharedSets();
+      renderExpansionReference();
     }
 
     function createDefaultConfig() {
