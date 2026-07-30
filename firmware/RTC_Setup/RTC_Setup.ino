@@ -1,4 +1,4 @@
-// GhostLever firmware version: 0.2.123 (2026-07-30)
+// GhostLever firmware version: 0.2.124 (2026-07-30)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -58,7 +58,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.123"; // v0.2.123: Transparent standard USB HID mouse pass-through
+static constexpr char FIRMWARE_VERSION[] = "0.2.124"; // v0.2.124: Descriptor-aware mouse pass-through with wheel and pan
 static constexpr uint8_t NEOPIXEL_PIN = 16;
 static Adafruit_NeoPixel statusLed(1, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 static bool statusLedInitialized = false;
@@ -148,7 +148,38 @@ static constexpr bool RENAME_TIMESTAMP_FILE_AFTER_SUCCESS = false;
 uint8_t const hidReportDescriptor[] = {
   TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(RID_KEYBOARD)),
   TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(RID_CONSUMER_CONTROL)),
-  TUD_HID_REPORT_DESC_MOUSE(HID_REPORT_ID(RID_MOUSE))
+  // Eight-button relative mouse with vertical wheel and horizontal pan.
+  0x05, 0x01,       // Usage Page (Generic Desktop)
+  0x09, 0x02,       // Usage (Mouse)
+  0xA1, 0x01,       // Collection (Application)
+  0x85, RID_MOUSE,  //   Report ID
+  0x09, 0x01,       //   Usage (Pointer)
+  0xA1, 0x00,       //   Collection (Physical)
+  0x05, 0x09,       //     Usage Page (Button)
+  0x19, 0x01,       //     Usage Minimum (Button 1)
+  0x29, 0x08,       //     Usage Maximum (Button 8)
+  0x15, 0x00,       //     Logical Minimum (0)
+  0x25, 0x01,       //     Logical Maximum (1)
+  0x95, 0x08,       //     Report Count (8)
+  0x75, 0x01,       //     Report Size (1)
+  0x81, 0x02,       //     Input (Data, Variable, Absolute)
+  0x05, 0x01,       //     Usage Page (Generic Desktop)
+  0x09, 0x30,       //     Usage (X)
+  0x09, 0x31,       //     Usage (Y)
+  0x15, 0x81,       //     Logical Minimum (-127)
+  0x25, 0x7F,       //     Logical Maximum (127)
+  0x75, 0x08,       //     Report Size (8)
+  0x95, 0x02,       //     Report Count (2)
+  0x81, 0x06,       //     Input (Data, Variable, Relative)
+  0x09, 0x38,       //     Usage (Wheel)
+  0x95, 0x01,       //     Report Count (1)
+  0x81, 0x06,       //     Input (Data, Variable, Relative)
+  0x05, 0x0C,       //     Usage Page (Consumer)
+  0x0A, 0x38, 0x02, //     Usage (AC Pan)
+  0x95, 0x01,       //     Report Count (1)
+  0x81, 0x06,       //     Input (Data, Variable, Relative)
+  0xC0,             //   End Collection
+  0xC0              // End Collection
 };
 
 // Native USB-C HID keyboard device.
@@ -199,12 +230,35 @@ struct ConfigRule {
   bool enabled;
 };
 
+struct MouseHidField {
+  uint16_t bitOffset;
+  uint8_t bitSize;
+  bool valid;
+};
+
+struct MouseButtonField {
+  MouseHidField field;
+  uint8_t button;
+};
+
+struct MouseReportLayout {
+  uint8_t reportId;
+  MouseHidField x;
+  MouseHidField y;
+  MouseHidField wheel;
+  MouseHidField pan;
+  MouseButtonField buttons[8];
+  uint8_t buttonCount;
+  bool valid;
+};
+
 struct HostHidInterfaceInfo {
   uint8_t devAddr;
   uint8_t instance;
   uint8_t keyboardReportId;
   uint8_t consumerReportId;
   uint8_t mouseReportId;
+  MouseReportLayout mouseLayout;
   uint32_t nextReportRequestMs;
   uint32_t lastReportMs;
   uint32_t lastRecoveryMs;
@@ -477,9 +531,19 @@ void rememberHostHidInterface(
   uint8_t mouseReportId
 );
 void parseConsumerBitmaskDescriptor(uint8_t const* desc_report, uint16_t desc_len, HostHidInterfaceInfo& info);
+void parseMouseReportDescriptor(uint8_t const* desc_report, uint16_t desc_len, HostHidInterfaceInfo& info);
 bool sendConsumerUsage(uint16_t usage);
 bool forwardConsumerControlReport(uint8_t const* report, uint16_t len, const HostHidInterfaceInfo& info);
-bool enqueueMouseReport(uint8_t const* report, uint16_t len, uint8_t expectedReportId);
+uint32_t readHidBits(uint8_t const* payload, uint16_t payloadLen, uint16_t bitOffset, uint8_t bitSize);
+int32_t readSignedHidField(
+  uint8_t const* payload,
+  uint16_t payloadLen,
+  uint16_t bitOffset,
+  uint8_t bitSize,
+  bool valid
+);
+bool queueDecodedMouseReport(const hid_mouse_report_t& report);
+bool enqueueMouseReport(uint8_t const* report, uint16_t len, const HostHidInterfaceInfo& info);
 bool handleLegacyKey(uint8_t keycode);
 char hidKeycodeToAscii(uint8_t keycode, uint8_t modifier, bool& isNumpad);
 bool processPhysicalKeyRule(uint8_t keycode);
@@ -1778,31 +1842,258 @@ void rememberHostHidInterface(
   // No Serial logging on Core 1
 }
 
-bool enqueueMouseReport(uint8_t const* report, uint16_t len, uint8_t expectedReportId) {
-  if (report == nullptr || len < 3) {
+uint32_t readHidBits(uint8_t const* payload, uint16_t payloadLen, uint16_t bitOffset, uint8_t bitSize) {
+  if (payload == nullptr || bitSize == 0 || bitSize > 32 || bitOffset + bitSize > payloadLen * 8) {
+    return 0;
+  }
+
+  uint32_t value = 0;
+  for (uint8_t bit = 0; bit < bitSize; bit++) {
+    uint16_t sourceBit = bitOffset + bit;
+    if ((payload[sourceBit / 8] & (1u << (sourceBit % 8))) != 0) {
+      value |= 1u << bit;
+    }
+  }
+  return value;
+}
+
+int32_t readSignedHidField(
+  uint8_t const* payload,
+  uint16_t payloadLen,
+  uint16_t bitOffset,
+  uint8_t bitSize,
+  bool valid
+) {
+  if (!valid || bitSize == 0 || bitSize > 32) {
+    return 0;
+  }
+
+  uint32_t value = readHidBits(payload, payloadLen, bitOffset, bitSize);
+  if (bitSize < 32 && (value & (1u << (bitSize - 1))) != 0) {
+    value |= ~((1u << bitSize) - 1u);
+  }
+  return static_cast<int32_t>(value);
+}
+
+bool queueDecodedMouseReport(const hid_mouse_report_t& report) {
+  size_t nextHead = (mouseQueueHead + 1) % MOUSE_REPORT_QUEUE_SIZE;
+  if (nextHead == mouseQueueTail) {
+    return false;
+  }
+  mouseReportQueue[mouseQueueHead] = report;
+  __asm__ volatile("dmb" : : : "memory");
+  mouseQueueHead = nextHead;
+  return true;
+}
+
+bool enqueueMouseReport(uint8_t const* report, uint16_t len, const HostHidInterfaceInfo& info) {
+  if (report == nullptr || len == 0) {
     return false;
   }
 
   uint8_t const* payload = report;
   uint16_t payloadLen = len;
-  if (expectedReportId != 0) {
-    if (report[0] != expectedReportId || len < 4) {
+  if (info.mouseLayout.reportId != 0) {
+    if (report[0] != info.mouseLayout.reportId || len < 2) {
       return false;
     }
     payload++;
     payloadLen--;
   }
 
-  hid_mouse_report_t mouseReport = {};
-  memcpy(&mouseReport, payload, min(static_cast<size_t>(payloadLen), sizeof(mouseReport)));
-  size_t nextHead = (mouseQueueHead + 1) % MOUSE_REPORT_QUEUE_SIZE;
-  if (nextHead == mouseQueueTail) {
-    return false;
+  if (!info.mouseLayout.valid) {
+    if (payloadLen < 3) {
+      return false;
+    }
+    hid_mouse_report_t bootReport = {};
+    memcpy(&bootReport, payload, min(static_cast<size_t>(payloadLen), sizeof(bootReport)));
+    return queueDecodedMouseReport(bootReport);
   }
-  mouseReportQueue[mouseQueueHead] = mouseReport;
-  __asm__ volatile("dmb" : : : "memory");
-  mouseQueueHead = nextHead;
-  return true;
+
+  uint8_t buttons = 0;
+  for (uint8_t index = 0; index < info.mouseLayout.buttonCount; index++) {
+    const MouseButtonField& button = info.mouseLayout.buttons[index];
+    if (button.button < 1 || button.button > 8) continue;
+    if (readHidBits(payload, payloadLen, button.field.bitOffset, button.field.bitSize) != 0) {
+      buttons |= 1u << (button.button - 1);
+    }
+  }
+
+  int32_t x = readSignedHidField(payload, payloadLen, info.mouseLayout.x.bitOffset, info.mouseLayout.x.bitSize, info.mouseLayout.x.valid);
+  int32_t y = readSignedHidField(payload, payloadLen, info.mouseLayout.y.bitOffset, info.mouseLayout.y.bitSize, info.mouseLayout.y.valid);
+  int32_t wheel = readSignedHidField(payload, payloadLen, info.mouseLayout.wheel.bitOffset, info.mouseLayout.wheel.bitSize, info.mouseLayout.wheel.valid);
+  int32_t pan = readSignedHidField(payload, payloadLen, info.mouseLayout.pan.bitOffset, info.mouseLayout.pan.bitSize, info.mouseLayout.pan.valid);
+  bool queued = false;
+
+  do {
+    hid_mouse_report_t decoded = {};
+    decoded.buttons = buttons;
+    decoded.x = constrain(x, -127, 127);
+    decoded.y = constrain(y, -127, 127);
+    decoded.wheel = constrain(wheel, -127, 127);
+    decoded.pan = constrain(pan, -127, 127);
+    if (!queueDecodedMouseReport(decoded)) {
+      return false;
+    }
+    queued = true;
+    x -= decoded.x;
+    y -= decoded.y;
+    wheel -= decoded.wheel;
+    pan -= decoded.pan;
+  } while (x != 0 || y != 0 || wheel != 0 || pan != 0);
+
+  return queued;
+}
+
+void parseMouseReportDescriptor(uint8_t const* desc_report, uint16_t desc_len, HostHidInterfaceInfo& info) {
+  info.mouseLayout = MouseReportLayout();
+  info.mouseLayout.reportId = info.mouseReportId;
+  if (desc_report == nullptr || desc_len == 0 || !info.mouse) {
+    return;
+  }
+
+  struct GlobalState {
+    uint16_t usagePage;
+    uint32_t reportSize;
+    uint32_t reportCount;
+    uint8_t reportId;
+  } global = {}, globalStack[4] = {};
+  uint8_t globalDepth = 0;
+  uint32_t localUsages[32] = {};
+  uint8_t localUsageCount = 0;
+  uint32_t usageMin = 0;
+  uint32_t usageMax = 0;
+  bool usageRangeValid = false;
+  uint8_t trackedReportIds[16] = { 0 };
+  uint16_t trackedBitOffsets[16] = { 0 };
+  uint8_t trackedReportCount = 1;
+
+  auto itemValue = [](uint8_t const* data, uint8_t size) -> uint32_t {
+    uint32_t value = 0;
+    for (uint8_t index = 0; index < size; index++) {
+      value |= static_cast<uint32_t>(data[index]) << (8 * index);
+    }
+    return value;
+  };
+
+  auto currentBitOffset = [&]() -> uint16_t& {
+    for (uint8_t index = 0; index < trackedReportCount; index++) {
+      if (trackedReportIds[index] == global.reportId) return trackedBitOffsets[index];
+    }
+    if (trackedReportCount < 16) {
+      trackedReportIds[trackedReportCount] = global.reportId;
+      trackedBitOffsets[trackedReportCount] = 0;
+      return trackedBitOffsets[trackedReportCount++];
+    }
+    return trackedBitOffsets[0];
+  };
+
+  auto clearLocals = [&]() {
+    localUsageCount = 0;
+    usageMin = 0;
+    usageMax = 0;
+    usageRangeValid = false;
+  };
+
+  for (uint16_t index = 0; index < desc_len;) {
+    uint8_t prefix = desc_report[index++];
+    if (prefix == 0xFE) {
+      if (index + 1 >= desc_len) break;
+      uint8_t longSize = desc_report[index++];
+      index++;
+      if (index + longSize > desc_len) break;
+      index += longSize;
+      continue;
+    }
+
+    uint8_t sizeCode = prefix & 0x03;
+    uint8_t size = sizeCode == 3 ? 4 : sizeCode;
+    uint8_t type = (prefix >> 2) & 0x03;
+    uint8_t tag = (prefix >> 4) & 0x0F;
+    if (index + size > desc_len) break;
+    uint32_t value = itemValue(desc_report + index, size);
+    index += size;
+
+    if (type == 0) {
+      if (tag == 8) { // Input
+        uint8_t inputFlags = value & 0xFF;
+        uint16_t& bitOffset = currentBitOffset();
+        bool dataField = (inputFlags & HID_CONSTANT) == 0;
+        bool variableField = (inputFlags & HID_VARIABLE) != 0;
+        bool relativeField = (inputFlags & HID_RELATIVE) != 0;
+        uint32_t fieldsToInspect = min(global.reportCount, static_cast<uint32_t>(64));
+
+        if (dataField && variableField && global.reportId == info.mouseReportId) {
+          for (uint32_t fieldIndex = 0; fieldIndex < fieldsToInspect; fieldIndex++) {
+            uint32_t usageValue = 0;
+            if (fieldIndex < localUsageCount) {
+              usageValue = localUsages[fieldIndex];
+            } else if (usageRangeValid && usageMax >= usageMin) {
+              usageValue = usageMin + fieldIndex;
+            }
+
+            uint16_t fieldPage = usageValue > 0xFFFF ? (usageValue >> 16) & 0xFFFF : global.usagePage;
+            uint16_t fieldUsage = usageValue & 0xFFFF;
+            MouseHidField field = {
+              static_cast<uint16_t>(bitOffset + fieldIndex * global.reportSize),
+              static_cast<uint8_t>(min(global.reportSize, static_cast<uint32_t>(32))),
+              global.reportSize > 0 && global.reportSize <= 32
+            };
+
+            if (fieldPage == HID_USAGE_PAGE_BUTTON && fieldUsage >= 1 && fieldUsage <= 8 &&
+                info.mouseLayout.buttonCount < 8) {
+              MouseButtonField& button = info.mouseLayout.buttons[info.mouseLayout.buttonCount++];
+              button.field = field;
+              button.button = fieldUsage;
+            } else if (relativeField && fieldPage == HID_USAGE_PAGE_DESKTOP) {
+              if (fieldUsage == HID_USAGE_DESKTOP_X) info.mouseLayout.x = field;
+              else if (fieldUsage == HID_USAGE_DESKTOP_Y) info.mouseLayout.y = field;
+              else if (fieldUsage == HID_USAGE_DESKTOP_WHEEL) info.mouseLayout.wheel = field;
+            } else if (relativeField && fieldPage == HID_USAGE_PAGE_CONSUMER &&
+                       fieldUsage == HID_USAGE_CONSUMER_AC_PAN) {
+              info.mouseLayout.pan = field;
+            }
+          }
+        }
+
+        bitOffset += global.reportSize * global.reportCount;
+      }
+      clearLocals();
+    } else if (type == 1) {
+      switch (tag) {
+        case 0: global.usagePage = value & 0xFFFF; break;
+        case 7: global.reportSize = value; break;
+        case 8: global.reportId = value & 0xFF; break;
+        case 9: global.reportCount = value; break;
+        case 10:
+          if (globalDepth < 4) globalStack[globalDepth++] = global;
+          break;
+        case 11:
+          if (globalDepth > 0) global = globalStack[--globalDepth];
+          break;
+        default: break;
+      }
+    } else if (type == 2) {
+      switch (tag) {
+        case 0:
+          if (localUsageCount < 32) localUsages[localUsageCount++] = value;
+          break;
+        case 1:
+          usageMin = value;
+          usageRangeValid = true;
+          break;
+        case 2:
+          usageMax = value;
+          usageRangeValid = true;
+          break;
+        default: break;
+      }
+    }
+  }
+
+  info.mouseLayout.valid = info.mouseLayout.buttonCount > 0 ||
+    info.mouseLayout.x.valid || info.mouseLayout.y.valid ||
+    info.mouseLayout.wheel.valid || info.mouseLayout.pan.valid;
 }
 
 void parseConsumerBitmaskDescriptor(uint8_t const* desc_report, uint16_t desc_len, HostHidInterfaceInfo& info) {
@@ -2609,10 +2900,7 @@ void finishBridgeDescriptor() {
   if (bridgeDescriptorProtocol == HID_ITF_PROTOCOL_KEYBOARD) {
     keyboard = true;
   } else if (bridgeDescriptorProtocol == HID_ITF_PROTOCOL_MOUSE) {
-    // The UART bridge switches standard mice to boot protocol before reports
-    // arrive, so the forwarded reports have no report ID.
     mouse = true;
-    mouseReportId = 0;
   }
 
   uint8_t mappedDevAddr = bridgeInterfaceAddress(bridgeDescriptorDevAddr);
@@ -2631,6 +2919,7 @@ void finishBridgeDescriptor() {
   if (info != nullptr) {
     info->uartBridge = true;
     parseConsumerBitmaskDescriptor(bridgeDescriptor, bridgeDescriptorReceived, *info);
+    parseMouseReportDescriptor(bridgeDescriptor, bridgeDescriptorReceived, *info);
   }
 
   updateBridgeMountedState();
@@ -2680,7 +2969,7 @@ void processBridgeHidReport(
   if (mouseReport) {
     telemetry.mouseReportCount++;
     telemetry.lastMouseReportMs = millis();
-    if (!enqueueMouseReport(report, length, info->mouseReportId)) {
+    if (!enqueueMouseReport(report, length, *info)) {
       telemetry.uartDroppedReportCount++;
     }
   } else if (keyboardReport) {
@@ -3056,9 +3345,7 @@ extern "C" void tuh_hid_mount_cb(
     // not include a report ID, even when report protocol advertises one.
     keyboardReportId = 0;
   } else if (protocol == HID_ITF_PROTOCOL_MOUSE) {
-    // Boot Mouse is a stable, descriptor-independent wire format.
     mouse = true;
-    mouseReportId = 0;
   }
 
   rememberHostHidInterface(
@@ -3074,13 +3361,12 @@ extern "C" void tuh_hid_mount_cb(
   HostHidInterfaceInfo* mountedInfo = hostHidInterfaceInfo(dev_addr, instance);
   if (mountedInfo != nullptr) {
     parseConsumerBitmaskDescriptor(desc_report, desc_len, *mountedInfo);
+    parseMouseReportDescriptor(desc_report, desc_len, *mountedInfo);
   }
 
-  if ((protocol == HID_ITF_PROTOCOL_KEYBOARD || protocol == HID_ITF_PROTOCOL_MOUSE) &&
+  if (protocol == HID_ITF_PROTOCOL_KEYBOARD &&
       tuh_hid_get_protocol(dev_addr, instance) != HID_PROTOCOL_BOOT) {
-    if (protocol == HID_ITF_PROTOCOL_KEYBOARD) {
-      memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
-    }
+    memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
     if (tuh_hid_set_protocol(dev_addr, instance, HID_PROTOCOL_BOOT)) {
       return;
     }
@@ -3174,7 +3460,14 @@ extern "C" void tuh_hid_report_received_cb(
   } else if (protocol == HID_ITF_PROTOCOL_MOUSE) {
     telemetry.mouseReportCount++;
     telemetry.lastMouseReportMs = millis();
-    if (!enqueueMouseReport(report, len, 0)) {
+    if (info == nullptr || !enqueueMouseReport(report, len, *info)) {
+      telemetry.mouseSendFailCount++;
+    }
+  } else if (info != nullptr && info->mouse &&
+             (info->mouseReportId == 0 || report[0] == info->mouseReportId)) {
+    telemetry.mouseReportCount++;
+    telemetry.lastMouseReportMs = millis();
+    if (!enqueueMouseReport(report, len, *info)) {
       telemetry.mouseSendFailCount++;
     }
   } else if (info != nullptr && info->consumerControl &&

@@ -8,9 +8,9 @@ Pico-PIO-USB or GPIO0/GPIO1 for USB.
 The bridge keeps keyboard HID interfaces in report protocol so keyboard report
 IDs and Consumer Control reports are preserved. This includes media keys such
 as play, pause, mute, volume, and track controls. Standard HID mouse interfaces
-switch to Boot Mouse protocol before their reports are forwarded; the primary
-passes movement, buttons, wheel, and pan through to the computer without any
-mouse-specific action or remapping. Vendor-defined mouse controls are not yet
+also remain in report protocol. The primary parses their descriptors and passes
+movement, up to eight buttons, wheel, and pan through to the computer without
+mouse-specific actions or remapping. Vendor-defined mouse controls are not yet
 interpreted.
 
 ## Wiring
