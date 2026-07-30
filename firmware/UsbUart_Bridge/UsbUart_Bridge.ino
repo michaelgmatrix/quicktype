@@ -2,7 +2,7 @@
 #define USE_TINYUSB_HOST
 #endif
 
-// QuickType USB-UART native host bridge build: 0.2.33 (2026-07-26)
+// GhostLever USB-UART native host bridge build: 0.2.34 (2026-07-30)
 #include <Arduino.h>
 #include "QuickTypeUartProtocol.h"
 #include <Adafruit_TinyUSB.h>
@@ -19,7 +19,7 @@ static constexpr uint32_t HID_SNAPSHOT_INTERVAL_MS = 2000;
 static constexpr uint8_t MAX_HID_INTERFACES = 4;
 static constexpr uint16_t MAX_HID_DESCRIPTOR_SIZE = 1024;
 
-static constexpr char BRIDGE_FIRMWARE_VERSION[] = "0.2.33";
+static constexpr char BRIDGE_FIRMWARE_VERSION[] = "0.2.34";
 static constexpr uint32_t PRIMARY_TIMEOUT_MS = 1500;
 static uint32_t lastPrimaryPacketMs = 0;
 static constexpr uint8_t NEOPIXEL_PIN = 16;
@@ -352,6 +352,15 @@ extern "C" void tuh_hid_mount_cb(
     );
   } else {
     writeHidMount(devAddr, instance, protocol, reportDescriptor, descriptorLength);
+  }
+
+  if (protocol == HID_ITF_PROTOCOL_MOUSE &&
+      tuh_hid_get_protocol(devAddr, instance) != HID_PROTOCOL_BOOT) {
+    // Use the standard Boot Mouse report as the bridge wire format. The
+    // primary emits the equivalent composite HID mouse report to the computer.
+    if (tuh_hid_set_protocol(devAddr, instance, HID_PROTOCOL_BOOT)) {
+      return;
+    }
   }
 
   if (tuh_hid_receive_ready(devAddr, instance)) {

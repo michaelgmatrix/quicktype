@@ -1,4 +1,4 @@
-// QuickType firmware version: 0.2.121 (2026-07-27)
+// GhostLever firmware version: 0.2.123 (2026-07-30)
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
@@ -58,7 +58,7 @@ static constexpr char CONFIG_TEMP_FILE[] = "/quicktype-config.tmp";
 static constexpr char CONFIG_BACKUP_FILE[] = "/quicktype-config.bak";
 static constexpr char CLOCK_META_FILE[] = "/quicktype-clock.json";
 static constexpr char CLOCK_META_TEMP_FILE[] = "/quicktype-clock.tmp";
-static constexpr char FIRMWARE_VERSION[] = "0.2.121"; // v0.2.121: Use the correct I2C1 controller for the RTC on GPIO6/GPIO7
+static constexpr char FIRMWARE_VERSION[] = "0.2.123"; // v0.2.123: Transparent standard USB HID mouse pass-through
 static constexpr uint8_t NEOPIXEL_PIN = 16;
 static Adafruit_NeoPixel statusLed(1, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 static bool statusLedInitialized = false;
@@ -137,7 +137,8 @@ static constexpr uint32_t HOST_KEYBOARD_REARM_DELAY_MS = 10;
 
 enum HidReportId : uint8_t {
   RID_KEYBOARD = 1,
-  RID_CONSUMER_CONTROL = 2
+  RID_CONSUMER_CONTROL = 2,
+  RID_MOUSE = 3
 };
 
 // Set this to true if you want Timestamp.txt renamed after a successful RTC set.
@@ -146,7 +147,8 @@ static constexpr bool RENAME_TIMESTAMP_FILE_AFTER_SUCCESS = false;
 // HID report descriptor for the native USB-C device side.
 uint8_t const hidReportDescriptor[] = {
   TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(RID_KEYBOARD)),
-  TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(RID_CONSUMER_CONTROL))
+  TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(RID_CONSUMER_CONTROL)),
+  TUD_HID_REPORT_DESC_MOUSE(HID_REPORT_ID(RID_MOUSE))
 };
 
 // Native USB-C HID keyboard device.
@@ -202,6 +204,7 @@ struct HostHidInterfaceInfo {
   uint8_t instance;
   uint8_t keyboardReportId;
   uint8_t consumerReportId;
+  uint8_t mouseReportId;
   uint32_t nextReportRequestMs;
   uint32_t lastReportMs;
   uint32_t lastRecoveryMs;
@@ -212,6 +215,7 @@ struct HostHidInterfaceInfo {
   bool mounted;
   bool keyboard;
   bool consumerControl;
+  bool mouse;
   bool consumerBitmask;
   bool uartBridge;
 };
@@ -236,10 +240,13 @@ struct TelemetryState {
   uint32_t keyboardReportCount;
   uint32_t keyboardDecodeFailCount;
   uint32_t consumerReportCount;
+  uint32_t mouseReportCount;
   uint32_t forwardedKeyboardCount;
   uint32_t forwardedConsumerCount;
+  uint32_t forwardedMouseCount;
   uint32_t keyboardSendFailCount;
   uint32_t consumerSendFailCount;
+  uint32_t mouseSendFailCount;
   uint32_t hidNotReadyCount;
   uint32_t hostQuiesceCount;
   uint32_t hostRecoverCount;
@@ -260,8 +267,10 @@ struct TelemetryState {
   uint32_t lastUartPacketMs;
   uint32_t lastKeyboardReportMs;
   uint32_t lastConsumerReportMs;
+  uint32_t lastMouseReportMs;
   uint32_t lastForwardedKeyboardMs;
   uint32_t lastForwardedConsumerMs;
+  uint32_t lastForwardedMouseMs;
   uint32_t lastHostQuiesceMs;
   uint32_t lastHostRecoverMs;
   uint32_t lastConfigWriteMs;
@@ -354,6 +363,10 @@ static constexpr size_t KEYBOARD_REPORT_QUEUE_SIZE = 16;
 static hid_keyboard_report_t keyboardReportQueue[KEYBOARD_REPORT_QUEUE_SIZE];
 static volatile size_t keyboardQueueHead = 0;
 static volatile size_t keyboardQueueTail = 0;
+static constexpr size_t MOUSE_REPORT_QUEUE_SIZE = 32;
+static hid_mouse_report_t mouseReportQueue[MOUSE_REPORT_QUEUE_SIZE];
+static volatile size_t mouseQueueHead = 0;
+static volatile size_t mouseQueueTail = 0;
 static ConfigRule configRules[MAX_CONFIG_RULES];
 static size_t configRuleCount = 0;
 static ConfigPlaceholder configPlaceholders[MAX_CONFIG_PLACEHOLDERS];
@@ -436,6 +449,7 @@ bool decodeKeyboardReport(uint8_t const* report, uint16_t len, uint8_t expectedR
 bool usbHidReadyNow();
 bool sendKeyboardReportNow(hid_keyboard_report_t const* report);
 bool sendConsumerUsageNow(uint16_t usage);
+bool sendMouseReportNow(hid_mouse_report_t const* report);
 void servicePendingHidReports();
 bool forwardKeyboardReport(hid_keyboard_report_t const* report);
 uint16_t topRowConsumerUsage(uint8_t keycode);
@@ -448,7 +462,9 @@ void parseHostHidDescriptor(
   bool& keyboard,
   uint8_t& keyboardReportId,
   bool& consumerControl,
-  uint8_t& consumerReportId
+  uint8_t& consumerReportId,
+  bool& mouse,
+  uint8_t& mouseReportId
 );
 void rememberHostHidInterface(
   uint8_t dev_addr,
@@ -456,11 +472,14 @@ void rememberHostHidInterface(
   bool keyboard,
   uint8_t keyboardReportId,
   bool consumerControl,
-  uint8_t consumerReportId
+  uint8_t consumerReportId,
+  bool mouse,
+  uint8_t mouseReportId
 );
 void parseConsumerBitmaskDescriptor(uint8_t const* desc_report, uint16_t desc_len, HostHidInterfaceInfo& info);
 bool sendConsumerUsage(uint16_t usage);
 bool forwardConsumerControlReport(uint8_t const* report, uint16_t len, const HostHidInterfaceInfo& info);
+bool enqueueMouseReport(uint8_t const* report, uint16_t len, uint8_t expectedReportId);
 bool handleLegacyKey(uint8_t keycode);
 char hidKeycodeToAscii(uint8_t keycode, uint8_t modifier, bool& isNumpad);
 bool processPhysicalKeyRule(uint8_t keycode);
@@ -500,6 +519,7 @@ void emitTelemetryHeartbeat();
 size_t mountedHostInterfaceCount();
 size_t mountedKeyboardInterfaceCount();
 size_t mountedConsumerInterfaceCount();
+size_t mountedMouseInterfaceCount();
 void requestNextHidReport(uint8_t dev_addr, uint8_t instance);
 void pollMountedHidReports();
 void serviceUartBridge();
@@ -750,6 +770,18 @@ size_t mountedConsumerInterfaceCount() {
   return count;
 }
 
+size_t mountedMouseInterfaceCount() {
+  size_t count = 0;
+  for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
+    HostHidInterfaceInfo const& info = hostHidInterfaces[index];
+    bool activeSource = keypadInputMode == KeypadInputMode::UartBridge
+      ? info.uartBridge
+      : !info.uartBridge;
+    if (info.mounted && activeSource && info.mouse) count++;
+  }
+  return count;
+}
+
 void addTelemetryToJson(JsonObject target) {
   target["uptimeMs"] = millis();
   target["freeHeap"] = rp2040.getFreeHeap();
@@ -765,13 +797,14 @@ void addTelemetryToJson(JsonObject target) {
   target["hostInterfaces"] = mountedHostInterfaceCount();
   target["keyboardInterfaces"] = mountedKeyboardInterfaceCount();
   target["consumerInterfaces"] = mountedConsumerInterfaceCount();
+  target["mouseInterfaces"] = mountedMouseInterfaceCount();
   target["keypadInputMode"] = keypadInputMode == KeypadInputMode::UartBridge ? "uart" : "pio";
   target["uartBridgeActive"] = keypadInputMode == KeypadInputMode::UartBridge;
   target["bridgeFirmwareVersion"] = (keypadInputMode == KeypadInputMode::UartBridge) ? bridgeFirmwareVersion : "none";
   target["bridgeKeyboardMounted"] = bridgeKeyboardMounted;
   target["deviceConnected"] = (keypadInputMode == KeypadInputMode::UartBridge)
     ? bridgeKeyboardMounted
-    : (mountedKeyboardInterfaceCount() > 0);
+    : (mountedKeyboardInterfaceCount() > 0 || mountedMouseInterfaceCount() > 0);
   target["pendingKeyboard"] = pendingKeyboardReportValid;
   target["pendingConsumer"] = (consumerQueueTail != consumerQueueHead);
   target["typedBufferLength"] = typedBuffer.length();
@@ -791,10 +824,13 @@ void addTelemetryToJson(JsonObject target) {
   counters["keyboardReports"] = telemetry.keyboardReportCount;
   counters["keyboardDecodeFails"] = telemetry.keyboardDecodeFailCount;
   counters["consumerReports"] = telemetry.consumerReportCount;
+  counters["mouseReports"] = telemetry.mouseReportCount;
   counters["forwardedKeyboard"] = telemetry.forwardedKeyboardCount;
   counters["forwardedConsumer"] = telemetry.forwardedConsumerCount;
+  counters["forwardedMouse"] = telemetry.forwardedMouseCount;
   counters["keyboardSendFails"] = telemetry.keyboardSendFailCount;
   counters["consumerSendFails"] = telemetry.consumerSendFailCount;
+  counters["mouseSendFails"] = telemetry.mouseSendFailCount;
   counters["hidNotReady"] = telemetry.hidNotReadyCount;
   counters["hostQuiesces"] = telemetry.hostQuiesceCount;
   counters["hostRecovers"] = telemetry.hostRecoverCount;
@@ -817,8 +853,10 @@ void addTelemetryToJson(JsonObject target) {
   last["uartPacketMs"] = telemetry.lastUartPacketMs;
   last["keyboardReportMs"] = telemetry.lastKeyboardReportMs;
   last["consumerReportMs"] = telemetry.lastConsumerReportMs;
+  last["mouseReportMs"] = telemetry.lastMouseReportMs;
   last["forwardedKeyboardMs"] = telemetry.lastForwardedKeyboardMs;
   last["forwardedConsumerMs"] = telemetry.lastForwardedConsumerMs;
+  last["forwardedMouseMs"] = telemetry.lastForwardedMouseMs;
   last["hostQuiesceMs"] = telemetry.lastHostQuiesceMs;
   last["hostRecoverMs"] = telemetry.lastHostRecoverMs;
   last["configWriteMs"] = telemetry.lastConfigWriteMs;
@@ -1468,9 +1506,29 @@ bool sendConsumerUsageNow(uint16_t usage) {
   return true;
 }
 
+bool sendMouseReportNow(hid_mouse_report_t const* report) {
+  if (report == nullptr) {
+    telemetry.mouseSendFailCount++;
+    return false;
+  }
+  if (!usbHidReadyNow()) {
+    telemetry.hidNotReadyCount++;
+    telemetry.mouseSendFailCount++;
+    return false;
+  }
+  if (!usb_hid.sendReport(RID_MOUSE, report, sizeof(*report))) {
+    telemetry.mouseSendFailCount++;
+    return false;
+  }
+
+  telemetry.forwardedMouseCount++;
+  telemetry.lastForwardedMouseMs = millis();
+  return true;
+}
+
 void servicePendingHidReports() {
   if (TinyUSBDevice.suspended()) {
-    if (pendingKeyboardReportValid || consumerQueueTail != consumerQueueHead) {
+    if (pendingKeyboardReportValid || consumerQueueTail != consumerQueueHead || mouseQueueTail != mouseQueueHead) {
       uint32_t now = millis();
       if (now - lastWakeupAttemptMs >= 2000) {
         lastWakeupAttemptMs = now;
@@ -1485,6 +1543,16 @@ void servicePendingHidReports() {
 
   if (!usbHidReadyNow()) {
     return;
+  }
+
+  // Pointer reports are intentionally first: a delayed mouse report is felt as
+  // cursor stutter, while keyboard expansion output can wait one USB poll.
+  if (mouseQueueTail != mouseQueueHead) {
+    __asm__ volatile("dmb" : : : "memory");
+    if (!sendMouseReportNow(&mouseReportQueue[mouseQueueTail])) {
+      return;
+    }
+    mouseQueueTail = (mouseQueueTail + 1) % MOUSE_REPORT_QUEUE_SIZE;
   }
 
   if (consumerQueueTail != consumerQueueHead) {
@@ -1642,12 +1710,16 @@ void parseHostHidDescriptor(
   bool& keyboard,
   uint8_t& keyboardReportId,
   bool& consumerControl,
-  uint8_t& consumerReportId
+  uint8_t& consumerReportId,
+  bool& mouse,
+  uint8_t& mouseReportId
 ) {
   keyboard = false;
   keyboardReportId = 0;
   consumerControl = false;
   consumerReportId = 0;
+  mouse = false;
+  mouseReportId = 0;
 
   if (desc_report == nullptr || desc_len == 0) {
     return;
@@ -1664,6 +1736,10 @@ void parseHostHidDescriptor(
         reports[index].usage == HID_USAGE_CONSUMER_CONTROL) {
       consumerControl = true;
       consumerReportId = reports[index].report_id;
+    } else if (reports[index].usage_page == HID_USAGE_PAGE_DESKTOP &&
+        reports[index].usage == HID_USAGE_DESKTOP_MOUSE) {
+      mouse = true;
+      mouseReportId = reports[index].report_id;
     }
   }
 }
@@ -1674,7 +1750,9 @@ void rememberHostHidInterface(
   bool keyboard,
   uint8_t keyboardReportId,
   bool consumerControl,
-  uint8_t consumerReportId
+  uint8_t consumerReportId,
+  bool mouse,
+  uint8_t mouseReportId
 ) {
   clearHostHidInterface(dev_addr, instance);
 
@@ -1686,16 +1764,45 @@ void rememberHostHidInterface(
       info.instance = instance;
       info.keyboardReportId = keyboardReportId;
       info.consumerReportId = consumerReportId;
+      info.mouseReportId = mouseReportId;
       info.lastReportMs = millis();
       info.lastRecoveryMs = millis();
       info.keyboard = keyboard;
       info.consumerControl = consumerControl;
+      info.mouse = mouse;
       info.mounted = true;
       return;
     }
   }
 
   // No Serial logging on Core 1
+}
+
+bool enqueueMouseReport(uint8_t const* report, uint16_t len, uint8_t expectedReportId) {
+  if (report == nullptr || len < 3) {
+    return false;
+  }
+
+  uint8_t const* payload = report;
+  uint16_t payloadLen = len;
+  if (expectedReportId != 0) {
+    if (report[0] != expectedReportId || len < 4) {
+      return false;
+    }
+    payload++;
+    payloadLen--;
+  }
+
+  hid_mouse_report_t mouseReport = {};
+  memcpy(&mouseReport, payload, min(static_cast<size_t>(payloadLen), sizeof(mouseReport)));
+  size_t nextHead = (mouseQueueHead + 1) % MOUSE_REPORT_QUEUE_SIZE;
+  if (nextHead == mouseQueueTail) {
+    return false;
+  }
+  mouseReportQueue[mouseQueueHead] = mouseReport;
+  __asm__ volatile("dmb" : : : "memory");
+  mouseQueueHead = nextHead;
+  return true;
 }
 
 void parseConsumerBitmaskDescriptor(uint8_t const* desc_report, uint16_t desc_len, HostHidInterfaceInfo& info) {
@@ -2446,6 +2553,7 @@ void selectKeypadInputMode(KeypadInputMode mode) {
 
   keyboardQueueTail = keyboardQueueHead;
   consumerQueueTail = consumerQueueHead;
+  mouseQueueTail = mouseQueueHead;
   __asm__ volatile("dmb" : : : "memory");
   keypadInputMode = mode;
   inputModeResetPending = true;
@@ -2457,7 +2565,7 @@ void updateBridgeMountedState() {
 
   for (size_t index = 0; index < MAX_HOST_HID_INTERFACES; index++) {
     HostHidInterfaceInfo const& info = hostHidInterfaces[index];
-    if (info.mounted && info.uartBridge && (info.keyboard || info.consumerControl)) {
+    if (info.mounted && info.uartBridge && (info.keyboard || info.consumerControl || info.mouse)) {
       bridgeKeyboardMounted = true;
       requestedStatusLedState = StatusLedState::Green; // Keyboard connected and active.
       return;
@@ -2485,6 +2593,8 @@ void finishBridgeDescriptor() {
   uint8_t keyboardReportId = 0;
   bool consumerControl = false;
   uint8_t consumerReportId = 0;
+  bool mouse = bridgeDescriptorProtocol == HID_ITF_PROTOCOL_MOUSE;
+  uint8_t mouseReportId = 0;
 
   parseHostHidDescriptor(
     bridgeDescriptor,
@@ -2492,10 +2602,17 @@ void finishBridgeDescriptor() {
     keyboard,
     keyboardReportId,
     consumerControl,
-    consumerReportId
+    consumerReportId,
+    mouse,
+    mouseReportId
   );
   if (bridgeDescriptorProtocol == HID_ITF_PROTOCOL_KEYBOARD) {
     keyboard = true;
+  } else if (bridgeDescriptorProtocol == HID_ITF_PROTOCOL_MOUSE) {
+    // The UART bridge switches standard mice to boot protocol before reports
+    // arrive, so the forwarded reports have no report ID.
+    mouse = true;
+    mouseReportId = 0;
   }
 
   uint8_t mappedDevAddr = bridgeInterfaceAddress(bridgeDescriptorDevAddr);
@@ -2505,7 +2622,9 @@ void finishBridgeDescriptor() {
     keyboard,
     keyboardReportId,
     consumerControl,
-    consumerReportId
+    consumerReportId,
+    mouse,
+    mouseReportId
   );
 
   HostHidInterfaceInfo* info = hostHidInterfaceInfo(mappedDevAddr, bridgeDescriptorInstance);
@@ -2535,13 +2654,14 @@ void processBridgeHidReport(
       true,
       0,
       false,
+      0,
+      false,
       0
     );
     info = hostHidInterfaceInfo(mappedAddr, instance);
   }
 
   if (info != nullptr) {
-    info->keyboard = true;
     info->uartBridge = true;
     updateBridgeMountedState();
   }
@@ -2551,12 +2671,19 @@ void processBridgeHidReport(
     return;
   }
 
-  bool keyboardReport = (report != nullptr && length >= 1);
+  bool mouseReport = info->mouse;
+  bool keyboardReport = info->keyboard && report != nullptr && length >= 1;
   bool consumerReport =
     info->consumerControl &&
     (info->consumerReportId == 0 || report[0] == info->consumerReportId);
 
-  if (keyboardReport) {
+  if (mouseReport) {
+    telemetry.mouseReportCount++;
+    telemetry.lastMouseReportMs = millis();
+    if (!enqueueMouseReport(report, length, info->mouseReportId)) {
+      telemetry.uartDroppedReportCount++;
+    }
+  } else if (keyboardReport) {
     hid_keyboard_report_t decoded = {};
     if (decodeKeyboardReport(report, length, info->keyboardReportId, decoded)) {
       enqueueKeyboardReport(decoded);
@@ -2812,6 +2939,7 @@ void serviceUsbBridge() {
     activeTopRowConsumerUsage = 0;
     pendingConsumerUsage = 0;
     consumerQueueTail = consumerQueueHead;
+    mouseQueueTail = mouseQueueHead;
     typedBuffer = "";
     typedSources = "";
   }
@@ -2830,6 +2958,8 @@ void serviceUsbBridge() {
     consumerQueueHead = 0;
     keyboardQueueTail = 0;
     keyboardQueueHead = 0;
+    mouseQueueTail = 0;
+    mouseQueueHead = 0;
     typedBuffer = "";
     typedSources = "";
     hostLedsState = 0xFF;
@@ -2838,7 +2968,7 @@ void serviceUsbBridge() {
   // If the PC has suspended the USB connection, do NOT write to endpoints or process keyboard reports!
   // Instead, queue the reports and trigger a spec-compliant remote wakeup if enabled by the host.
   if (TinyUSBDevice.suspended()) {
-    if (hostRemoteWakeupEnabled && (keyboardQueueTail != keyboardQueueHead || consumerQueueTail != consumerQueueHead)) {
+    if (hostRemoteWakeupEnabled && (keyboardQueueTail != keyboardQueueHead || consumerQueueTail != consumerQueueHead || mouseQueueTail != mouseQueueHead)) {
       uint32_t now = millis();
       if (now - lastWakeupAttemptMs >= 2000) {
         lastWakeupAttemptMs = now;
@@ -2874,6 +3004,8 @@ void resetBridgeStateAfterConfigurationChange() {
   pendingKeyboardReportValid = false;
   consumerQueueHead = 0;
   consumerQueueTail = 0;
+  mouseQueueHead = 0;
+  mouseQueueTail = 0;
 
   if (usbHidReadyNow()) {
     usb_hid.keyboardRelease(RID_KEYBOARD);
@@ -2904,6 +3036,8 @@ extern "C" void tuh_hid_mount_cb(
   uint8_t keyboardReportId = 0;
   uint8_t consumerReportId = 0;
   bool consumerControl = false;
+  bool mouse = protocol == HID_ITF_PROTOCOL_MOUSE;
+  uint8_t mouseReportId = 0;
 
   parseHostHidDescriptor(
     desc_report,
@@ -2911,7 +3045,9 @@ extern "C" void tuh_hid_mount_cb(
     keyboard,
     keyboardReportId,
     consumerControl,
-    consumerReportId
+    consumerReportId,
+    mouse,
+    mouseReportId
   );
 
   if (protocol == HID_ITF_PROTOCOL_KEYBOARD) {
@@ -2919,6 +3055,10 @@ extern "C" void tuh_hid_mount_cb(
     // Boot keyboard reports use the standard 8-byte modifier/key array and do
     // not include a report ID, even when report protocol advertises one.
     keyboardReportId = 0;
+  } else if (protocol == HID_ITF_PROTOCOL_MOUSE) {
+    // Boot Mouse is a stable, descriptor-independent wire format.
+    mouse = true;
+    mouseReportId = 0;
   }
 
   rememberHostHidInterface(
@@ -2927,16 +3067,20 @@ extern "C" void tuh_hid_mount_cb(
     keyboard,
     keyboardReportId,
     consumerControl,
-    consumerReportId
+    consumerReportId,
+    mouse,
+    mouseReportId
   );
   HostHidInterfaceInfo* mountedInfo = hostHidInterfaceInfo(dev_addr, instance);
   if (mountedInfo != nullptr) {
     parseConsumerBitmaskDescriptor(desc_report, desc_len, *mountedInfo);
   }
 
-  if (protocol == HID_ITF_PROTOCOL_KEYBOARD &&
+  if ((protocol == HID_ITF_PROTOCOL_KEYBOARD || protocol == HID_ITF_PROTOCOL_MOUSE) &&
       tuh_hid_get_protocol(dev_addr, instance) != HID_PROTOCOL_BOOT) {
-    memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
+    if (protocol == HID_ITF_PROTOCOL_KEYBOARD) {
+      memset(&previousKeyboardReport, 0, sizeof(previousKeyboardReport));
+    }
     if (tuh_hid_set_protocol(dev_addr, instance, HID_PROTOCOL_BOOT)) {
       return;
     }
@@ -3026,6 +3170,12 @@ extern "C" void tuh_hid_report_received_cb(
       }
     } else {
       telemetry.keyboardDecodeFailCount++;
+    }
+  } else if (protocol == HID_ITF_PROTOCOL_MOUSE) {
+    telemetry.mouseReportCount++;
+    telemetry.lastMouseReportMs = millis();
+    if (!enqueueMouseReport(report, len, 0)) {
+      telemetry.mouseSendFailCount++;
     }
   } else if (info != nullptr && info->consumerControl &&
              (info->consumerReportId == 0 || report[0] == info->consumerReportId)) {

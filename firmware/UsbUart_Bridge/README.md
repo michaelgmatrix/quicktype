@@ -5,11 +5,13 @@ external keypad, keyboard, or receiver. It forwards HID report descriptors and
 raw HID input reports to the primary board over hardware UART. It does not use
 Pico-PIO-USB or GPIO0/GPIO1 for USB.
 
-The bridge keeps HID interfaces in report protocol so keyboard report IDs and
-Consumer Control reports are preserved. This includes media keys such as play,
-pause, mute, volume, and track controls. All HID interfaces are transported;
-the primary firmware currently emits keyboard and Consumer Control inputs to
-the computer.
+The bridge keeps keyboard HID interfaces in report protocol so keyboard report
+IDs and Consumer Control reports are preserved. This includes media keys such
+as play, pause, mute, volume, and track controls. Standard HID mouse interfaces
+switch to Boot Mouse protocol before their reports are forwarded; the primary
+passes movement, buttons, wheel, and pan through to the computer without any
+mouse-specific action or remapping. Vendor-defined mouse controls are not yet
+interpreted.
 
 ## Wiring
 

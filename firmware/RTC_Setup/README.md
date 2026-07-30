@@ -2,7 +2,7 @@
 
 This sketch runs on the generic RP2040-Zero hardware. It acts as:
 
-- a native USB keyboard connected to the computer;
+- a native USB keyboard, Consumer Control device, and standard HID mouse connected to the computer;
 - an auto-selecting keypad input host using either the original PIO USB wiring
   or the two-board UART bridge; and
 - a USB serial device used by the QuickType web configurator.
@@ -68,9 +68,12 @@ Typed triggers expand when followed by Space, Tab, Enter, or Escape. Space remai
 
 The UART bridge preserves report protocol and forwards HID descriptors plus raw
 reports, allowing the primary to decode keyboard and Consumer Control media
-keys. It periodically re-advertises mounted interfaces so either board can be
-restarted independently. The original PIO receiver starts in report protocol
-and boot-capable keyboard interfaces switch to boot protocol when mounted.
+keys. Standard USB HID mice are switched to Boot Mouse protocol and passed
+through as movement, buttons, vertical wheel, and horizontal pan reports; no
+mouse button interception or remapping is active yet. It periodically
+re-advertises mounted interfaces so either board can be restarted independently.
+The original PIO receiver starts in report protocol and boot-capable keyboard
+and mouse interfaces switch to their respective boot protocols when mounted.
 Selected input work stays on the dedicated second core while the main core
 emits expansions. A pending PIO interrupt-IN transfer is normal while a
 keyboard is idle and is never aborted on a timer. The vendored PIO host is
