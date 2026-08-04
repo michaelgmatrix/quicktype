@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-08-02T07:45:24-07:00">
+  <meta name="quicktype-build" content="2026-08-04T08:59:10-07:00">
   <title>GhostLever Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -470,6 +470,18 @@
       padding: 10px 11px;
       border-radius: var(--radius-small);
       text-align: left;
+    }
+
+    .advanced-nav-items {
+      display: contents;
+    }
+
+    .advanced-nav-toggle .nav-icon {
+      transition: transform 150ms ease;
+    }
+
+    .advanced-nav-toggle[aria-expanded="true"] .nav-icon {
+      transform: rotate(90deg);
     }
 
     .nav-icon {
@@ -1940,13 +1952,18 @@
         </div>
         <ul class="sidebar-list">
           <li><button class="active" type="button" data-tab="expansionsTab" title="Expansions"><span class="nav-icon" aria-hidden="true">Aa</span><span class="nav-label">Expansions</span></button></li>
-          <li><button type="button" data-tab="referenceTab" title="Expansion Reference"><span class="nav-icon" aria-hidden="true">Ref</span><span class="nav-label">Reference</span></button></li>
-          <li><button type="button" data-tab="sharedSetsTab" title="Common Expansions"><span class="nav-icon" aria-hidden="true">Com</span><span class="nav-label">Common Expansions</span></button></li>
           <li><button type="button" data-tab="placeholdersTab" title="Placeholders"><span class="nav-icon" aria-hidden="true">{ }</span><span class="nav-label">Placeholders</span></button></li>
           <li><button type="button" data-tab="rtcTab" title="Date/Time Functions"><span class="nav-icon" aria-hidden="true">DT</span><span class="nav-label">Date/Time Functions</span></button></li>
-          <li><button type="button" data-tab="activityTab" title="Device Activity"><span class="nav-icon" aria-hidden="true">Log</span><span class="nav-label">Device Activity</span></button></li>
           <li><button id="cheatsheetButton" type="button" title="Token Cheatsheet (?)"><span class="nav-icon" aria-hidden="true">?</span><span class="nav-label">Cheatsheet (?)</span></button></li>
           <li><button id="themeToggleButton" type="button" title="Toggle Theme"><span id="themeNavIcon" class="nav-icon" aria-hidden="true">🌙</span><span id="themeNavLabel" class="nav-label">Dark Theme</span></button></li>
+          <li><button id="advancedNavToggle" class="advanced-nav-toggle" type="button" aria-expanded="false" aria-controls="advancedNavItems" title="Show advanced sections"><span class="nav-icon" aria-hidden="true">›</span><span class="nav-label">Advanced</span></button></li>
+          <li id="advancedNavItems" class="advanced-nav-items hidden">
+            <ul class="sidebar-list" aria-label="Advanced configurator sections">
+              <li><button type="button" data-tab="referenceTab" title="Expansion Reference"><span class="nav-icon" aria-hidden="true">Ref</span><span class="nav-label">Reference</span></button></li>
+              <li><button type="button" data-tab="sharedSetsTab" title="Common Expansions"><span class="nav-icon" aria-hidden="true">Com</span><span class="nav-label">Common Expansions</span></button></li>
+              <li><button type="button" data-tab="activityTab" title="Device Activity"><span class="nav-icon" aria-hidden="true">Log</span><span class="nav-label">Device Activity</span></button></li>
+            </ul>
+          </li>
         </ul>
       </nav>
 
@@ -2387,6 +2404,8 @@
       elements.cheatsheetButton = document.getElementById("cheatsheetButton");
       elements.storageCapacityBadge = document.getElementById("storageCapacityBadge");
       elements.navToggleButton = document.getElementById("navToggleButton");
+      elements.advancedNavToggle = document.getElementById("advancedNavToggle");
+      elements.advancedNavItems = document.getElementById("advancedNavItems");
       elements.connectionStatus = document.getElementById("connectionStatus");
       elements.connectButton = document.getElementById("connectButton");
       elements.autoConnectToggle = document.getElementById("autoConnectToggle");
@@ -2490,6 +2509,7 @@
         }
       });
       elements.navToggleButton.addEventListener("click", toggleNavigation);
+      elements.advancedNavToggle.addEventListener("click", toggleAdvancedNavigation);
       elements.referenceSearch.addEventListener("input", renderExpansionReference);
       elements.referenceTypeFilter.addEventListener("change", renderExpansionReference);
       elements.printReferenceButton.addEventListener("click", () => window.print());
@@ -2604,6 +2624,16 @@
 
     function toggleNavigation() {
       setNavigationCollapsed(!document.body.classList.contains("nav-collapsed"));
+    }
+
+    function toggleAdvancedNavigation() {
+      setAdvancedNavigationExpanded(elements.advancedNavToggle.getAttribute("aria-expanded") !== "true");
+    }
+
+    function setAdvancedNavigationExpanded(expanded) {
+      elements.advancedNavToggle.setAttribute("aria-expanded", String(expanded));
+      elements.advancedNavToggle.title = expanded ? "Hide advanced sections" : "Show advanced sections";
+      elements.advancedNavItems.classList.toggle("hidden", !expanded);
     }
 
     function setNavigationCollapsed(collapsed, persist = true) {
@@ -3537,6 +3567,9 @@
     function showTab(tabId, updateUrl = true) {
       if (!SHARED_SETS_ENABLED && tabId === "sharedSetsTab") {
         tabId = "expansionsTab";
+      }
+      if (["referenceTab", "sharedSetsTab", "activityTab"].includes(tabId)) {
+        setAdvancedNavigationExpanded(true);
       }
       document.querySelectorAll("[data-tab]").forEach((button) => {
         button.classList.toggle("active", button.dataset.tab === tabId);
