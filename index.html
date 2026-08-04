@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <!-- Update this build value for every deployment. The visible stamp is derived from it. -->
-  <meta name="quicktype-build" content="2026-08-04T08:59:10-07:00">
+  <meta name="quicktype-build" content="2026-08-04T09:02:34-07:00">
   <title>GhostLever Configurator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -472,16 +472,53 @@
       text-align: left;
     }
 
-    .advanced-nav-items {
-      display: contents;
+    .advanced-nav-control {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: #d9e4ea;
+      padding: 10px 4px 0;
+      font-size: 0.82rem;
+      font-weight: 800;
+      cursor: pointer;
     }
 
-    .advanced-nav-toggle .nav-icon {
+    .advanced-nav-control input {
+      appearance: none;
+      width: 36px;
+      height: 20px;
+      margin: 0;
+      border-radius: 999px;
+      background: #52616d;
+      position: relative;
+      transition: background 150ms ease;
+      cursor: pointer;
+    }
+
+    .advanced-nav-control input::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #ffffff;
       transition: transform 150ms ease;
     }
 
-    .advanced-nav-toggle[aria-expanded="true"] .nav-icon {
-      transform: rotate(90deg);
+    .advanced-nav-control input:checked {
+      background: var(--accent);
+    }
+
+    .advanced-nav-control input:checked::after {
+      transform: translateX(16px);
+    }
+
+    .advanced-nav-control input:focus-visible {
+      outline: 2px solid #7ed3d2;
+      outline-offset: 3px;
     }
 
     .nav-icon {
@@ -534,7 +571,8 @@
     body.nav-collapsed #connectionStatus,
     body.nav-collapsed .sidebar-section h2,
     body.nav-collapsed .nav-label,
-    body.nav-collapsed .sidebar-footer {
+    body.nav-collapsed .sidebar-footer,
+    body.nav-collapsed .advanced-nav-control {
       display: none;
     }
 
@@ -1954,16 +1992,11 @@
           <li><button class="active" type="button" data-tab="expansionsTab" title="Expansions"><span class="nav-icon" aria-hidden="true">Aa</span><span class="nav-label">Expansions</span></button></li>
           <li><button type="button" data-tab="placeholdersTab" title="Placeholders"><span class="nav-icon" aria-hidden="true">{ }</span><span class="nav-label">Placeholders</span></button></li>
           <li><button type="button" data-tab="rtcTab" title="Date/Time Functions"><span class="nav-icon" aria-hidden="true">DT</span><span class="nav-label">Date/Time Functions</span></button></li>
+          <li class="advanced-nav-item hidden"><button type="button" data-tab="referenceTab" title="Expansion Reference"><span class="nav-icon" aria-hidden="true">Ref</span><span class="nav-label">Reference</span></button></li>
+          <li class="advanced-nav-item hidden"><button type="button" data-tab="sharedSetsTab" title="Common Expansions"><span class="nav-icon" aria-hidden="true">Com</span><span class="nav-label">Common Expansions</span></button></li>
+          <li class="advanced-nav-item hidden"><button type="button" data-tab="activityTab" title="Device Activity"><span class="nav-icon" aria-hidden="true">Log</span><span class="nav-label">Device Activity</span></button></li>
           <li><button id="cheatsheetButton" type="button" title="Token Cheatsheet (?)"><span class="nav-icon" aria-hidden="true">?</span><span class="nav-label">Cheatsheet (?)</span></button></li>
           <li><button id="themeToggleButton" type="button" title="Toggle Theme"><span id="themeNavIcon" class="nav-icon" aria-hidden="true">🌙</span><span id="themeNavLabel" class="nav-label">Dark Theme</span></button></li>
-          <li><button id="advancedNavToggle" class="advanced-nav-toggle" type="button" aria-expanded="false" aria-controls="advancedNavItems" title="Show advanced sections"><span class="nav-icon" aria-hidden="true">›</span><span class="nav-label">Advanced</span></button></li>
-          <li id="advancedNavItems" class="advanced-nav-items hidden">
-            <ul class="sidebar-list" aria-label="Advanced configurator sections">
-              <li><button type="button" data-tab="referenceTab" title="Expansion Reference"><span class="nav-icon" aria-hidden="true">Ref</span><span class="nav-label">Reference</span></button></li>
-              <li><button type="button" data-tab="sharedSetsTab" title="Common Expansions"><span class="nav-icon" aria-hidden="true">Com</span><span class="nav-label">Common Expansions</span></button></li>
-              <li><button type="button" data-tab="activityTab" title="Device Activity"><span class="nav-icon" aria-hidden="true">Log</span><span class="nav-label">Device Activity</span></button></li>
-            </ul>
-          </li>
         </ul>
       </nav>
 
@@ -1971,6 +2004,10 @@
         Device programming uses Web Serial in Chrome or Edge from HTTPS or localhost.
         <span id="buildStamp" class="build-stamp"></span>
       </p>
+      <label class="advanced-nav-control" for="advancedNavSwitch">
+        <span>Advanced</span>
+        <input id="advancedNavSwitch" type="checkbox" role="switch" aria-label="Show advanced sections">
+      </label>
     </aside>
 
     <main class="main">
@@ -2404,8 +2441,7 @@
       elements.cheatsheetButton = document.getElementById("cheatsheetButton");
       elements.storageCapacityBadge = document.getElementById("storageCapacityBadge");
       elements.navToggleButton = document.getElementById("navToggleButton");
-      elements.advancedNavToggle = document.getElementById("advancedNavToggle");
-      elements.advancedNavItems = document.getElementById("advancedNavItems");
+      elements.advancedNavSwitch = document.getElementById("advancedNavSwitch");
       elements.connectionStatus = document.getElementById("connectionStatus");
       elements.connectButton = document.getElementById("connectButton");
       elements.autoConnectToggle = document.getElementById("autoConnectToggle");
@@ -2509,7 +2545,9 @@
         }
       });
       elements.navToggleButton.addEventListener("click", toggleNavigation);
-      elements.advancedNavToggle.addEventListener("click", toggleAdvancedNavigation);
+      elements.advancedNavSwitch.addEventListener("change", () => {
+        setAdvancedNavigationExpanded(elements.advancedNavSwitch.checked);
+      });
       elements.referenceSearch.addEventListener("input", renderExpansionReference);
       elements.referenceTypeFilter.addEventListener("change", renderExpansionReference);
       elements.printReferenceButton.addEventListener("click", () => window.print());
@@ -2626,14 +2664,12 @@
       setNavigationCollapsed(!document.body.classList.contains("nav-collapsed"));
     }
 
-    function toggleAdvancedNavigation() {
-      setAdvancedNavigationExpanded(elements.advancedNavToggle.getAttribute("aria-expanded") !== "true");
-    }
-
     function setAdvancedNavigationExpanded(expanded) {
-      elements.advancedNavToggle.setAttribute("aria-expanded", String(expanded));
-      elements.advancedNavToggle.title = expanded ? "Hide advanced sections" : "Show advanced sections";
-      elements.advancedNavItems.classList.toggle("hidden", !expanded);
+      elements.advancedNavSwitch.checked = expanded;
+      document.querySelectorAll(".advanced-nav-item").forEach((item) => {
+        const unavailable = item === elements.sharedSetsNavItem && !SHARED_SETS_ENABLED;
+        item.classList.toggle("hidden", !expanded || unavailable);
+      });
     }
 
     function setNavigationCollapsed(collapsed, persist = true) {
@@ -2658,7 +2694,7 @@
     }
 
     function initializeSharedSets() {
-      elements.sharedSetsNavItem?.classList.toggle("hidden", !SHARED_SETS_ENABLED);
+      if (!SHARED_SETS_ENABLED) elements.sharedSetsNavItem?.classList.add("hidden");
       elements.sharedSetsTab?.classList.add("hidden");
       if (!SHARED_SETS_ENABLED) {
         appState.sharedSetCatalog = [];
